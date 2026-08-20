@@ -1,0 +1,123 @@
+{
+  "common": {
+    "continue": "Weiter",
+    "loading": "Wird geladen…",
+    "logout": "Abmelden"
+  },
+  "login": {
+    "id_label": "Teilnehmer-ID",
+    "id_placeholder": "z. B. TN-042",
+    "hint": "Bitte geben Sie die ID ein, die Sie vom Studienteam erhalten haben.",
+    "submit": "Anmelden",
+    "error_unknown": "Unbekannte Teilnehmer-ID. Bitte wenden Sie sich an das Studienteam."
+  },
+  "welcome": {
+    "title": "Willkommen",
+    "intro": "Schön, dass Sie dabei sind. Bitte lesen Sie zunächst die Informationen zum Ablauf und zum Fragebogen auf SoSciSurvey und arbeiten Sie sich dann Schritt für Schritt durch die Studie. In den Fällen sehen Sie kurze Videos, in denen Schülerinnen und Schüler mit fehlerhaftem Programmcode arbeiten; Ihre Aufgabe ist es, das jeweilige Problem zu erkennen.",
+    "overview": "Der Ablauf",
+    "steps": {
+      "questions": "Einige Fragen zu Ihrer Person und zu Ihren Vorkenntnissen",
+      "sosci": "Der Fragebogen auf SoSciSurvey – er öffnet sich in einem neuen Tab, Ihre Teilnehmer-ID wird automatisch übergeben",
+      "calibration": "Die Kalibrierung des Eye-Trackers",
+      "cases": "Neun Fälle, jeweils mit Video, schriftlicher Diagnose und lautem Denken"
+    },
+    "your_id": "Ihre Teilnehmer-ID",
+    "remember": "Bitte merken Sie sich diese ID – Sie benötigen sie für die Fragebögen und um später fortzufahren.",
+    "continue": "Los geht’s"
+  },
+  "pre_test": {
+    "page": "Seite {{current}} von {{total}}"
+  },
+  "sosci": {
+    "pretest": {
+      "title": "Vorab-Fragebogen",
+      "body": "Bitte öffnen Sie den Fragebogen auf SoSciSurvey und füllen Sie ihn vollständig aus. Ihre Teilnehmer-ID wird automatisch übergeben. Kehren Sie anschließend hierher zurück."
+    },
+    "posttest": {
+      "title": "Abschluss-Fragebogen",
+      "body": "Zum Abschluss bitten wir Sie, den letzten Fragebogen auf SoSciSurvey auszufüllen. Ihre Teilnehmer-ID wird wieder automatisch übergeben."
+    },
+    "open": "Fragebogen öffnen",
+    "note": "Der Fragebogen öffnet sich in einem neuen Tab.",
+    "done": "Ich habe den Fragebogen abgeschlossen"
+  },
+  "calibration": {
+    "title": "Kalibrierung des Eye-Trackers",
+    "connecting": "Verbindung zum Eye-Tracker wird hergestellt…",
+    "intro": "Bitte setzen Sie sich bequem hin und behalten Sie Ihre Position bei. Gleich erscheinen nacheinander mehrere Punkte auf dem Bildschirm — schauen Sie jeden Punkt an, bis er verschwindet.",
+    "start": "Kalibrierung starten",
+    "working": "Kalibrierung läuft…",
+    "progress": "Punkt {{current}} von {{total}}",
+    "no_tracker": "Es wurde kein Eye-Tracker gefunden. Die Studie kann ohne Blickaufzeichnung fortgesetzt werden — bitte sprechen Sie zuerst mit der Studienleitung.",
+    "retry": "Erneut versuchen",
+    "skip": "Ohne Eye-Tracking fortfahren",
+    "repeat": "Kalibrierung wiederholen",
+    "continue": "Weiter",
+    "accuracy_degrees": "Mittlere Abweichung: {{value}}°",
+    "accuracy_fraction": "Mittlere Abweichung: {{value}} % der Bildschirmbreite",
+    "poor": "Die Genauigkeit ist gering. Bitte wiederholen Sie die Kalibrierung.",
+    "error_start": "Der Kalibriermodus konnte nicht gestartet werden.",
+    "error_point": "Ein Kalibrierpunkt konnte nicht erfasst werden.",
+    "error_compute": "Die Kalibrierung konnte nicht berechnet werden.",
+    "error_generic": "Die Kalibrierung ist fehlgeschlagen."
+  },
+  "phase": {
+    "label": "Phase {{n}}"
+  },
+  "case_intro": {
+    "title": "Neuer Fall",
+    "body": "Gleich sehen Sie ein neues Video. Beobachten Sie aufmerksam und machen Sie sich während des Ansehens Notizen."
+  },
+  "case_outro": {
+    "title": "Fall abgeschlossen",
+    "body": "Danke. Bitte beantworten Sie noch einige kurze Fragen zu diesem Fall.",
+    "body_plain": "Danke. Sie haben diesen Fall abgeschlossen."
+  },
+  "video": {
+    "error": "Das Video konnte nicht geladen werden."
+  },
+  "case": {
+    "video_label": "Fallvideo",
+    "timer_label": "Zeit",
+    "task_label": "Aufgabe",
+    "student_task_button": "Schüler-Aufgabe",
+    "notes_label": "Notizen",
+    "notes_placeholder": "Notizen während des Videos…",
+    "next": "Weiter",
+    "info_title": "Information",
+    "student_task_title": "Aufgabe der Schüler:innen",
+    "no_content": "Kein Inhalt hinterlegt."
+  },
+  "diagnosis": {
+    "title": "Ihre Diagnose",
+    "prompt": "Was war das Problem? Beschreiben Sie Ihre Diagnose.",
+    "placeholder": "Ihre Diagnose…",
+    "your_notes": "Ihre Notizen",
+    "no_notes": "Sie haben keine Notizen gemacht.",
+    "submit": "Weiter"
+  },
+  "think_aloud": {
+    "title": "Lautes Denken",
+    "hint": "Sehen Sie sich die Aufzeichnung an und erläutern Sie der Studienleitung, worauf Sie geachtet haben und warum Sie Ihre Notizen zu diesem Zeitpunkt gemacht haben.",
+    "notes_label": "Ihre Notizen",
+    "stats": "{{points}} Blickpunkte",
+    "show_gaze": "Blickpunkt anzeigen",
+    "clip_only": "nur das Video (keine Bildschirmaufzeichnung)",
+    "next": "Weiter"
+  },
+  "questionnaire": {
+    "submit": "Weiter",
+    "unanswered": "Noch keine Angabe"
+  },
+  "thanks": {
+    "title": "Vielen Dank!",
+    "body": "Sie haben die Studie abgeschlossen. Sie können dieses Fenster nun schließen."
+  },
+  "session": {
+    "loading": "Sitzung wird geladen…",
+    "error": "Etwas ist schiefgelaufen. Bitte laden Sie die Seite neu.",
+    "progress": "Schritt {{current}} von {{total}}",
+    "unsent": "{{count}} Eingabe noch nicht gespeichert – Verbindung wird erneut versucht.",
+    "unsent_plural": "{{count}} Eingaben noch nicht gespeichert – Verbindung wird erneut versucht."
+  }
+}

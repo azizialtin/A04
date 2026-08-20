@@ -1,0 +1,53 @@
+# Full local stack: Postgres + backend + frontend.
+# Ports are deliberately offset (5434 / 8030 / 5175) so A04 can run alongside
+# the other platforms on this machine without clashing.
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: a04
+      POSTGRES_PASSWORD: a04
+      POSTGRES_DB: a04
+    ports:
+      - "5434:5432"
+    volumes:
+      - a04_pgdata:/var/lib/postgresql/data
+      - ./infrastructure/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U a04"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://a04:a04@db:5432/a04
+      JWT_SECRET: dev-secret-change-me-before-you-ship-this
+      FRONTEND_URL: http://localhost:5175
+      ENVIRONMENT: development
+      GAZE_STORAGE_MODE: local
+    ports:
+      - "8030:8000"
+    volumes:
+      # Uploaded clips and gaze chunks live here. Without this they are inside
+      # the container and gone the next time it is recreated.
+      - a04_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8030
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+
+volumes:
+  a04_pgdata:
+  a04_uploads:

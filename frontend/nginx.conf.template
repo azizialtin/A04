@@ -1,0 +1,48 @@
+# Rendered at container start by the nginx image's envsubst step, so the
+# content security policy can name the backend and the lab machine's Tobii
+# bridge without rebuilding the image. Only ${...} variables present in the
+# environment are substituted; nginx's own $uri is left alone.
+
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  gzip on;
+  gzip_types text/css application/javascript application/json image/svg+xml;
+  gzip_min_length 1024;
+
+  location = /healthz {
+    access_log off;
+    return 200 "ok\n";
+  }
+
+  # Hashed filenames, so they can be cached indefinitely. No CSP here: these
+  # are subresources, and the policy is carried by the document that loads them.
+  location /assets/ {
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    try_files $uri =404;
+  }
+
+  # Everything else resolves to the SPA entry point, so this is where the
+  # document's headers belong. They are not repeated in /assets/ because nginx
+  # add_header does not inherit into a block that sets its own — the reason the
+  # header set lives in one location rather than at server level.
+  location / {
+    # Tokens live in localStorage, so an injected script is a session takeover.
+    # script-src 'self' is the directive that actually prevents that.
+    add_header Content-Security-Policy "${CSP_POLICY}" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    # Never cache the entry point, or a deploy leaves clients on the previous
+    # bundle pointing at the previous API.
+    add_header Cache-Control "no-store" always;
+
+    try_files $uri $uri/ /index.html;
+  }
+}

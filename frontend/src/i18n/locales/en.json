@@ -1,0 +1,123 @@
+{
+  "common": {
+    "continue": "Continue",
+    "loading": "Loading…",
+    "logout": "Log out"
+  },
+  "login": {
+    "id_label": "Participant ID",
+    "id_placeholder": "e.g. TN-042",
+    "hint": "Please enter the ID you received from the study team.",
+    "submit": "Sign in",
+    "error_unknown": "Unknown participant ID. Please contact the study team."
+  },
+  "welcome": {
+    "title": "Welcome",
+    "intro": "Thank you for taking part. Please start by reading the information about how the study runs and about the SoSciSurvey questionnaire, then work through it step by step. In the cases you will watch short videos of students working with faulty program code; your task is to identify the problem in each one.",
+    "overview": "How it runs",
+    "steps": {
+      "questions": "A few questions about you and your background",
+      "sosci": "The SoSciSurvey questionnaire — it opens in a new tab, and your participant ID is passed automatically",
+      "calibration": "Calibrating the eye tracker",
+      "cases": "Nine cases, each with a video, a written diagnosis and a think-aloud"
+    },
+    "your_id": "Your participant ID",
+    "remember": "Please remember this ID — you will need it for the questionnaires and to continue later.",
+    "continue": "Let’s go"
+  },
+  "pre_test": {
+    "page": "Page {{current}} of {{total}}"
+  },
+  "sosci": {
+    "pretest": {
+      "title": "Initial questionnaire",
+      "body": "Please open the questionnaire on SoSciSurvey and complete it in full. Your participant ID is passed automatically. Return here afterwards."
+    },
+    "posttest": {
+      "title": "Final questionnaire",
+      "body": "To finish, please complete the final questionnaire on SoSciSurvey. Your participant ID is passed automatically again."
+    },
+    "open": "Open questionnaire",
+    "note": "The questionnaire opens in a new tab.",
+    "done": "I have completed the questionnaire"
+  },
+  "calibration": {
+    "title": "Eye-tracker calibration",
+    "connecting": "Connecting to the eye tracker…",
+    "intro": "Please sit comfortably and keep your position. A series of dots will appear — look at each one until it disappears.",
+    "start": "Start calibration",
+    "working": "Calibrating…",
+    "progress": "Point {{current}} of {{total}}",
+    "no_tracker": "No eye tracker was found. The study can continue without gaze recording — please speak to the study manager first.",
+    "retry": "Try again",
+    "skip": "Continue without eye tracking",
+    "repeat": "Repeat calibration",
+    "continue": "Continue",
+    "accuracy_degrees": "Mean offset: {{value}}°",
+    "accuracy_fraction": "Mean offset: {{value}}% of screen width",
+    "poor": "Accuracy is low. Please repeat the calibration.",
+    "error_start": "Could not enter calibration mode.",
+    "error_point": "Could not collect a calibration point.",
+    "error_compute": "Could not compute the calibration.",
+    "error_generic": "Calibration failed."
+  },
+  "phase": {
+    "label": "Phase {{n}}"
+  },
+  "case_intro": {
+    "title": "New case",
+    "body": "You are about to see a new video. Watch closely and take notes while it plays."
+  },
+  "case_outro": {
+    "title": "Case complete",
+    "body": "Thank you. Please answer a few short questions about this case.",
+    "body_plain": "Thank you. You have completed this case."
+  },
+  "video": {
+    "error": "The video could not be loaded."
+  },
+  "case": {
+    "video_label": "Case video",
+    "timer_label": "Time",
+    "task_label": "Task",
+    "student_task_button": "Student task",
+    "notes_label": "Notes",
+    "notes_placeholder": "Notes while watching…",
+    "next": "Continue",
+    "info_title": "Information",
+    "student_task_title": "The students' task",
+    "no_content": "No content provided."
+  },
+  "diagnosis": {
+    "title": "Your diagnosis",
+    "prompt": "What was the problem? Describe your diagnosis.",
+    "placeholder": "Your diagnosis…",
+    "your_notes": "Your notes",
+    "no_notes": "You didn't take any notes.",
+    "submit": "Continue"
+  },
+  "think_aloud": {
+    "title": "Think-aloud",
+    "hint": "Watch the recording and explain to the study manager what you were looking at and why you took your notes when you did.",
+    "notes_label": "Your notes",
+    "stats": "{{points}} gaze points",
+    "show_gaze": "Show the gaze dot",
+    "clip_only": "video only (no screen recording)",
+    "next": "Continue"
+  },
+  "questionnaire": {
+    "submit": "Continue",
+    "unanswered": "Not answered yet"
+  },
+  "thanks": {
+    "title": "Thank you!",
+    "body": "You have completed the study. You may now close this window."
+  },
+  "session": {
+    "loading": "Loading session…",
+    "error": "Something went wrong. Please reload the page.",
+    "progress": "Step {{current}} of {{total}}",
+    "unsent": "{{count}} entry not saved yet — retrying.",
+    "unsent_plural": "{{count}} entries not saved yet — retrying."
+  }
+}

@@ -1,0 +1,64 @@
+# Tooling config for the backend. The source is handed to external clients, so
+# the style rules in CONTRIBUTING.md are enforced here rather than only read.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import order
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RUF",  # ruff's own
+]
+ignore = [
+    "B008",  # FastAPI puts Depends() in defaults on purpose
+    "E501",  # the formatter owns line length; long strings are not a lint
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures and asserts read differently in tests.
+"tests/*" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app", "main.py"]
+ignore_missing_imports = true      # google-cloud-storage and friends ship no stubs
+plugins = []
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+# Not disallow_untyped_defs: the endpoint signatures are already typed and
+# forcing annotations onto every helper would be noise, not safety.
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+filterwarnings = [
+    "error",
+    # asyncpg teardown noise from the per-test engine; see tests/conftest.py.
+    "ignore:coroutine 'Connection._cancel' was never awaited:RuntimeWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/cli.py"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

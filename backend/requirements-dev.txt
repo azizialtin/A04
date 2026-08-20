@@ -1,0 +1,12 @@
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.28.0
+
+# Style and types are enforced, not just described — see pyproject.toml.
+ruff==0.16.3
+mypy==2.3.1
+
+# Dependency advisories in CI.
+pip-audit==2.9.0

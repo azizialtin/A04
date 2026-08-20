@@ -1,0 +1,122 @@
+import { fireEvent, render, screen } from '@testing-library/react'
+import { vi } from 'vitest'
+
+import type { Question } from '../../lib/questionnaire'
+import QuestionnaireRenderer from './QuestionnaireRenderer'
+
+const questions: Question[] = [
+  { id: 'c', type: 'likert', text: 'Confidence', scale_min: 1, scale_max: 5 },
+]
+
+test('blocks submit until the required question is answered', () => {
+  const onSubmit = vi.fn()
+  render(<QuestionnaireRenderer title="Intro" questions={questions} onSubmit={onSubmit} />)
+
+  const submit = screen.getByRole('button')
+  expect(submit).toBeDisabled()
+
+  fireEvent.click(screen.getByRole('radio', { name: '3' }))
+  expect(submit).toBeEnabled()
+
+  fireEvent.click(submit)
+  expect(onSubmit).toHaveBeenCalledWith({ c: 3 }, expect.any(Number))
+})
+
+test('reports how long the questionnaire took', () => {
+  vi.useFakeTimers()
+  const onSubmit = vi.fn()
+  render(<QuestionnaireRenderer title="Intro" questions={questions} onSubmit={onSubmit} />)
+
+  fireEvent.click(screen.getByRole('radio', { name: '3' }))
+  vi.advanceTimersByTime(17_000)
+  fireEvent.click(screen.getByRole('button'))
+
+  expect(onSubmit).toHaveBeenCalledWith({ c: 3 }, 17)
+  vi.useRealTimers()
+})
+
+test('a slider has no answer until it is touched', () => {
+  const onSubmit = vi.fn()
+  const vas: Question[] = [
+    {
+      id: 'td_demand',
+      type: 'slider',
+      text: 'Wie viel Anstrengung?',
+      min: 0,
+      max: 9,
+      labels: { min: 'sehr, sehr wenig', max: 'sehr, sehr viel' },
+    },
+  ]
+  render(<QuestionnaireRenderer title="Nach dem Fall" questions={vas} onSubmit={onSubmit} />)
+
+  // The anchors are the scale; without them the numbers mean nothing.
+  expect(screen.getByText('sehr, sehr wenig')).toBeInTheDocument()
+  expect(screen.getByText('sehr, sehr viel')).toBeInTheDocument()
+
+  // Untouched it reads blank and blocks submit, rather than recording a 0
+  // nobody chose.
+  expect(screen.getByText('—')).toBeInTheDocument()
+  expect(screen.getByRole('button')).toBeDisabled()
+
+  fireEvent.change(screen.getByRole('slider'), { target: { value: '7' } })
+  fireEvent.click(screen.getByRole('button'))
+  expect(onSubmit).toHaveBeenCalledWith({ td_demand: 7 }, expect.any(Number))
+})
+
+test('releasing the slider where it already rests still counts as an answer', () => {
+  const onSubmit = vi.fn()
+  const vas: Question[] = [
+    { id: 'confidence', type: 'slider', text: 'Wie sicher?', min: 1, max: 5 },
+  ]
+  render(<QuestionnaireRenderer title="Diagnose" questions={vas} onSubmit={onSubmit} />)
+
+  // No change event fires in that case, so the pointer release has to commit it.
+  fireEvent.pointerUp(screen.getByRole('slider'))
+  fireEvent.click(screen.getByRole('button'))
+  expect(onSubmit).toHaveBeenCalledWith({ confidence: 3 }, expect.any(Number))
+})
+
+test('a question gated on another one is neither shown nor required', () => {
+  const onSubmit = vi.fn()
+  const gated: Question[] = [
+    {
+      id: 'java_ex',
+      type: 'multiple_choice',
+      text: 'Erfahrung mit Java?',
+      options: [
+        { value: 1, label: 'ja' },
+        { value: 0, label: 'nein' },
+      ],
+    },
+    {
+      id: 'java_years',
+      type: 'number',
+      text: 'Wie viele Jahre?',
+      show_if: { question: 'java_ex', equals: 1 },
+    },
+  ]
+  render(<QuestionnaireRenderer title="Vorwissen" questions={gated} onSubmit={onSubmit} />)
+
+  fireEvent.click(screen.getByRole('radio', { name: 'nein' }))
+  expect(screen.queryByText('Wie viele Jahre?')).not.toBeInTheDocument()
+  expect(screen.getByRole('button')).toBeEnabled()
+
+  fireEvent.click(screen.getByRole('radio', { name: 'ja' }))
+  expect(screen.getByText(/Wie viele Jahre\?/)).toBeInTheDocument()
+  expect(screen.getByRole('button')).toBeDisabled()
+})
+
+test('tabbing onto an untouched slider does not answer it', () => {
+  const onSubmit = vi.fn()
+  const vas: Question[] = [
+    { id: 'td_demand', type: 'slider', text: 'Wie viel Anstrengung?', min: 0, max: 9 },
+  ]
+  render(<QuestionnaireRenderer title="Nach dem Fall" questions={vas} onSubmit={onSubmit} />)
+
+  // The keyup of the Tab that moved focus here lands on this input. Reading the
+  // handle's resting position then would record a 5 nobody chose.
+  fireEvent.keyUp(screen.getByRole('slider'), { key: 'Tab' })
+
+  expect(screen.getByText('—')).toBeInTheDocument()
+  expect(screen.getByRole('button')).toBeDisabled()
+})

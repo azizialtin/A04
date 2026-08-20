@@ -1,0 +1,191 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  PY_VERSION: '3.11'
+  NODE_VERSION: '20'
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: a04
+          POSTGRES_PASSWORD: a04
+          POSTGRES_DB: a04_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U a04"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+      - name: Format
+        run: ruff format --check .
+      - name: Types
+        run: mypy
+
+      - name: Migrations apply and match the models
+        run: alembic upgrade head && alembic check
+        env:
+          DATABASE_URL: postgresql+asyncpg://a04:a04@localhost:5432/a04_test
+
+      - name: Tests
+        # The floor is deliberately below where it sits: it exists to catch a
+        # slide, not to be gamed upwards.
+        run: pytest --cov --cov-report=term-missing --cov-fail-under=78
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://a04:a04@localhost:5432/a04_test
+
+  bridge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tobii-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VERSION }}
+          cache: pip
+          cache-dependency-path: tobii-service/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      # The tracker SDK is Python 3.10 and lab-only, so this covers the parts
+      # that are not: the screen capture's clock anchor and its ffmpeg command.
+      - run: pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: a04
+          POSTGRES_PASSWORD: a04
+          POSTGRES_DB: a04_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U a04"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+asyncpg://a04:a04@localhost:5432/a04_e2e
+      E2E_ADMIN_EMAIL: e2e@a04.test
+      E2E_ADMIN_PASSWORD: e2e-password-1234
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Backend
+        working-directory: backend
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+          .venv/bin/alembic upgrade head
+          .venv/bin/python -m app.cli create-admin \
+            --email "$E2E_ADMIN_EMAIL" --name "E2E" --password "$E2E_ADMIN_PASSWORD"
+
+      - name: Frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: A participant's whole run, in a browser
+        working-directory: frontend
+        run: npm run e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Python dependencies
+        working-directory: backend
+        run: |
+          pip install pip-audit
+          pip-audit --requirement requirements.txt --strict
+
+      - name: Node dependencies that actually ship
+        working-directory: frontend
+        # Only production deps: the known advisories are in the dev toolchain
+        # (vite / vitest / esbuild) and none of it reaches the bundle. Failing
+        # on those would train everyone to ignore this job.
+        run: npm audit --omit=dev --audit-level=moderate
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backend image
+        run: docker build -t a04-backend ./backend
+      - name: Frontend image
+        run: docker build --build-arg VITE_API_BASE_URL=https://api.example.org -t a04-frontend ./frontend
+      - name: The rendered nginx config is valid
+        run: |
+          docker run --rm --entrypoint /bin/sh a04-frontend -c \
+            '/docker-entrypoint.sh nginx -t'

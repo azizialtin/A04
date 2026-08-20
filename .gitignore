@@ -1,0 +1,37 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# node
+node_modules/
+dist/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# uploads & local data
+backend/uploads/
+backend/data/
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/
+
+# playwright
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/blob-report/
+/frontend/.env.e2e
+
+# backups
+/backups/
