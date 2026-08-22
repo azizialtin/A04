@@ -37,3 +37,4 @@ backend/data/
 /backups/
 
 /tobii-service/.venv310
+/tobii-service/build/

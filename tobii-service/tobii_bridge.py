@@ -35,9 +35,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import json
 import math
+import os
 import shutil
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,8 +59,39 @@ from screen_recorder import (
 MOCK_HZ = 120
 
 # Where the study is served from. Anything else is refused, so a page the
-# participant happens to have open cannot read their gaze.
-DEFAULT_ORIGINS = ("http://localhost:5175", "http://127.0.0.1:5175")
+# participant happens to have open cannot read their gaze. The deployed
+# frontend is in here so the packaged bridge needs no arguments on a lab
+# machine: a run there is one double-click, and a wrong origin looks exactly
+# like a missing tracker.
+DEFAULT_ORIGINS = (
+    "https://a04-frontend-356217033010.europe-west3.run.app",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
+)
+
+
+def app_dir() -> Path:
+    """The folder the bridge was started from — the one a lab assistant sees.
+
+    Packaged, that is where the .exe sits; from a checkout, the source folder.
+    Not `__file__`: PyInstaller unpacks the code somewhere temporary, and a
+    recording left behind there is a recording lost.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
+
+
+def use_bundled_tools() -> None:
+    """Let ffmpeg ship next to the bridge instead of being installed.
+
+    The recorder looks ffmpeg up on PATH, and asking a lab technician to edit
+    PATH is the step that does not happen. If the binaries sit beside the
+    bridge, that folder becomes part of PATH for this process alone.
+    """
+    here = app_dir()
+    if (here / "ffmpeg.exe").exists() or (here / "ffmpeg").exists():
+        os.environ["PATH"] = f"{here}{os.pathsep}{os.environ.get('PATH', '')}"
 
 
 def _now_ms() -> int:
@@ -514,6 +548,7 @@ def wants_test_pattern(screen_source: str, mock: bool) -> bool:
 
 
 def main() -> None:
+    use_bundled_tools()
     ap = argparse.ArgumentParser(description="A04 Tobii → WebSocket bridge")
     ap.add_argument("--port", type=int, default=8765)
     # The browser is on this machine, so there is no reason to offer a
@@ -560,12 +595,33 @@ def main() -> None:
             "device": args.screen_device,
             "test_pattern": wants_test_pattern(args.screen_source, args.mock),
         },
-        Path(args.screen_keep_dir) if args.screen_keep_dir else Path(__file__).parent / "unsent-recordings",
+        Path(args.screen_keep_dir) if args.screen_keep_dir else app_dir() / "unsent-recordings",
     )
     try:
         asyncio.run(_serve(args.port, args.host, args.mock, origins, screen))
     except KeyboardInterrupt:
         pass
+    except OSError as exc:
+        # Almost always a second bridge already running: the traceback for that
+        # is long and says nothing a lab assistant can act on.
+        if exc.errno in (errno.EADDRINUSE, errno.EACCES):
+            _fatal(
+                f"port {args.port} is already in use — the bridge is probably "
+                "already running. Close the other window and start it again."
+            )
+        _fatal(str(exc))
+
+
+def _fatal(message: str) -> None:
+    """Report and stop — visibly, when there is nobody watching a terminal.
+
+    Double-clicked, the console window dies with the process, so an error that
+    only prints is an error nobody ever sees.
+    """
+    print(f"[bridge] {message}")
+    if getattr(sys, "frozen", False):
+        input("Press Enter to close this window.")
+    raise SystemExit(1)
 
 
 if __name__ == "__main__":

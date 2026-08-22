@@ -27,6 +27,30 @@ python tobii_bridge.py            # defaults to ws://0.0.0.0:8765
 
 Point the frontend at a non-default address with `VITE_TOBII_WS_URL`.
 
+## Packaging for the lab machines
+
+A lab PC gets a folder, not a checkout: no Python to install, no vendor SDK to
+find, no ffmpeg to put on PATH, no flags to type. Build it from the 3.10
+environment that already runs the bridge here, so what the lab gets is what was
+tested:
+
+```powershell
+.\.venv310\Scripts\python.exe build_package.py
+```
+
+That freezes the bridge, the Tobii SDK and ffmpeg into
+`dist\A04Bridge-win64.zip` (~70 MB). Send that. The lab unzips it anywhere and
+double-clicks `A04Bridge.exe` — the deployed frontend is in the default origin
+allowlist, so there is nothing to pass. `--allow-origin` still overrides it for
+a different deployment.
+
+Two things to tell whoever runs it: Windows may show "Windows protected your
+PC" for an unsigned executable (More info → Run anyway), and the window has to
+stay open for the session — closing it stops gaze and screen recording.
+
+The package is a snapshot: rebuild and resend it when the bridge changes,
+because nothing on the lab PC updates itself.
+
 ## Screen recording
 
 The think-aloud replays a recording of the whole display, not the clip on its
