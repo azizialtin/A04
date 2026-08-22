@@ -78,6 +78,9 @@
   },
   "case": {
     "video_label": "Fallvideo",
+    "play": "Abspielen",
+    "pause": "Pause",
+    "seek": "Videoposition",
     "timer_label": "Zeit",
     "task_label": "Aufgabe",
     "student_task_button": "Schüler-Aufgabe",
@@ -99,10 +102,11 @@
   "think_aloud": {
     "title": "Lautes Denken",
     "hint": "Sehen Sie sich die Aufzeichnung an und erläutern Sie der Studienleitung, worauf Sie geachtet haben und warum Sie Ihre Notizen zu diesem Zeitpunkt gemacht haben.",
-    "notes_label": "Ihre Notizen",
     "stats": "{{points}} Blickpunkte",
     "show_gaze": "Blickpunkt anzeigen",
     "clip_only": "nur das Video (keine Bildschirmaufzeichnung)",
+    "fullscreen": "Vollbild",
+    "exit_fullscreen": "Vollbild verlassen",
     "next": "Weiter"
   },
   "questionnaire": {
@@ -116,7 +120,13 @@
   "session": {
     "loading": "Sitzung wird geladen…",
     "error": "Etwas ist schiefgelaufen. Bitte laden Sie die Seite neu.",
-    "progress": "Schritt {{current}} von {{total}}",
+    "case_position": "{{phase}} · Fall {{current}} von {{total}}",
+    "questions": "Fragebogen",
+    "phase": {
+      "pre_test": "Vortest",
+      "training": "Training",
+      "post_test": "Nachtest"
+    },
     "unsent": "{{count}} Eingabe noch nicht gespeichert – Verbindung wird erneut versucht.",
     "unsent_plural": "{{count}} Eingaben noch nicht gespeichert – Verbindung wird erneut versucht."
   }

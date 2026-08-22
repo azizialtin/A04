@@ -8,6 +8,7 @@ person, and the failure mode that matters is the run not reaching the end.
 import pytest_asyncio
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.models.enums import ParticipantStatus, PhaseType, QuestionnairePlacement
 from app.models.gaze_calibration import GazeCalibration
 from app.models.note import Note
@@ -80,7 +81,9 @@ async def nine_case_study(db, seed_study):
     return {"participant": participant, "videos": videos}
 
 
-async def test_a_participant_can_complete_the_whole_study(client, db, nine_case_study):
+async def test_a_participant_can_complete_the_whole_study(client, db, nine_case_study, monkeypatch):
+    # The canonical full run is pinned with the in-app calibration step present.
+    monkeypatch.setattr(get_settings(), "CALIBRATION_ENABLED", True)
     participant = nine_case_study["participant"]
 
     # --- log in ------------------------------------------------------------

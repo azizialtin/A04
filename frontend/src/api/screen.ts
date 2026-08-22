@@ -22,4 +22,9 @@ export const screenApi = {
     apiClient.patch(`/screen/recordings/${recordingId}/failed`, { error }),
   uploadUrl: (recordingId: number) => absolute(`/screen/recordings/${recordingId}/upload`),
   failedUrl: (recordingId: number) => absolute(`/screen/recordings/${recordingId}/failed`),
+  // Where the bridge asks for somewhere in the bucket to put the capture, and
+  // where it says what landed. A hosted backend will not carry a body the size
+  // of a screen recording, so on those deployments the bytes never come here.
+  sessionUrl: (recordingId: number) => absolute(`/screen/recordings/${recordingId}/upload-url`),
+  completeUrl: (recordingId: number) => absolute(`/screen/recordings/${recordingId}/complete`),
 }

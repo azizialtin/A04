@@ -21,7 +21,8 @@ Calibration runs over the same socket, one target at a time:
 The screen capture behind the think-aloud replay runs from here too, so that it
 shares the clock the gaze samples are stamped with:
 
-    -> {"type": "start_screen_recording", "upload_url": .., "token": ..}
+    -> {"type": "start_screen_recording", "upload_url": .., "session_url": ..,
+        "complete_url": .., "failed_url": .., "token": ..}
     <- {"type": "screen_recording_started", "ok": bool, "error": str|null}
     -> {"type": "stop_screen_recording"}
     <- {"type": "screen_recording_stopped", "ok": bool, "error": str|null}
@@ -38,6 +39,7 @@ import json
 import math
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import websockets
@@ -264,6 +266,24 @@ def build_source(mock: bool):
         return _Absent()
 
 
+@dataclass
+class Destination:
+    """Where a finished capture goes, and what proves it may go there.
+
+    `session_url` and `complete_url` are the direct-to-bucket path: the backend
+    hands back somewhere in its bucket to PUT the bytes, then confirms what
+    landed. `upload_url` is the older route through the backend itself, used
+    when there is no bucket — and when the page that started this is an older
+    build that never sent the other two.
+    """
+
+    upload_url: str = ""
+    failed_url: str = ""
+    session_url: str = ""
+    complete_url: str = ""
+    token: str = ""
+
+
 class ScreenSession:
     """The one screen capture this machine can have running, and where its file
     goes when it stops.
@@ -279,9 +299,7 @@ class ScreenSession:
         self.enabled = not options.pop("disabled", False)
         self.recorder: ScreenRecorder | None = None
         self.owner = None
-        self.upload_url = ""
-        self.failed_url = ""
-        self.token = ""
+        self.destination = Destination()
         self.uploads: set[asyncio.Task] = set()
 
     @property
@@ -293,10 +311,14 @@ class ScreenSession:
             return False, "screen recording is not available on this machine"
         if self.recorder is not None:
             return False, "a screen recording is already running"
-        upload_url = str(msg.get("upload_url") or "")
-        failed_url = str(msg.get("failed_url") or "")
-        token = str(msg.get("token") or "")
-        if not upload_url or not token:
+        destination = Destination(
+            upload_url=str(msg.get("upload_url") or ""),
+            failed_url=str(msg.get("failed_url") or ""),
+            session_url=str(msg.get("session_url") or ""),
+            complete_url=str(msg.get("complete_url") or ""),
+            token=str(msg.get("token") or ""),
+        )
+        if not destination.upload_url or not destination.token:
             return False, "upload_url and token are required"
 
         recorder = ScreenRecorder(**self.options)
@@ -310,37 +332,43 @@ class ScreenSession:
             return False, str(exc)
 
         self.recorder, self.owner = recorder, ws
-        self.upload_url, self.failed_url, self.token = upload_url, failed_url, token
+        self.destination = destination
         return True, None
 
     async def stop(self, ws) -> tuple[bool, str | None]:
         if self.recorder is None or (ws is not None and self.owner is not ws):
             return False, "no screen recording is running"
         recorder, self.recorder, self.owner = self.recorder, None, None
-        upload_url, failed_url, token = self.upload_url, self.failed_url, self.token
+        destination = self.destination
 
         try:
             recording = await recorder.stop()
         except Exception as exc:
             print(f"[bridge] screen recording failed: {exc}")
             recorder.discard()
-            await self._report(failed_url, token, str(exc))
+            await self._report(destination, str(exc))
             return False, str(exc)
 
         # The browser is already on the next screen; nothing is waiting for the
         # upload, so let it run on its own and keep the socket responsive.
-        task = asyncio.create_task(self._deliver(recorder, recording, upload_url, failed_url, token))
+        task = asyncio.create_task(self._deliver(recorder, recording, destination))
         self.uploads.add(task)
         task.add_done_callback(self.uploads.discard)
         return True, None
 
-    async def _report(self, failed_url: str, token: str, error: str) -> None:
-        if failed_url and token:
-            await report_failure(failed_url, token, error)
+    async def _report(self, destination: Destination, error: str) -> None:
+        if destination.failed_url and destination.token:
+            await report_failure(destination.failed_url, destination.token, error)
 
-    async def _deliver(self, recorder, recording, upload_url, failed_url, token) -> None:
+    async def _deliver(self, recorder, recording, destination: Destination) -> None:
         try:
-            await upload_recording(recording, upload_url, token)
+            await upload_recording(
+                recording,
+                destination.upload_url,
+                destination.token,
+                destination.session_url,
+                destination.complete_url,
+            )
             print(f"[bridge] uploaded {recording.duration_ms / 1000:.0f}s of screen recording")
             recorder.discard()
             return
@@ -358,7 +386,7 @@ class ScreenSession:
         except Exception:
             print(f"[bridge] upload failed ({error}) and the file could not be kept either")
             recorder.discard()
-        await self._report(failed_url, token, error)
+        await self._report(destination, error)
 
     async def release(self, ws) -> None:
         """Stop a capture whose owning connection has gone away."""

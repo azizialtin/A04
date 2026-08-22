@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { adminApi, type SequenceItemInput, type Study } from '../api/admin'
+import { adminApi, type SequenceItemInput, type Study, type VideoUploadInput } from '../api/admin'
 
 export function useStudies() {
   return useQuery({ queryKey: ['studies'], queryFn: adminApi.listStudies })
@@ -48,9 +48,9 @@ export function useUploadVideo(studyId: number) {
   const [progress, setProgress] = useState<number | null>(null)
 
   const mutation = useMutation({
-    mutationFn: (form: FormData) => {
+    mutationFn: (input: VideoUploadInput) => {
       setProgress(0)
-      return adminApi.uploadVideo(studyId, form, setProgress)
+      return adminApi.uploadVideo(studyId, input, setProgress)
     },
     onSettled: () => setProgress(null),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['videos', studyId] }),
@@ -126,6 +126,25 @@ export function useGazeReplay(recordingId: number | null) {
     queryKey: ['gaze-replay', recordingId],
     queryFn: () => adminApi.getGazeReplay(recordingId as number),
     enabled: recordingId != null,
+  })
+}
+
+export function useOverviewStats(days = 30) {
+  return useQuery({ queryKey: ['stats', 'overview', days], queryFn: () => adminApi.overviewStats(days) })
+}
+
+export function useStudyStats(studyId: number, days = 30) {
+  return useQuery({
+    queryKey: ['stats', 'study', studyId, days],
+    queryFn: () => adminApi.studyStats(studyId, days),
+  })
+}
+
+export function useParticipantStats(id: string | null) {
+  return useQuery({
+    queryKey: ['stats', 'participant', id],
+    queryFn: () => adminApi.participantStats(id as string),
+    enabled: id != null,
   })
 }
 

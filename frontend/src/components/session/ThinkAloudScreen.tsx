@@ -57,10 +57,12 @@ export default function ThinkAloudScreen({ videoId, onComplete }: Props) {
 
 function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapshot[] }) {
   const { t } = useTranslation()
+  const stageRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const dotRef = useRef<HTMLDivElement>(null)
-  const notesRef = useRef<HTMLDivElement>(null)
+  const captionRef = useRef<HTMLDivElement>(null)
   const [showGaze, setShowGaze] = useState(true)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   // Read inside the animation loop, which must not be torn down and rebuilt
   // every time the checkbox moves.
   const showGazeRef = useRef(showGaze)
@@ -80,32 +82,68 @@ function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapsh
     [notes, replay.source, replay.epoch_ms],
   )
 
+  // The gaze dot has to be a child of the element that goes fullscreen, or it
+  // vanishes the instant the video does. So fullscreen the stage — video and
+  // dot together — not the <video>, and hide its native fullscreen button.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  const toggleFullscreen = () => {
+    const stage = stageRef.current
+    if (!stage) return
+    if (document.fullscreenElement === stage) {
+      document.exitFullscreen().catch(() => {})
+    } else {
+      stage.requestFullscreen().catch(() => {})
+    }
+  }
+
+  // Match the stage to the clip's real dimensions so it wraps the picture with
+  // no stray letterbox at any window size; fullscreen overrides it to fill.
+  const fitStage = () => {
+    const video = videoRef.current
+    const stage = stageRef.current
+    if (video && stage && video.videoWidth && video.videoHeight) {
+      stage.style.setProperty('--replay-aspect', `${video.videoWidth} / ${video.videoHeight}`)
+    }
+  }
+
   useEffect(() => {
     let raf = 0
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const video = videoRef.current
       const dot = dotRef.current
-      if (!video || !dot) return
+      const stage = stageRef.current
+      if (!video || !dot || !stage) return
 
       const g = showGazeRef.current ? gazeAt(replay.points, video.currentTime * 1000) : null
       if (!g) {
         dot.style.opacity = '0'
       } else {
-        // Points are normalised to the picture — the whole display on a screen
-        // recording, the clip's frame on a clip replay. Either way they belong
-        // inside the picture, not the element, which letterboxes it.
+        // Measure the video's actually-rendered box and place the point inside
+        // it, relative to the stage the dot lives in. Real rects make it exact
+        // at any size, DPI or fullscreen — nothing assumes the video and the
+        // stage share an origin. Points are 0..1 of the picture (the whole
+        // display on a screen recording, the clip's frame on a clip one), which
+        // object-fit letterboxes inside the element.
+        const vb = video.getBoundingClientRect()
+        const sb = stage.getBoundingClientRect()
         const { left, top } = frameToElement(
           g,
-          { width: video.clientWidth, height: video.clientHeight },
+          { width: vb.width, height: vb.height },
           { width: video.videoWidth, height: video.videoHeight },
         )
         dot.style.opacity = '1'
-        dot.style.left = `${left}px`
-        dot.style.top = `${top}px`
+        dot.style.left = `${vb.left - sb.left + left}px`
+        dot.style.top = `${vb.top - sb.top + top}px`
       }
-      if (notesRef.current) {
-        notesRef.current.textContent = textAt(timeline, video.currentTime * 1000)
+
+      if (captionRef.current) {
+        captionRef.current.textContent = textAt(timeline, video.currentTime * 1000)
       }
     }
     raf = requestAnimationFrame(tick)
@@ -114,22 +152,34 @@ function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapsh
 
   return (
     <div className="replay">
-      <div className="replay__stage">
-        <video ref={videoRef} src={url} controls className="replay__video" />
+      <div ref={stageRef} className="replay__stage">
+        <video
+          ref={videoRef}
+          src={url}
+          controls
+          controlsList="nofullscreen noremoteplayback"
+          disablePictureInPicture
+          onLoadedMetadata={fitStage}
+          className="replay__video"
+        />
         <div ref={dotRef} className="gaze-dot" aria-hidden="true" />
+        {/* The participant's own notes, over the picture: a cue to narrate
+            from that costs the video none of its width. */}
+        <div ref={captionRef} className="replay__caption" aria-hidden="true" />
+        <button
+          type="button"
+          className="replay__fs"
+          onClick={toggleFullscreen}
+          title={t(isFullscreen ? 'think_aloud.exit_fullscreen' : 'think_aloud.fullscreen')}
+          aria-label={t(isFullscreen ? 'think_aloud.exit_fullscreen' : 'think_aloud.fullscreen')}
+        >
+          {isFullscreen ? '×' : '⛶'}
+        </button>
       </div>
-      <aside className="replay__notes">
-        <span className="rail-label">{t('think_aloud.notes_label')}</span>
-        <div ref={notesRef} className="replay__notes-text" />
-        <label className="replay__toggle">
-          <input
-            type="checkbox"
-            checked={showGaze}
-            onChange={(e) => setShowGaze(e.target.checked)}
-          />
-          {t('think_aloud.show_gaze')}
-        </label>
-      </aside>
+      <label className="replay__toggle">
+        <input type="checkbox" checked={showGaze} onChange={(e) => setShowGaze(e.target.checked)} />
+        {t('think_aloud.show_gaze')}
+      </label>
     </div>
   )
 }

@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends
 
 from app.core.dependencies import get_current_admin
 
-from . import audit, exports, gaze, participants, questionnaires, studies, videos
+from . import audit, exports, gaze, participants, questionnaires, stats, studies, videos
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(get_current_admin)])
 
-for module in (studies, videos, participants, questionnaires, exports, gaze, audit):
+for module in (studies, videos, participants, questionnaires, exports, gaze, stats, audit):
     router.include_router(module.router)

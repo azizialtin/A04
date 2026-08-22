@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     GAZE_BATCH_UPLOAD_MAX_SAMPLES: int = 1000
     TOBII_EXPECTED_SAMPLE_RATE_HZ: int = 120
 
+    # Whether the participant flow includes the in-app eye-tracker calibration
+    # step. Turn off when the tracker is calibrated outside the app (e.g. in
+    # Tobii Pro Eye Tracker Manager) before the participant sits down.
+    CALIBRATION_ENABLED: bool = True
+
     # Screen capture. The bridge records the lab machine's display while a case
     # clip is on screen; the think-aloud plays that back with gaze on top.
     SCREEN_RECORDING_ENABLED: bool = True

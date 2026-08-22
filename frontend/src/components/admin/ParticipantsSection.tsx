@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { adminApi, type AdminVideo } from '../../api/admin'
 import { useCreateParticipants, useParticipants, useSetSequence, useVideos } from '../../hooks/admin'
 import { generateIds } from '../../lib/adminIds'
+import ParticipantStatsPanel from './ParticipantStatsPanel'
 import { useToast } from '../Toast'
 
 export default function ParticipantsSection({ studyId }: { studyId: number }) {
@@ -16,6 +17,7 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
   const [count, setCount] = useState('10')
   const [sequential, setSequential] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
+  const [inspected, setInspected] = useState<string | null>(null)
 
   const submitCreate = () => {
     const ids = idsText
@@ -82,9 +84,14 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
               <td>{p.status}</td>
               <td>{p.slot_count === 0 ? <span className="muted">Standard</span> : p.slot_count}</td>
               <td>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelected(p.id)}>
-                  Sequenz
-                </button>
+                <div className="inline-form">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelected(p.id)}>
+                    Sequenz
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setInspected(p.id)}>
+                    Statistik
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -97,6 +104,10 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
           )}
         </tbody>
       </table>
+
+      {inspected && (
+        <ParticipantStatsPanel participantId={inspected} onClose={() => setInspected(null)} />
+      )}
 
       {selected && (
         <SequenceEditor

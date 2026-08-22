@@ -100,6 +100,348 @@ export interface AuditRow {
   meta: Record<string, unknown>
 }
 
+/** One day on an activity timeline. */
+export interface ActivityDay {
+  date: string
+  events: number
+  participants: number
+}
+
+export interface EventTypeCount {
+  event_type: string
+  /** The study's data-dictionary name for it; empty for events that are ours. */
+  variable_name: string
+  count: number
+  participants?: number
+}
+
+export interface StudyStatRow {
+  id: number
+  name: string
+  is_active: boolean
+  created_at: string | null
+  participants: number
+  registered: number
+  active: number
+  completed: number
+  started: number
+  finished: number
+  completion_rate: number | null
+  avg_session_minutes: number | null
+  videos: number
+  videos_with_file: number
+  video_seconds: number
+  questionnaires: number
+  notes: number
+  note_writers: number
+  diagnoses: number
+  responses: number
+  events: number
+  last_activity_at: string | null
+  gaze_recordings: number
+  gaze_samples: number
+  screen_recordings: number
+  screens_stored: number
+  screens_failed: number
+  screen_bytes: number
+  calibrations: number
+  calibrations_ok: number
+  mean_offset: number | null
+}
+
+export interface OverviewStats {
+  generated_at: string
+  totals: {
+    studies: number
+    active_studies: number
+    researchers: number
+    participants: number
+    registered: number
+    active: number
+    completed: number
+    started: number
+    finished: number
+    completion_rate: number | null
+    videos: number
+    videos_with_file: number
+    questionnaires: number
+    notes: number
+    diagnoses: number
+    responses: number
+    events: number
+    gaze_recordings: number
+    gaze_samples: number
+    screen_recordings: number
+    screens_stored: number
+    screens_failed: number
+    screen_bytes: number
+    calibrations: number
+    calibrations_ok: number
+  }
+  studies: StudyStatRow[]
+  activity: ActivityDay[]
+  events_by_type: EventTypeCount[]
+}
+
+export interface CaseStats {
+  video_id: number
+  title: string
+  phase_type: string
+  duration_seconds: number | null
+  time_limit_seconds: number | null
+  has_file: boolean
+  assigned: number
+  viewers: number
+  avg_watch_seconds: number | null
+  median_watch_seconds: number | null
+  avg_on_screen_seconds: number | null
+  avg_coverage: number | null
+  plays: number
+  pauses: number
+  seeks: number
+  replays: number
+  completions: number
+  info_opens: number
+  task_opens: number
+  notes: number
+  note_writers: number
+  avg_note_chars: number | null
+  diagnoses: number
+  avg_diagnosis_chars: number | null
+  avg_diagnosis_seconds: number | null
+  gaze_recordings: number
+  gaze_participants: number
+  gaze_samples: number
+  screen_recordings: number
+  screens_stored: number
+  screens_failed: number
+  screen_bytes: number
+}
+
+export interface RosterRow {
+  id: string
+  status: string
+  created_at: string | null
+  cases: number
+  assigned_sequence: boolean
+  step: number
+  total_steps: number
+  progress: number | null
+  started_at: string | null
+  completed_at: string | null
+  session_minutes: number | null
+  first_event_at: string | null
+  last_event_at: string | null
+  events: number
+  notes: number
+  note_chars: number
+  diagnoses: number
+  responses: number
+  watch_seconds: number
+  gaze_recordings: number
+  gaze_samples: number
+  screens_stored: number
+  screens_failed: number
+  screen_bytes: number
+  calibrations: number
+  best_offset: number | null
+}
+
+export interface BatteryStats {
+  id: number
+  title: string
+  placement: string
+  questions: number
+  responses: number
+  participants: number
+  expected: number
+  completion: number | null
+  avg_seconds: number | null
+  last_response_at: string | null
+}
+
+export interface CalibrationBucket {
+  attempts: number
+  participants: number
+  avg_offset: number | null
+  best_offset: number | null
+  worst_offset: number | null
+  avg_offset_degrees: number | null
+}
+
+export interface StudyStats {
+  generated_at: string
+  study: {
+    id: number
+    name: string
+    description: string
+    is_active: boolean
+    created_at: string | null
+  }
+  participants: {
+    total: number
+    registered: number
+    active: number
+    completed: number
+    started: number
+    completed_sessions: number
+    completion_rate: number | null
+    avg_progress: number | null
+    avg_session_minutes: number | null
+    median_session_minutes: number | null
+    with_gaze: number
+    with_screen: number
+    with_calibration: number
+    never_started: number
+  }
+  data: {
+    notes: number
+    note_chars: number
+    diagnoses: number
+    responses: number
+    events: number
+    gaze_recordings: number
+    gaze_samples: number
+    screens_stored: number
+    screens_failed: number
+    screen_bytes: number
+    watch_seconds: number
+  }
+  cases: CaseStats[]
+  questionnaires: BatteryStats[]
+  calibration: {
+    attempts: number
+    participants: number
+    by_status: Record<string, CalibrationBucket>
+  }
+  roster: RosterRow[]
+  activity: ActivityDay[]
+  events_by_type: EventTypeCount[]
+}
+
+export interface ParticipantCaseStats {
+  slot_index: number
+  video_id: number
+  title: string
+  phase_type: string
+  duration_seconds: number | null
+  time_limit_seconds: number | null
+  entered: boolean
+  /** Seconds the clip was actually playing. */
+  watch_seconds: number
+  /** Seconds the case screen was up — reading, typing and dialogs included. */
+  on_screen_seconds: number
+  max_playhead_seconds: number
+  play_spans: number
+  coverage: number | null
+  plays: number
+  pauses: number
+  seeks: number
+  replays: number
+  completed: boolean
+  info_opens: number
+  task_opens: number
+  notes_focused: number
+  typing_bursts: number
+  notes: {
+    snapshots: number
+    chars: number
+    last_at: string | null
+    last_video_time: number | null
+  }
+  diagnosis: {
+    chars: number
+    words: number
+    seconds: number | null
+    submitted_at: string | null
+  } | null
+  outro_answered: boolean
+  ratings_answered: boolean
+  gaze: {
+    recordings: number
+    samples: number
+    sampling_rate_hz: number | null
+    expected_samples: number | null
+    /** Samples captured as a percentage of what the tracker should have produced. */
+    yield: number | null
+    started_at: string | null
+    completed_at: string | null
+  }
+  screen: {
+    id: number
+    status: string
+    error: string | null
+    duration_ms: number | null
+    byte_size: number | null
+    width: number | null
+    height: number | null
+    fps: number | null
+  } | null
+}
+
+export interface ParticipantStats {
+  generated_at: string
+  id: string
+  study_id: number
+  study_name: string
+  status: string
+  created_at: string | null
+  session: {
+    started_at: string | null
+    completed_at: string | null
+    minutes: number | null
+    step: number
+    total_steps: number
+    progress: number | null
+    current_step: string | null
+    assigned_sequence: boolean
+  }
+  activity: {
+    events: number
+    first_at: string | null
+    last_at: string | null
+    minutes: number | null
+  }
+  totals: {
+    cases: number
+    cases_entered: number
+    cases_completed: number
+    watch_seconds: number
+    on_screen_seconds: number
+    notes: number
+    note_chars: number
+    diagnoses: number
+    diagnosis_words: number
+    responses: number
+    gaze_samples: number
+    screens_stored: number
+    screens_failed: number
+    screen_bytes: number
+  }
+  cases: ParticipantCaseStats[]
+  questionnaires: {
+    id: number
+    response_id: number
+    title: string
+    placement: string
+    video_id: number | null
+    video_title: string | null
+    questions: number
+    answered: number
+    seconds: number | null
+    created_at: string | null
+  }[]
+  calibrations: {
+    id: number
+    status: string
+    mean_offset: number | null
+    mean_offset_degrees: number | null
+    points: number
+    created_at: string | null
+  }[]
+  events_by_type: (EventTypeCount & { first_at: string | null; last_at: string | null })[]
+}
+
 export interface SequenceItemInput {
   video_id: number
   slot_index: number
@@ -116,6 +458,49 @@ export const EXPORT_KINDS = [
 ] as const
 export type ExportKind = (typeof EXPORT_KINDS)[number]
 
+export interface VideoUploadInput {
+  title: string
+  phase_type: string
+  task_description: string
+  info_text: string
+  student_task_text: string
+  time_limit_seconds?: number | null
+  file: File
+}
+
+/** Where a clip should go: a session in the bucket, or back through the app. */
+export interface VideoUploadTarget {
+  mode: 'resumable' | 'proxy'
+  object_name: string
+  upload_url: string | null
+}
+
+/**
+ * Send the file to the bucket itself.
+ *
+ * XHR rather than fetch because it is the only way to see upload progress, and
+ * raw rather than through `apiClient` because the session url is already the
+ * whole authorisation — putting our own Authorization header on it would leak
+ * the admin's token to a third party.
+ */
+function putToBucket(url: string, file: File, onProgress?: (percent: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url, true)
+    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`The upload was refused (${xhr.status}).`))
+    }
+    xhr.onerror = () => reject(new Error('The upload could not reach the storage bucket.'))
+    xhr.onabort = () => reject(new Error('The upload was cancelled.'))
+    xhr.send(file)
+  })
+}
+
 export const adminApi = {
   listStudies: () => apiClient.get<Study[]>('/admin/studies').then((r) => r.data),
   createStudy: (body: Partial<Study>) => apiClient.post<Study>('/admin/studies', body).then((r) => r.data),
@@ -127,8 +512,44 @@ export const adminApi = {
 
   listVideos: (studyId: number) =>
     apiClient.get<AdminVideo[]>(`/admin/studies/${studyId}/videos`).then((r) => r.data),
-  uploadVideo: (studyId: number, form: FormData, onProgress?: (percent: number) => void) =>
-    apiClient
+  uploadVideo: async (
+    studyId: number,
+    input: VideoUploadInput,
+    onProgress?: (percent: number) => void,
+  ): Promise<AdminVideo> => {
+    const { file, ...meta } = input
+    const opened = await apiClient
+      .post<VideoUploadTarget>(`/admin/studies/${studyId}/videos/upload-url`, {
+        filename: file.name,
+        size_bytes: file.size,
+        content_type: file.type || 'video/mp4',
+      })
+      .then((r) => r.data)
+
+    if (opened.mode === 'resumable' && opened.upload_url) {
+      // Straight to the bucket: a hosted backend will not carry a clip this
+      // size, and the bytes have no reason to pass through it anyway.
+      await putToBucket(opened.upload_url, file, onProgress)
+      return apiClient
+        .post<AdminVideo>(`/admin/studies/${studyId}/videos/finalize`, {
+          ...meta,
+          object_name: opened.object_name,
+        })
+        .then((r) => r.data)
+    }
+
+    // No bucket configured, so the app stores the file itself.
+    const form = new FormData()
+    form.append('title', meta.title)
+    form.append('phase_type', meta.phase_type)
+    form.append('task_description', meta.task_description)
+    form.append('info_text', meta.info_text)
+    form.append('student_task_text', meta.student_task_text)
+    if (meta.time_limit_seconds != null) {
+      form.append('time_limit_seconds', String(meta.time_limit_seconds))
+    }
+    form.append('file', file)
+    return apiClient
       .post<AdminVideo>(`/admin/studies/${studyId}/videos`, form, {
         // Case clips run to hundreds of megabytes; a button that just sits
         // there looks broken.
@@ -136,7 +557,8 @@ export const adminApi = {
         onUploadProgress: (e) =>
           onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
       })
-      .then((r) => r.data),
+      .then((r) => r.data)
+  },
   deleteVideo: (id: number) => apiClient.delete(`/admin/videos/${id}`).then((r) => r.data),
 
   listParticipants: (studyId: number) =>
@@ -178,6 +600,13 @@ export const adminApi = {
   getGazeReplay: (recordingId: number) =>
     apiClient.get<AdminReplay>(`/admin/gaze/recordings/${recordingId}/replay`).then((r) => r.data),
   listAudit: () => apiClient.get<{ items: AuditRow[] }>('/admin/audit').then((r) => r.data.items),
+
+  overviewStats: (days = 30) =>
+    apiClient.get<OverviewStats>('/admin/stats/overview', { params: { days } }).then((r) => r.data),
+  studyStats: (studyId: number, days = 30) =>
+    apiClient.get<StudyStats>(`/admin/studies/${studyId}/stats`, { params: { days } }).then((r) => r.data),
+  participantStats: (id: string) =>
+    apiClient.get<ParticipantStats>(`/admin/participants/${id}/stats`).then((r) => r.data),
 
   downloadExport: async (studyId: number, kind: ExportKind) => {
     const res = await apiClient.get(`/admin/studies/${studyId}/export/${kind}`, { responseType: 'blob' })

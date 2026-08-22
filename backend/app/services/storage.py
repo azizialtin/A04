@@ -34,6 +34,8 @@ ALLOWED_VIDEO_TYPES = {"video/mp4", "video/x-m4v", "video/quicktime", "video/web
 
 MAX_VIDEO_BYTES = 500 * 1024 * 1024
 _READ_CHUNK = 1024 * 1024
+# Enough to see a container's magic; GCS will serve just this range.
+_HEADER_BYTES = 64
 
 
 class UploadRejected(Exception):
@@ -110,6 +112,56 @@ def upload_screen_recording(local: Path, participant_id: str, recording_id: int,
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(local), dest)
     return str(dest)
+
+
+def create_resumable_session(
+    blob_name: str,
+    content_type: str,
+    size: int,
+    settings,
+    origin: str | None = None,
+) -> str:
+    """A one-shot URL the client can PUT `size` bytes to, straight into the bucket.
+
+    Cloud Run will not carry a request body past 32 MiB and a case clip or a
+    screen capture is several times that, so the bytes have to bypass the app
+    entirely. The session is created with the runtime credentials — no signing
+    key involved — names one object, and is pinned to one length, so GCS itself
+    refuses a client that tries to send more than it declared.
+    """
+    blob = _bucket(settings).blob(blob_name)
+    return blob.create_resumable_upload_session(content_type=content_type, size=size, origin=origin)
+
+
+def verify_uploaded_blob(blob_name: str, max_bytes: int, settings) -> int:
+    """Check what actually landed in the bucket, and bin it if it is not a video.
+
+    The bytes no longer pass through the app, so the header check that used to
+    happen on their way past has to happen here instead. Without it an upload
+    token would be a licence to put a file of the holder's choosing in the
+    bucket. Returns the stored size.
+    """
+    from google.api_core.exceptions import NotFound
+
+    blob = _bucket(settings).blob(blob_name)
+    try:
+        blob.reload()
+    except NotFound as exc:
+        raise UploadRejected("No file was uploaded.") from exc
+
+    try:
+        size = blob.size or 0
+        if size == 0:
+            raise UploadRejected("The file is empty.")
+        if size > max_bytes:
+            raise UploadRejected(f"File is larger than {max_bytes // (1024 * 1024)} MB.")
+        if not looks_like_video(blob.download_as_bytes(start=0, end=_HEADER_BYTES - 1)):
+            raise UploadRejected("That file is not a video we can play.")
+    except UploadRejected:
+        # Never leave a rejected file sitting in the bucket.
+        blob.delete()
+        raise
+    return size
 
 
 def delete_screen_recording(participant_id: str, recording_id: int, settings) -> None:

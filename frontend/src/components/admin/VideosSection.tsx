@@ -32,25 +32,28 @@ export default function VideosSection({ studyId }: { studyId: number }) {
       return
     }
     setErr('')
-    const fd = new FormData()
-    fd.append('title', title.trim())
-    fd.append('phase_type', phase)
-    fd.append('task_description', task)
-    fd.append('info_text', info)
-    fd.append('student_task_text', studentTask)
-    if (limit.trim()) fd.append('time_limit_seconds', limit.trim())
-    fd.append('file', file)
-    upload.mutate(fd, {
-      onSuccess: () => {
-        setTitle('')
-        setTask('')
-        setInfo('')
-        setStudentTask('')
-        setLimit('')
-        setFile(null)
-        if (fileRef.current) fileRef.current.value = ''
+    upload.mutate(
+      {
+        title: title.trim(),
+        phase_type: phase,
+        task_description: task,
+        info_text: info,
+        student_task_text: studentTask,
+        time_limit_seconds: limit.trim() ? Number(limit.trim()) : null,
+        file,
       },
-    })
+      {
+        onSuccess: () => {
+          setTitle('')
+          setTask('')
+          setInfo('')
+          setStudentTask('')
+          setLimit('')
+          setFile(null)
+          if (fileRef.current) fileRef.current.value = ''
+        },
+      },
+    )
   }
 
   return (

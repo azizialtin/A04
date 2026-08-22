@@ -37,6 +37,7 @@ from app.schemas.participant import (
 from app.services.event_logger import log_event
 from app.services.questionnaires import missing_required_answers
 from app.services.session_script import build_steps, video_in_run
+from app.services.video_url import sign_blob_url
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -154,7 +155,7 @@ async def get_video_url(
             from google.cloud import storage
 
             blob = storage.Client().bucket(settings.GCP_BUCKET_NAME).blob(video.gcp_filename)
-            url = blob.generate_signed_url(version="v4", expiration=3600, method="GET")
+            url = sign_blob_url(blob)
             return VideoUrlResponse(signed_url=url)
         except Exception as exc:
             logger.exception("could not sign url for %s", video.gcp_filename)

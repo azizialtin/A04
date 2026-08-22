@@ -44,6 +44,9 @@ FIRST_FRAME_TIMEOUT_S = 8.0
 
 UPLOAD_ATTEMPTS = 3
 UPLOAD_BACKOFF_S = 3.0
+# Sent to a resumable session one chunk at a time. GCS requires a multiple of
+# 256 KiB for every chunk but the last.
+RESUMABLE_CHUNK_BYTES = 8 * 1024 * 1024
 
 DEVICE_PROBE_TIMEOUT_S = 10.0
 # avfoundation numbers every video device in one list, cameras first: a Mac with
@@ -393,15 +396,7 @@ class ScreenRecorder:
             shutil.rmtree(folder, ignore_errors=True)
 
 
-async def upload(recording: Recording, url: str, token: str) -> None:
-    """POST the file to the backend, retrying a few times.
-
-    The browser has already moved on by the time this runs, so nothing on screen
-    is waiting for it — but a session cannot be repeated, so a failure here has
-    to leave the file somewhere a person can find it.
-    """
-    import httpx
-
+def _metadata(recording: Recording) -> dict[str, str]:
     metadata = {
         "epoch_ms": str(recording.epoch_ms),
         "duration_ms": str(recording.duration_ms),
@@ -410,6 +405,140 @@ async def upload(recording: Recording, url: str, token: str) -> None:
     if recording.width and recording.height:
         metadata["width"] = str(recording.width)
         metadata["height"] = str(recording.height)
+    return metadata
+
+
+def _committed(response, fallback: int) -> int:
+    """How far GCS says it got, from the Range it answers an unfinished PUT with.
+
+    The header is `bytes=0-<last byte stored>`, so the next chunk starts one
+    past it. Anything unparseable falls back to what we believe we sent.
+    """
+    header = response.headers.get("Range", "")
+    if header.startswith("bytes=0-"):
+        try:
+            return int(header.split("-", 1)[1]) + 1
+        except ValueError:
+            pass
+    return fallback
+
+
+async def _session_offset(client, session_url: str, total: int) -> int:
+    """Ask the session how much of the file it already holds.
+
+    Asked only when a chunk failed, so a retry resumes rather than starting a
+    two hundred megabyte upload over.
+    """
+    response = await client.put(
+        session_url, headers={"Content-Range": f"bytes */{total}"}, content=b""
+    )
+    if response.status_code in (200, 201):
+        return total
+    if response.status_code == 308:
+        return _committed(response, 0)
+    raise ScreenRecordingError(
+        f"the bucket would not resume: {response.status_code} {response.text[:200]}"
+    )
+
+
+async def _put_to_bucket(client, session_url: str, path: Path) -> None:
+    """Send the file to a resumable session, a chunk at a time.
+
+    Chunked rather than one PUT so a dropped connection costs one chunk instead
+    of the whole capture — which is the difference between a retry and a lost
+    session.
+    """
+    total = path.stat().st_size
+    if total == 0:
+        raise ScreenRecordingError("the capture is empty")
+
+    offset = 0
+    attempt = 1
+    with path.open("rb") as handle:
+        while offset < total:
+            handle.seek(offset)
+            chunk = handle.read(RESUMABLE_CHUNK_BYTES)
+            end = offset + len(chunk) - 1
+            try:
+                response = await client.put(
+                    session_url,
+                    content=chunk,
+                    headers={"Content-Range": f"bytes {offset}-{end}/{total}"},
+                )
+            except Exception:
+                if attempt >= UPLOAD_ATTEMPTS:
+                    raise
+                await asyncio.sleep(UPLOAD_BACKOFF_S * attempt)
+                attempt += 1
+                offset = await _session_offset(client, session_url, total)
+                continue
+
+            if response.status_code in (200, 201):
+                return
+            if response.status_code == 308:
+                offset = _committed(response, offset + len(chunk))
+                attempt = 1
+                continue
+            raise ScreenRecordingError(
+                f"the bucket said {response.status_code}: {response.text[:200]}"
+            )
+
+
+async def upload(
+    recording: Recording,
+    url: str,
+    token: str,
+    session_url: str = "",
+    complete_url: str = "",
+) -> None:
+    """Deliver the finished capture, retrying a few times.
+
+    Where the backend has a bucket it hands back a resumable session and the
+    bytes go straight there — a hosted backend will not carry a body this size,
+    and a capture is hundreds of megabytes. Without one the file is posted to
+    the backend as before, which is also the path taken when the page that
+    started this predates the session endpoints.
+
+    The browser has already moved on by the time this runs, so nothing on screen
+    is waiting for it — but a session cannot be repeated, so a failure here has
+    to leave the file somewhere a person can find it.
+    """
+    import httpx
+
+    if session_url and complete_url:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as client:
+            asked = await client.post(
+                session_url,
+                headers={"Authorization": f"Bearer {token}"},
+                json={"size_bytes": recording.path.stat().st_size, "content_type": "video/mp4"},
+            )
+            if asked.status_code >= 300:
+                raise ScreenRecordingError(
+                    f"backend would not open an upload: {asked.status_code}: {asked.text[:200]}"
+                )
+            opened = asked.json()
+            if opened.get("mode") == "resumable" and opened.get("upload_url"):
+                await _put_to_bucket(client, opened["upload_url"], recording.path)
+                done = await client.post(
+                    complete_url,
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "epoch_ms": recording.epoch_ms,
+                        "duration_ms": recording.duration_ms,
+                        "width": recording.width,
+                        "height": recording.height,
+                        "fps": recording.fps,
+                    },
+                )
+                if done.status_code >= 300:
+                    raise ScreenRecordingError(
+                        f"backend would not accept the upload: "
+                        f"{done.status_code}: {done.text[:200]}"
+                    )
+                return
+            # mode == "proxy": this deployment stores files itself.
+
+    metadata = _metadata(recording)
 
     last: Exception | None = None
     for attempt in range(1, UPLOAD_ATTEMPTS + 1):

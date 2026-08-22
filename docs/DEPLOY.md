@@ -88,9 +88,38 @@ runs on the lab machine the browser is sitting at, not on the server.
 
 Backend → Cloud Run, with Cloud SQL (Postgres), a Cloud Storage bucket for
 videos, gaze chunks and screen recordings, and secrets in Secret Manager
-(injected as env vars). The bridge uploads a finished capture straight to the
-backend, so the Cloud Run request timeout and any upload limit in front of it
-have to clear a few hundred megabytes.
+(injected as env vars).
+
+**Large uploads bypass the backend.** Cloud Run will not carry an HTTP/1 request
+body past 32 MiB, and a screen capture is several times that. So where a bucket
+is configured, the backend hands out a resumable upload session and the client —
+the bridge for a capture, the admin's browser for a case clip — PUTs the bytes
+straight to the bucket, then calls back to have the stored object checked and
+recorded. Nothing large passes through Cloud Run at all.
+
+Two consequences:
+
+- The runtime service account needs `roles/storage.objectAdmin` on the bucket
+  (to open sessions and read back the header it checks) and
+  `roles/iam.serviceAccountTokenCreator` **on itself**, which is what lets it
+  sign video URLs without a key file. Without the latter every clip 503s.
+- The bucket needs a CORS rule, because the admin's browser PUTs to it directly:
+
+  ```bash
+  cat > cors.json <<'EOF'
+  [{"origin": ["https://a04.example.org"],
+    "method": ["PUT", "POST", "GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Range", "x-goog-resumable"],
+    "maxAgeSeconds": 3600}]
+  EOF
+  gcloud storage buckets update gs://YOUR_BUCKET --cors-file=cors.json
+  ```
+
+  The bridge is a local process rather than a page, so it needs none of this —
+  only the browser half does.
+
+Deployments with no bucket (`GAZE_STORAGE_MODE=local`) are unchanged: the file
+is posted to the backend and stored on its disk.
 Frontend → the nginx image on Cloud Run, or the built `dist/` on any static host
 / CDN; set `VITE_API_BASE_URL` at build time to the backend URL.
 

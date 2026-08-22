@@ -13,9 +13,12 @@ overrides that default — that's where the personalisation lives.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.enums import PhaseType, QuestionnairePlacement
 from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
@@ -25,6 +28,34 @@ from app.models.video import Video
 
 _PHASE_NUMBER = {PhaseType.pre_test: 1, PhaseType.training: 2, PhaseType.post_test: 3}
 _PHASE_ORDER = {PhaseType.pre_test: 0, PhaseType.training: 1, PhaseType.post_test: 2}
+
+
+def default_order(videos: Sequence[Video]) -> list[Video]:
+    """The study's videos as a participant with no sequence of their own meets
+    them: phase order first, then upload order."""
+    return sorted(videos, key=lambda v: (_PHASE_ORDER.get(v.phase_type, 9), v.id))
+
+
+def count_steps(pre_test_pages: int, phases: Sequence[PhaseType], calibration: bool) -> int:
+    """How many steps `build_steps` produces for a run with these ingredients.
+
+    The admin participant list wants everyone's progress as a fraction, and
+    building each of their scripts to find the denominator is several queries
+    per row. This counts the same script arithmetically; a test pins the two
+    together so they cannot drift.
+    """
+    transitions = sum(1 for i, p in enumerate(phases) if i == 0 or p != phases[i - 1])
+    return (
+        1  # welcome
+        + pre_test_pages
+        + 1  # SoSci pre-test hand-off
+        + (1 if phases and calibration else 0)
+        + transitions
+        # intro, clip, diagnosis, outro questions, think-aloud
+        + 5 * len(phases)
+        + 1  # SoSci post-test hand-off
+        + 1  # thanks
+    )
 
 
 def _pre_test_step(q: Questionnaire, page: int, page_count: int) -> dict:
@@ -98,8 +129,7 @@ async def _cases(db: AsyncSession, participant: Participant) -> list[tuple[Phase
         .scalars()
         .all()
     )
-    videos = sorted(videos, key=lambda v: (_PHASE_ORDER.get(v.phase_type, 9), v.id))
-    return [(v.phase_type, v) for v in videos]
+    return [(v.phase_type, v) for v in default_order(videos)]
 
 
 async def video_in_run(db: AsyncSession, participant: Participant, video_id: int) -> bool:
@@ -173,7 +203,8 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
     )
     # Calibrate once, right before the first clip: any earlier and the
     # participant has a SoSci tab to get through before the tracker is used.
-    if cases:
+    # Skipped entirely when the tracker is calibrated outside the app.
+    if cases and get_settings().CALIBRATION_ENABLED:
         steps.append({"kind": "calibration"})
 
     prev_phase: PhaseType | None = None

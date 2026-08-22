@@ -117,7 +117,8 @@ hardware.
 ### Screen recording
 
 ```
--> {"type":"start_screen_recording","upload_url":…,"failed_url":…,"token":…}
+-> {"type":"start_screen_recording","upload_url":…,"session_url":…,
+    "complete_url":…,"failed_url":…,"token":…}
 <- {"type":"screen_recording_started","ok":true,"error":null}
 -> {"type":"stop_screen_recording"}
 <- {"type":"screen_recording_stopped","ok":true,"error":null}
@@ -128,6 +129,18 @@ token that can do nothing but deliver that one file. The upload happens after
 the reply, in the background, because by then the participant is already on the
 next screen — which is also why the bridge reports its own late failures to
 `failed_url` rather than back over this socket.
+
+**Where the bytes go.** The bridge asks `session_url` first. A hosted backend
+answers with a resumable session in its bucket, and the capture is PUT there
+directly, 8 MiB at a time — a hosted app cannot be relied on to carry a body of
+a few hundred megabytes, and Cloud Run in particular refuses one over 32 MiB.
+Only the metadata then goes to `complete_url`, which checks the stored object
+and closes the row. A backend storing files on its own disk answers `proxy`
+instead, and the file is posted to `upload_url` as before.
+
+A chunk that fails is retried from wherever the bucket says it got to, rather
+than restarting the whole capture. If the upload cannot be finished at all the
+file is kept locally and the failure reported, exactly as before.
 
 ## Binding and origins
 

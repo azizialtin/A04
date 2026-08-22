@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { ScreenSummary } from '../../api/admin'
 import AdminReplayViewer from '../../components/admin/AdminReplayViewer'
+import ParticipantStatsPanel from '../../components/admin/ParticipantStatsPanel'
 import { useGazeRecordings, useGazeReplay } from '../../hooks/admin'
 
 function screenLabel(screen: ScreenSummary | null): string {
@@ -17,6 +18,7 @@ function screenLabel(screen: ScreenSummary | null): string {
 export default function AdminGazePage() {
   const recordings = useGazeRecordings()
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [inspected, setInspected] = useState<string | null>(null)
   const replay = useGazeReplay(selectedId)
 
   return (
@@ -42,7 +44,15 @@ export default function AdminGazePage() {
             {(recordings.data ?? []).map((r) => (
               <tr key={r.id}>
                 <td>{r.id}</td>
-                <td>{r.participant_id}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setInspected(r.participant_id)}
+                  >
+                    {r.participant_id}
+                  </button>
+                </td>
                 <td>{r.video_title}</td>
                 <td>{r.sample_count}</td>
                 <td>{r.sampling_rate_hz}</td>
@@ -70,6 +80,10 @@ export default function AdminGazePage() {
             )}
           </tbody>
         </table>
+      )}
+
+      {inspected && (
+        <ParticipantStatsPanel participantId={inspected} onClose={() => setInspected(null)} />
       )}
 
       {selectedId != null && replay.isLoading && <p className="muted">Replay wird geladen…</p>}

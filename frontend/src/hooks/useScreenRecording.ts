@@ -56,6 +56,11 @@ export function useScreenRecording(videoId: number) {
         JSON.stringify({
           type: 'start_screen_recording',
           upload_url: screenApi.uploadUrl(started.recording_id),
+          // Against a bucket the bridge PUTs the capture there itself and only
+          // tells the backend what landed; `upload_url` is the fallback for a
+          // deployment that stores files on its own disk.
+          session_url: screenApi.sessionUrl(started.recording_id),
+          complete_url: screenApi.completeUrl(started.recording_id),
           // The bridge reports its own late failures: by the time ffmpeg has
           // finished, this page is gone.
           failed_url: screenApi.failedUrl(started.recording_id),

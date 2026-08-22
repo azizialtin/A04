@@ -23,6 +23,7 @@ import {
 } from '../hooks/participant'
 import { useOutbox } from '../hooks/useOutbox'
 import { enqueue } from '../lib/outbox'
+import { caseAt } from '../lib/sessionProgress'
 
 // Steps that own the full viewport; everything else renders inside the shell.
 const CHROMELESS = new Set([
@@ -82,7 +83,13 @@ export default function SessionPage() {
   let content: ReactNode
   switch (step.kind) {
     case 'welcome':
-      content = <WelcomeScreen participantId={me.data.id} onContinue={advance} />
+      content = (
+        <WelcomeScreen
+          participantId={me.data.id}
+          showCalibration={steps.some((s) => s.kind === 'calibration')}
+          onContinue={advance}
+        />
+      )
       break
     case 'sosci':
       content = (
@@ -195,16 +202,24 @@ export default function SessionPage() {
   }
 
   const progress = Math.round((current_step_index / total_steps) * 100)
+  // Where they are in the study, in the terms they were briefed in — the phase
+  // and the case — rather than a step number out of a script only we can see.
+  const position = caseAt(steps, current_step_index)
   return (
     <div className="shell">
       {unsentBanner}
       <header className="shell__header">
         <span className="brand-sm">A04</span>
         <span className="muted">
-          {t('session.progress', {
-            current: Math.min(current_step_index + 1, total_steps),
-            total: total_steps,
-          })}
+          {position
+            ? t('session.case_position', {
+                phase: t(`session.phase.${position.phaseType}`, {
+                  defaultValue: position.phaseType,
+                }),
+                current: position.current,
+                total: position.total,
+              })
+            : t('session.questions')}
         </span>
         <div className="shell__header-right">
           <LanguageSwitcher />

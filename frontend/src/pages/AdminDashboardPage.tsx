@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import AdminAuditPage from './admin/AdminAuditPage'
 import AdminGazePage from './admin/AdminGazePage'
+import AdminOverviewPage from './admin/AdminOverviewPage'
 import AdminStudyDetailPage from './admin/AdminStudyDetailPage'
 import AdminStudyListPage from './admin/AdminStudyListPage'
 
@@ -16,6 +17,9 @@ export default function AdminDashboardPage() {
     <div className="admin">
       <aside className="admin__nav">
         <div className="admin__brand">A04 · Admin</div>
+        <NavLink to="/admin/overview" className={link}>
+          Übersicht
+        </NavLink>
         <NavLink to="/admin/studies" className={link}>
           Studien
         </NavLink>
@@ -31,12 +35,13 @@ export default function AdminDashboardPage() {
       </aside>
       <main className="admin__main">
         <Routes>
-          <Route index element={<Navigate to="/admin/studies" replace />} />
+          <Route index element={<Navigate to="/admin/overview" replace />} />
+          <Route path="overview" element={<AdminOverviewPage />} />
           <Route path="studies" element={<AdminStudyListPage />} />
           <Route path="studies/:studyId" element={<AdminStudyDetailPage />} />
           <Route path="gaze" element={<AdminGazePage />} />
           <Route path="audit" element={<AdminAuditPage />} />
-          <Route path="*" element={<Navigate to="/admin/studies" replace />} />
+          <Route path="*" element={<Navigate to="/admin/overview" replace />} />
         </Routes>
       </main>
     </div>

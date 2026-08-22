@@ -2,16 +2,20 @@ import { useTranslation } from 'react-i18next'
 
 // What the sitting consists of, in order. Shown up front so the participant
 // knows the SoSciSurvey tab and the eye tracker are coming before they arrive.
-const STEPS = ['questions', 'sosci', 'calibration', 'cases'] as const
+// Calibration only appears when the app runs its own calibration step.
+const ALL_STEPS = ['questions', 'sosci', 'calibration', 'cases'] as const
 
 export default function WelcomeScreen({
   participantId,
   onContinue,
+  showCalibration = true,
 }: {
   participantId: string
   onContinue: () => void
+  showCalibration?: boolean
 }) {
   const { t } = useTranslation()
+  const steps = ALL_STEPS.filter((key) => key !== 'calibration' || showCalibration)
   return (
     <div className="fullpage">
       <div className="panel">
@@ -20,7 +24,7 @@ export default function WelcomeScreen({
 
         <span className="label">{t('welcome.overview')}</span>
         <ol className="steps">
-          {STEPS.map((key) => (
+          {steps.map((key) => (
             <li key={key}>{t(`welcome.steps.${key}`)}</li>
           ))}
         </ol>

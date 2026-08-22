@@ -18,3 +18,8 @@ test('says what the sitting consists of before it starts', () => {
   expect(steps).toHaveLength(4)
   expect(steps.map((li) => li.textContent).join(' ')).toMatch(/SoSciSurvey/)
 })
+
+test('drops the calibration line when calibration is handled outside the app', () => {
+  render(<WelcomeScreen participantId="TN-9" onContinue={vi.fn()} showCalibration={false} />)
+  expect(screen.getAllByRole('listitem')).toHaveLength(3)
+})

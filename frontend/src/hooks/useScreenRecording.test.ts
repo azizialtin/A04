@@ -10,6 +10,8 @@ vi.mock('../api/screen', () => ({
     markFailed: vi.fn(),
     uploadUrl: (id: number) => `http://api.test/screen/recordings/${id}/upload`,
     failedUrl: (id: number) => `http://api.test/screen/recordings/${id}/failed`,
+    sessionUrl: (id: number) => `http://api.test/screen/recordings/${id}/upload-url`,
+    completeUrl: (id: number) => `http://api.test/screen/recordings/${id}/complete`,
   },
 }))
 
@@ -63,6 +65,10 @@ test('asks the bridge to record once it says it can', async () => {
   expect(FakeSocket.last!.sent[0]).toEqual({
     type: 'start_screen_recording',
     upload_url: 'http://api.test/screen/recordings/7/upload',
+    // Where a bucket exists the capture goes straight there; the backend only
+    // hands out the session and is told what landed.
+    session_url: 'http://api.test/screen/recordings/7/upload-url',
+    complete_url: 'http://api.test/screen/recordings/7/complete',
     failed_url: 'http://api.test/screen/recordings/7/failed',
     token: 'tok',
   })

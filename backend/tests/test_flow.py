@@ -1,6 +1,7 @@
 import pytest_asyncio
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.models.enums import ParticipantStatus, PhaseType, QuestionnairePlacement
 from app.models.note import Note
 from app.models.participant_video import ParticipantVideo
@@ -85,7 +86,9 @@ async def test_me(client, run, participant_headers):
     assert r.json()["study_name"] == "Test Study"
 
 
-async def test_session_script_shape(client, run, participant_headers):
+async def test_session_script_shape(client, run, participant_headers, monkeypatch):
+    # This test pins the shape of the run *with* the in-app calibration step.
+    monkeypatch.setattr(get_settings(), "CALIBRATION_ENABLED", True)
     r = await client.get("/participant/session", headers=participant_headers)
     assert r.status_code == 200
     data = r.json()
@@ -119,6 +122,16 @@ async def test_session_script_shape(client, run, participant_headers):
     assert kinds.count("questionnaire") == 1
     assert data["current_step_index"] == 0
     assert data["total_steps"] == len(steps)
+
+
+async def test_calibration_step_can_be_disabled(client, run, participant_headers, monkeypatch):
+    # With external calibration the step is gone, but the cases are untouched.
+    monkeypatch.setattr(get_settings(), "CALIBRATION_ENABLED", False)
+    data = (await client.get("/participant/session", headers=participant_headers)).json()
+    kinds = [s["kind"] for s in data["steps"]]
+    assert "calibration" not in kinds
+    assert kinds.count("case_video") == 3
+    assert data["total_steps"] == len(data["steps"])
 
 
 async def test_the_case_screens_carry_their_questions(client, run, participant_headers):

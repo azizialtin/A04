@@ -78,6 +78,9 @@
   },
   "case": {
     "video_label": "Case video",
+    "play": "Play",
+    "pause": "Pause",
+    "seek": "Video position",
     "timer_label": "Time",
     "task_label": "Task",
     "student_task_button": "Student task",
@@ -99,10 +102,11 @@
   "think_aloud": {
     "title": "Think-aloud",
     "hint": "Watch the recording and explain to the study manager what you were looking at and why you took your notes when you did.",
-    "notes_label": "Your notes",
     "stats": "{{points}} gaze points",
     "show_gaze": "Show the gaze dot",
     "clip_only": "video only (no screen recording)",
+    "fullscreen": "Fullscreen",
+    "exit_fullscreen": "Exit fullscreen",
     "next": "Continue"
   },
   "questionnaire": {
@@ -116,7 +120,13 @@
   "session": {
     "loading": "Loading session…",
     "error": "Something went wrong. Please reload the page.",
-    "progress": "Step {{current}} of {{total}}",
+    "case_position": "{{phase}} · Case {{current}} of {{total}}",
+    "questions": "Questionnaire",
+    "phase": {
+      "pre_test": "Pre-test",
+      "training": "Training",
+      "post_test": "Post-test"
+    },
     "unsent": "{{count}} entry not saved yet — retrying.",
     "unsent_plural": "{{count}} entries not saved yet — retrying."
   }

@@ -5,10 +5,12 @@ import type { Study } from '../../api/admin'
 import ExportsSection from '../../components/admin/ExportsSection'
 import ParticipantsSection from '../../components/admin/ParticipantsSection'
 import QuestionnairesSection from '../../components/admin/QuestionnairesSection'
+import StatsSection from '../../components/admin/StatsSection'
 import VideosSection from '../../components/admin/VideosSection'
 import { useStudy, useUpdateStudy } from '../../hooks/admin'
 
 const TABS = [
+  ['stats', 'Statistik'],
   ['videos', 'Videos'],
   ['participants', 'Teilnehmer'],
   ['questionnaires', 'Fragebögen'],
@@ -20,7 +22,7 @@ export default function AdminStudyDetailPage() {
   const { studyId } = useParams()
   const id = Number(studyId)
   const study = useStudy(id)
-  const [tab, setTab] = useState<string>('videos')
+  const [tab, setTab] = useState<string>('stats')
 
   if (study.isLoading) return <p className="muted">Wird geladen…</p>
   if (study.isError || !study.data) return <p className="error-text">Studie nicht gefunden.</p>
@@ -40,6 +42,7 @@ export default function AdminStudyDetailPage() {
         ))}
       </div>
 
+      {tab === 'stats' && <StatsSection studyId={id} />}
       {tab === 'videos' && <VideosSection studyId={id} />}
       {tab === 'participants' && <ParticipantsSection studyId={id} />}
       {tab === 'questionnaires' && <QuestionnairesSection studyId={id} />}
