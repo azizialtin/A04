@@ -51,9 +51,11 @@ class Settings(BaseSettings):
     TOBII_EXPECTED_SAMPLE_RATE_HZ: int = 120
 
     # Whether the participant flow includes the in-app eye-tracker calibration
-    # step. Turn off when the tracker is calibrated outside the app (e.g. in
-    # Tobii Pro Eye Tracker Manager) before the participant sits down.
-    CALIBRATION_ENABLED: bool = True
+    # step. Off by default: the tracker is calibrated outside the app, in Tobii
+    # Pro Eye Tracker Manager, before the participant sits down. Turn on only
+    # for a setup that wants the in-app routine instead — a deployment that
+    # leaves it on by accident shows participants a step it does not need.
+    CALIBRATION_ENABLED: bool = False
 
     # Screen capture. The bridge records the lab machine's display while a case
     # clip is on screen; the think-aloud plays that back with gaze on top.

@@ -34,6 +34,7 @@ cd backend && alembic upgrade head   # with DATABASE_URL set
 | `GAZE_STORAGE_MODE` | `gcs` in prod, `local` in dev |
 | `SCREEN_STORAGE_MODE` | `gcs` in prod, `local` in dev |
 | `SCREEN_RECORDING_ENABLED` | `false` turns the screen capture off entirely |
+| `CALIBRATION_ENABLED` | `false` (the default) drops the in-app calibration step; the tracker is calibrated in Eye Tracker Manager |
 | `ENVIRONMENT` | `production` on the server |
 | `PARTICIPANT_TOKEN_HOURS` | how long a participant stays signed in (default 12) |
 
