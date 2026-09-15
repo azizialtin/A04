@@ -17,10 +17,11 @@ export function useVideoNotes(videoId: number) {
   })
 }
 
-export function useVideoReplay(videoId: number) {
+export function useVideoReplay(videoId: number, enabled = true) {
   return useQuery({
     queryKey: ['replay', videoId],
     queryFn: () => participantApi.getVideoReplay(videoId),
+    enabled,
   })
 }
 

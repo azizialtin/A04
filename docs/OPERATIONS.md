@@ -112,6 +112,18 @@ nothing else open on that display during a session.
   `ui_error` event, so it shows up in the events export rather than only in a
   console nobody was watching.
 
+## Rolling a deployment back
+
+`alembic downgrade` is a development tool, not a rollback plan. Every migration
+that added a column drops it on the way down, and some of those columns are
+unrepeatable research data — which video set a participant was dealt, whether a
+recording came from the bridge or the browser, the wording a researcher wrote.
+The CK-table migration additionally folds two question pages back into one.
+
+To undo a deployment in production, restore the database from a backup (see
+above) and deploy the previous image. Downgrade only against a database you are
+willing to lose.
+
 ## During a session
 
 - **A red banner at the bottom of the participant's screen** means writes are
@@ -120,13 +132,34 @@ nothing else open on that display during a session.
 - **The gaze dot is missing on the think-aloud screen.** Check the bridge is
   running and that the calibration step reported an accuracy. The admin replay
   viewer says explicitly when a recording has no screen geometry.
-- **The think-aloud shows the clip instead of the screen recording.** The
-  capture for that case failed. The Bildschirm column in the admin's gaze list
-  says which and why — the usual cause is ffmpeg missing from the lab machine's
-  PATH, which the bridge also prints at startup. The session is still usable;
-  the participant narrates against the clip and the gaze.
+- **The think-aloud shows the clip instead of the screen recording.** Neither
+  capture happened for that case. The Bildschirm column in the admin's gaze
+  list says which and why — the usual cause is ffmpeg missing from the lab
+  machine's PATH, which the bridge also prints at startup. Without a bridge at
+  all the page records its own display, but only if the browser's screen-share
+  picker was answered on the case intro; a picker that was cancelled is not
+  asked again until the page is reloaded. Such a capture shows as "Browser" in
+  that column. The session is still usable either way; the participant
+  narrates against the clip and the gaze.
+- **A participant's Set column says "wird zugelost".** They have not logged in
+  yet; the set is dealt at first login so the halves are counted over the
+  people who turn up. To fix a set in advance, use "Set zuweisen" in their
+  sequence editor.
 - **A row stuck at "läuft…" in that column** is a capture whose upload never
   arrived. Look in `tobii-service/unsent-recordings/` on the lab machine: a file
   the backend would not take is kept there rather than deleted.
 - **A participant cannot log in.** After too many attempts the login is refused
   for a minute — wait, then check the id in the admin.
+
+## Between two participants
+
+The closing screen has **"Mit der nächsten Person beginnen"**: it ends the
+session and goes back to the id prompt, which is the only thing that needs
+doing between two sittings. It also clears the finished run out of the browser —
+drafts and cached session — so the next person cannot be shown the previous
+one's script.
+
+The button waits while the red banner is up. Those writes are queued under the
+participant who has just left and only go up while they are signed in, so
+hand over once the banner is gone. If it will not clear, fix the connection
+before starting the next sitting.

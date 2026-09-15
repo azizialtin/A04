@@ -62,6 +62,18 @@ async def test_study_crud(client, admin_headers, study_id):
     assert upd.json()["sosci_pretest_url"] == "https://s.example/pre"  # untouched
 
 
+async def test_a_participant_id_that_is_only_dots_is_refused(client, admin_headers, study_id):
+    """The id becomes a directory name under uploads/; ".." is made of the
+    allowed charset but would climb out of the tree."""
+    r = await client.post(
+        f"/admin/studies/{study_id}/participants",
+        json={"ids": ["..", ".", "TN-ok"]},
+        headers=admin_headers,
+    )
+    assert r.status_code == 422
+    assert sorted(r.json()["detail"]["ids"]) == [".", ".."]
+
+
 async def test_video_upload_and_list(client, admin_headers, study_id):
     r = await _upload_video(client, admin_headers, study_id, phase="pre_test")
     assert r.status_code == 201
@@ -230,8 +242,10 @@ async def test_export_notes_csv(client, db, admin_headers, study_id):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     text = r.text
-    assert "participant_id,video_id,video_time_seconds,text,created_at" in text
+    assert "participant_id,video_id,video_time_seconds,video_time,text,created_at" in text
     assert "E-1" in text and "looks wrong" in text
+    # The raw seconds for the analysis, the timecode for whoever opens the file.
+    assert "3.0,00:03" in text
 
 
 async def test_delete_study_requires_force_with_participants(client, admin_headers, study_id):

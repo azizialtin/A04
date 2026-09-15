@@ -18,7 +18,12 @@ export default function SosciScreen({ variant, url, idParam, participantId, onCo
       <div className="panel">
         <h1>{t(`sosci.${variant}.title`)}</h1>
         <p className="lead">{t(`sosci.${variant}.body`)}</p>
-        <a className="btn btn-primary btn-lg" href={fullUrl} target="_blank" rel="noopener noreferrer">
+        <a
+          className="btn btn-primary btn-lg"
+          href={fullUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           {t('sosci.open')}
         </a>
         <p className="muted">{t('sosci.note')}</p>

@@ -19,9 +19,10 @@ import shutil
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import jwt
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
@@ -37,6 +38,7 @@ from app.services.storage import (
     UploadRejected,
     create_resumable_session,
     screen_blob_name,
+    screen_extension,
     store_video,
     upload_screen_recording,
     verify_uploaded_blob,
@@ -51,6 +53,9 @@ UPLOAD_ROLE = "screen_upload"
 
 class StartRequest(BaseModel):
     video_id: int
+    # Who is about to capture: the bridge's ffmpeg, or the page itself when no
+    # bridge can. Recorded so an analysis can tell the two apart.
+    recorder: Literal["bridge", "browser"] = "bridge"
 
 
 class StartResponse(BaseModel):
@@ -80,6 +85,8 @@ class CompleteRequest(BaseModel):
     width: int | None = None
     height: int | None = None
     fps: float | None = None
+    # Has to match what `upload-url` was asked for: it names the object.
+    content_type: str = "video/mp4"
 
 
 class FailedRequest(BaseModel):
@@ -179,6 +186,7 @@ async def start_screen_recording(
         participant_id=participant.id,
         video_id=body.video_id,
         storage_mode=settings.SCREEN_STORAGE_MODE,
+        recorder=body.recorder,
     )
     db.add(recording)
     await db.commit()
@@ -195,6 +203,7 @@ async def start_screen_recording(
 async def screen_upload_url(
     recording_id: int,
     body: UploadUrlRequest,
+    request: Request,
     claims: dict = Depends(_upload_claims),
     db: AsyncSession = Depends(get_db),
 ) -> UploadUrlResponse:
@@ -217,10 +226,19 @@ async def screen_upload_url(
             f"A screen recording cannot be larger than {limit} MB.",
         )
 
-    name = screen_blob_name(recording.participant_id, recording.id)
+    name = screen_blob_name(
+        recording.participant_id, recording.id, screen_extension(body.content_type)
+    )
     try:
+        # The origin matters only when a browser is the uploader: the bucket
+        # answers its CORS preflight with it. The bridge sends none.
         url = await run_in_threadpool(
-            create_resumable_session, name, "video/mp4", body.size_bytes, settings
+            create_resumable_session,
+            name,
+            body.content_type or "video/mp4",
+            body.size_bytes,
+            settings,
+            request.headers.get("origin"),
         )
     except Exception as exc:
         logger.exception("could not open an upload session for recording %d", recording_id)
@@ -252,7 +270,9 @@ async def complete_screen_recording(
     if body.epoch_ms <= 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "epoch_ms is required.")
 
-    name = screen_blob_name(recording.participant_id, recording.id)
+    name = screen_blob_name(
+        recording.participant_id, recording.id, screen_extension(body.content_type)
+    )
     try:
         size = await run_in_threadpool(
             verify_uploaded_blob, name, settings.MAX_SCREEN_RECORDING_BYTES, settings
@@ -303,8 +323,9 @@ async def upload_screen_recording_file(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "epoch_ms is required.")
 
     settings = get_settings()
+    ext = screen_extension(file.content_type, file.filename)
     scratch = Path(tempfile.mkdtemp(prefix="a04-screen-upload-"))
-    staged = scratch / "screen.mp4"
+    staged = scratch / f"screen{ext}"
     try:
         # Land it on disk first: the header check and the size cap both want the
         # bytes, and holding a gigabyte in memory to hand it to GCS is not on.
@@ -312,7 +333,12 @@ async def upload_screen_recording_file(
             store_video, file.file, staged, settings.MAX_SCREEN_RECORDING_BYTES
         )
         stored_path = await run_in_threadpool(
-            upload_screen_recording, staged, recording.participant_id, recording.id, settings
+            upload_screen_recording,
+            staged,
+            recording.participant_id,
+            recording.id,
+            settings,
+            ext,
         )
     except UploadRejected as exc:
         shutil.rmtree(scratch, ignore_errors=True)

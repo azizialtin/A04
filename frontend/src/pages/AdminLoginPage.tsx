@@ -55,7 +55,11 @@ export default function AdminLoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
         />
-        <button type="submit" className="btn btn-primary btn-lg" disabled={!email || !password || busy}>
+        <button
+          type="submit"
+          className="btn btn-primary btn-lg"
+          disabled={!email || !password || busy}
+        >
           {busy ? t('common.loading') : t('login.submit')}
         </button>
       </form>

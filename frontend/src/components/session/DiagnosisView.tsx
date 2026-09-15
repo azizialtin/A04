@@ -37,7 +37,7 @@ export default function DiagnosisView({
   const incomplete = !text.trim() || missingRequired(questions, answers).length > 0
 
   return (
-    <div className="panel">
+    <div className="panel panel--form">
       <h2>{t('diagnosis.title')}</h2>
       {taskDescription ? <p className="muted">{taskDescription}</p> : null}
 

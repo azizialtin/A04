@@ -15,12 +15,7 @@ import ThinkAloudScreen from '../components/session/ThinkAloudScreen'
 import WelcomeScreen from '../components/session/WelcomeScreen'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
-import {
-  useMe,
-  useRespondQuestionnaire,
-  useSession,
-  useUpdateProgress,
-} from '../hooks/participant'
+import { useMe, useRespondQuestionnaire, useSession, useUpdateProgress } from '../hooks/participant'
 import { useOutbox } from '../hooks/useOutbox'
 import { enqueue } from '../lib/outbox'
 import { caseAt } from '../lib/sessionProgress'
@@ -55,7 +50,7 @@ export default function SessionPage() {
 
   const { steps, current_step_index, total_steps } = session.data
   const step = steps[current_step_index]
-  if (!step || current_step_index >= total_steps) return <ThanksScreen />
+  if (!step || current_step_index >= total_steps) return <ThanksScreen pendingWrites={unsent} />
 
   const advance = () => updateProgress.mutate(current_step_index + 1)
 
@@ -87,6 +82,7 @@ export default function SessionPage() {
         <WelcomeScreen
           participantId={me.data.id}
           showCalibration={steps.some((s) => s.kind === 'calibration')}
+          texts={step.texts}
           onContinue={advance}
         />
       )
@@ -112,7 +108,7 @@ export default function SessionPage() {
       content = <PhaseTransitionScreen phaseNumber={step.phase_number} onContinue={advance} />
       break
     case 'case_intro':
-      content = <CaseIntroScreen onContinue={advance} />
+      content = <CaseIntroScreen title={step.title} body={step.body} onContinue={advance} />
       break
     case 'questionnaire': {
       const qStep = step
@@ -168,11 +164,27 @@ export default function SessionPage() {
       )
       break
     }
-    case 'think_aloud':
-      content = <ThinkAloudScreen videoId={step.video_id} onComplete={advance} />
+    case 'think_aloud': {
+      const narration = step
+      content = (
+        <ThinkAloudScreen
+          videoId={narration.video_id}
+          position={{
+            phaseType: narration.phase_type,
+            caseNumber: narration.case_number,
+            caseTotal: narration.case_total,
+            batchPosition: narration.batch_position,
+            batchSize: narration.batch_size,
+          }}
+          onComplete={advance}
+        />
+      )
       break
+    }
     case 'thanks':
-      content = <ThanksScreen />
+      // The hand-over screen: it offers the way back to the id prompt, and
+      // needs to know whether this run still has writes in flight.
+      content = <ThanksScreen pendingWrites={unsent} />
       break
     default:
       content = <div className="fullpage is-danger">{t('session.error')}</div>

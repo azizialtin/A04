@@ -42,6 +42,7 @@ from app.models.session import Session
 from app.models.study import Study
 from app.models.text_entry import TextEntry
 from app.models.video import Video
+from app.models.video_set import VideoSet, VideoSetItem
 from app.services.log_data import variable_name
 from app.services.session_script import build_steps, count_steps, default_order
 from app.services.stats import (
@@ -421,7 +422,26 @@ async def study_stats(
     pre_pages = sum(
         1 for q in batteries if q.placement == QuestionnairePlacement.pre_test and q.questions
     )
-    default_phases = [v.phase_type for v in default_order(videos)]
+    # What a participant who has not logged in yet will get: one of the sets,
+    # where the study has them — they are the same length by design, so the
+    # first filled one will do — or else every video in the study.
+    set_names = {
+        s.id: s.name
+        for s in (await db.execute(select(VideoSet).where(VideoSet.study_id == study_id))).scalars()
+    }
+    set_phases: dict[int, list] = defaultdict(list)
+    for set_id, phase in (
+        await db.execute(
+            select(VideoSetItem.video_set_id, VideoSetItem.phase_type)
+            .join(VideoSet, VideoSet.id == VideoSetItem.video_set_id)
+            .where(VideoSet.study_id == study_id)
+            .order_by(VideoSet.id, VideoSetItem.slot_index)
+        )
+    ).all():
+        set_phases[set_id].append(phase)
+    default_phases = next(iter(set_phases.values()), None) or [
+        v.phase_type for v in default_order(videos)
+    ]
     assigned: dict[str, list] = defaultdict(list)
     for pid, phase in (
         await db.execute(
@@ -470,6 +490,7 @@ async def study_stats(
                 "created_at": _iso(p.created_at),
                 "cases": len(phases),
                 "assigned_sequence": bool(assigned.get(p.id)),
+                "video_set": set_names.get(p.video_set_id) if p.video_set_id else None,
                 "step": step,
                 "total_steps": total_steps,
                 "progress": rate(step, total_steps),
@@ -848,6 +869,7 @@ async def participant_stats(
     p = await _participant_or_404(db, participant_id)
     study = await db.get(Study, p.study_id)
     session = await db.scalar(select(Session).where(Session.participant_id == p.id))
+    video_set = await db.get(VideoSet, p.video_set_id) if p.video_set_id else None
 
     # One participant, so the real script rather than the arithmetic: it also
     # names the step they are sitting on.
@@ -1071,6 +1093,7 @@ async def participant_stats(
                         "width": screen.width,
                         "height": screen.height,
                         "fps": screen.fps,
+                        "recorder": screen.recorder,
                     }
                     if screen
                     else None
@@ -1112,6 +1135,7 @@ async def participant_stats(
             "progress": rate(step_index, len(steps)),
             "current_step": current["kind"] if current else None,
             "assigned_sequence": bool(sequence),
+            "video_set": video_set.name if video_set else None,
         },
         "activity": {
             "events": event_count,

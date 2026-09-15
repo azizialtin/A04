@@ -15,6 +15,7 @@ from app.models.questionnaire import Questionnaire
 from app.models.researcher import Researcher
 from app.models.study import Study
 from app.models.video import Video
+from app.models.video_set import VideoSet
 from app.schemas.admin import StudyCreate, StudyResponse, StudyUpdate
 from app.services.storage import (
     delete_participant_gaze,
@@ -50,6 +51,7 @@ async def create_study(
         sosci_pretest_url=body.sosci_pretest_url,
         sosci_posttest_url=body.sosci_posttest_url,
         sosci_id_param=body.sosci_id_param,
+        think_aloud_batch_size=body.think_aloud_batch_size,
         created_by=admin.id,
     )
     db.add(study)
@@ -83,11 +85,28 @@ async def update_study(
 ) -> StudyResponse:
     study = await _study_or_404(db, study_id)
     for field, value in body.model_dump(exclude_unset=True).items():
+        if field in ("texts", "video_defaults"):
+            # Whitespace-only text is no text; store what the participant will
+            # actually see, so "empty means default" holds.
+            sent = {k: _stripped(v) for k, v in value.items()}
+            # Merged, not replaced: this is a PATCH, and `exclude_unset` reaches
+            # into the nested object — so assigning it wholesale would wipe every
+            # field the caller did not happen to mention. Clearing one is still
+            # sending it empty.
+            value = {**(getattr(study, field) or {}), **sent}
         setattr(study, field, value)
     await db.commit()
     await db.refresh(study)
     _audit(background_tasks, admin, "study_updated", {"study_id": study.id})
     return _study_out(study)
+
+
+def _stripped(value):
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        return [s.strip() for s in value if isinstance(s, str) and s.strip()]
+    return value
 
 
 @router.delete("/studies/{study_id}")
@@ -127,8 +146,11 @@ async def delete_study(
 
     # Deleting participants cascades their notes/entries/events/gaze/responses/
     # sessions/sequence; then questionnaires and videos have nothing pointing at
-    # them and can go, followed by the study itself.
+    # them and can go, followed by the study itself. The video sets have to go
+    # before the videos, though: a set holds its clips with RESTRICT, so a study
+    # that has one would otherwise refuse to be deleted at all.
     await db.execute(delete(Participant).where(Participant.study_id == study_id))
+    await db.execute(delete(VideoSet).where(VideoSet.study_id == study_id))
     await db.execute(delete(Questionnaire).where(Questionnaire.study_id == study_id))
     await db.execute(delete(Video).where(Video.study_id == study_id))
     await db.delete(study)

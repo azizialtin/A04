@@ -38,7 +38,14 @@ body,
 }
 
 body {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   color: var(--fg);
   background: var(--bg);
   line-height: 1.55;
@@ -85,6 +92,19 @@ h3 {
 
 .panel--narrow {
   max-width: 420px;
+}
+
+/* Screens made of questions: the items are long German sentences with a scale
+   under each, and they need room to breathe more than they need to be compact. */
+.panel--form {
+  max-width: 840px;
+  padding: 40px 48px 36px;
+}
+
+@media (max-width: 720px) {
+  .panel--form {
+    padding: 24px 20px;
+  }
 }
 
 .panel--center {
@@ -175,7 +195,10 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .btn:disabled {
@@ -276,47 +299,129 @@ h3 {
 
 /* --- questionnaire ------------------------------------------------------ */
 
+.qhead {
+  margin-bottom: 8px;
+}
+
+.qhead h2 {
+  margin: 0 0 8px;
+}
+
+.qhead .muted {
+  margin: 0 0 6px;
+}
+
+.qhead .lead {
+  margin: 10px 0 0;
+}
+
 .qlist {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 
+/* A fieldset draws its legend *in* the top border, which put a line through
+   every question. Floating the legend takes it out of the border and back
+   into the flow, so the divider above each item is a clean rule again. */
 .qfield {
   border: none;
   border-top: 1px solid var(--border);
-  padding: 18px 0 0;
+  padding: 26px 0 28px;
   margin: 0;
+  min-width: 0;
+}
+
+.qfield:last-child {
+  padding-bottom: 8px;
 }
 
 .qfield__text {
-  font-weight: 600;
+  float: left;
+  width: 100%;
   padding: 0;
-  margin-bottom: 12px;
+  margin: 0 0 18px;
+  font-weight: 600;
+  font-size: 1.04rem;
+  line-height: 1.45;
+}
+
+/* Whatever follows the floated legend starts below it, not beside it — a
+   flex or grid control would otherwise be squeezed into the space to its right. */
+.qfield > :not(.qfield__text) {
+  clear: both;
+}
+
+/* A short numeric answer does not need the whole width of the card. */
+.qfield > .input[type='number'] {
+  max-width: 12rem;
 }
 
 .req {
   color: var(--danger);
 }
 
-.likert {
+/* Both ends of a scale, above it, flush with its edges. */
+.anchors {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  font-size: 0.86rem;
+  color: var(--muted);
+  clear: both;
+}
+
+.anchors span:last-child {
+  text-align: right;
+}
+
+.likert {
+  clear: both;
+}
+
+.likert__scale {
+  display: grid;
+  grid-template-columns: repeat(var(--points, 5), minmax(0, 1fr));
+  gap: 6px;
 }
 
 .likert__option {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 12px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   cursor: pointer;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.likert__anchor {
-  color: var(--muted);
-  font-size: 0.9rem;
+.likert__option:hover {
+  background: var(--bg);
+}
+
+.likert__option.is-chosen {
+  background: var(--brand-tint);
+  border-color: var(--brand);
+  color: var(--brand-dark);
+}
+
+.likert__option input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.likert__option:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .choice {
@@ -328,39 +433,171 @@ h3 {
 .choice__option {
   display: inline-flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
   line-height: 1.45;
+}
+
+.choice__option input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+}
+
+/* Several questions over one set of statements: the statements once, numbered,
+   then a row per question with a radio under each number. */
+.matrix {
+  border-top: 1px solid var(--border);
+  padding: 24px 0 12px;
+}
+
+.matrix__legend-title {
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.matrix__legend {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.matrix__legend li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.matrix__num {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--brand-tint);
+  color: var(--brand-dark);
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.matrix__scroll {
+  overflow-x: auto;
+}
+
+.matrix__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.matrix__table th,
+.matrix__table td {
+  padding: 8px 4px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.matrix__table thead th {
+  border-top: none;
+  padding-bottom: 10px;
+}
+
+.matrix__table .matrix__item {
+  text-align: left;
+  padding-left: 0;
+  padding-right: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  min-width: 12rem;
+  /* Pinned: on a narrow window the table scrolls sideways, and the statement
+     being answered must not slide out of view while reaching the last column. */
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.matrix__table tbody tr:hover,
+.matrix__table tbody tr:hover .matrix__item {
+  background: var(--bg);
+}
+
+.matrix__table td.is-chosen {
+  background: var(--brand-tint);
+}
+
+.matrix__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  cursor: pointer;
+}
+
+.matrix__cell input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--brand);
 }
 
 /* VAS / rating slider. Untouched, the handle rests mid-scale and the readout is
    blank — a skipped question must not look like a chosen minimum. */
 .scale {
+  clear: both;
+}
+
+.scale__row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .scale__range {
   flex: 1;
   min-width: 140px;
+  height: 28px;
   accent-color: var(--brand);
+  cursor: pointer;
 }
 
 .scale__range.is-unset {
   accent-color: var(--muted);
 }
 
-.scale__anchor {
-  color: var(--muted);
-  font-size: 0.9rem;
-  max-width: 9rem;
+.scale__value {
+  min-width: 2.6rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-tint);
+  color: var(--brand-dark);
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-align: center;
 }
 
-.scale__value {
-  min-width: 2ch;
-  font-weight: 600;
-  text-align: right;
+.scale__value.is-unset {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.scale__ticks {
+  display: flex;
+  justify-content: space-between;
+  /* Under the track only, not under the readout beside it. */
+  margin: 2px 4.4rem 0 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
 .steps {

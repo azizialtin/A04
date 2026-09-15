@@ -29,8 +29,9 @@ docs/            plan and notes
 
 - Docker (for Postgres)
 - Python 3.11+ and Node 20+
-- ffmpeg, if you want the screen recording (the bridge says so and carries on
-  without it)
+- ffmpeg, if you want the screen recording from the bridge (the bridge says so
+  and carries on without it; a browser with no bridge at all records its own
+  display instead, after asking once)
 
 ## Run it locally
 
@@ -76,9 +77,12 @@ python -m app.cli seed-questionnaires --study-id 3          # for studies made b
 ```
 
 Researchers then manage studies at `/admin/login` (email + password): create a
-study, upload videos with their case content, add participants and build each
-one's video sequence, edit the question batteries, and export the raw data as
-CSV. A new study arrives with the standard batteries from
+study, upload videos with their case content, build the two video sets (the
+fixed orders participants are dealt half and half at their first login), add
+participants — and, where one person needs something else, hand-pick their
+sequence or their set — edit the question batteries and the welcome page's
+wording, and export the raw data as CSV. A new study arrives with the standard
+batteries from
 `A04_DataCollection.xlsx` already on it (pre-test pages, the diagnosis
 confidence rating, the questions after each case); the "Fragebögen" tab is where
 they are edited, and where an older study can be given the ones it is missing.

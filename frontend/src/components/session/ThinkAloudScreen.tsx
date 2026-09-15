@@ -5,12 +5,29 @@ import apiClient from '../../api/client'
 import type { NoteSnapshot, ReplayData } from '../../api/participant'
 import { useVideoNotes, useVideoReplay } from '../../hooks/participant'
 import { frameToElement } from '../../lib/gazeGeometry'
+import { settleDuration } from '../../lib/media'
 import { gazeAt, notesOnClip, notesOnRecording, textAt } from '../../lib/replay'
+import { uploadSettled } from '../../lib/screenCapture'
+
+/** Which case this recording is of, and where it sits in a block of them. */
+export interface ThinkAloudPosition {
+  phaseType: string
+  caseNumber: number
+  caseTotal: number
+  batchPosition: number
+  batchSize: number
+}
 
 interface Props {
   videoId: number
+  position?: ThinkAloudPosition
   onComplete: () => void
 }
+
+// How long to wait for this case's own capture before playing what is already
+// stored. Long enough for a case-sized upload on a slow connection, short
+// enough that nobody is left staring at a line of text.
+const UPLOAD_WAIT_MS = 60_000
 
 /**
  * Cued retrospective think-aloud: replays the case with the participant's gaze
@@ -20,12 +37,40 @@ interface Props {
  * their cursor, the notes box, the timer, every dialog they opened. When the
  * capture failed it falls back to the clip alone, which still carries the gaze
  * but not what the participant was doing with the rest of the screen.
+ *
+ * A study may batch the training phase, so this screen can be the second of
+ * three recordings of cases worked through a while ago. It therefore says
+ * which case is playing rather than leaving the participant to recognise it.
  */
-export default function ThinkAloudScreen({ videoId, onComplete }: Props) {
+export default function ThinkAloudScreen({ videoId, position, onComplete }: Props) {
   const { t } = useTranslation()
-  const replay = useVideoReplay(videoId)
+  // A capture the page recorded itself may still be on its way up; asking for
+  // the replay before it lands would get the clip instead.
+  const [uploaded, setUploaded] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    // Reset when the case changes: a block of think-alouds renders this
+    // component several times in a row, and the second must wait for its own
+    // capture rather than inherit the first one's answer.
+    setUploaded(false)
+    const go = () => {
+      if (!cancelled) setUploaded(true)
+    }
+    // Capped, and never left to a rejection: an upload that stalls must cost
+    // the gaze overlay, not the participant's way forward.
+    const timer = window.setTimeout(go, UPLOAD_WAIT_MS)
+    void uploadSettled(videoId).then(go, go)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [videoId])
+  const replay = useVideoReplay(videoId, uploaded)
   const notes = useVideoNotes(videoId)
 
+  if (!uploaded) {
+    return <div className="fullpage">{t('think_aloud.saving')}</div>
+  }
   if (replay.isLoading || notes.isLoading) {
     return <div className="fullpage">{t('common.loading')}</div>
   }
@@ -33,11 +78,36 @@ export default function ThinkAloudScreen({ videoId, onComplete }: Props) {
     return <div className="fullpage is-danger">{t('session.error')}</div>
   }
 
+  const batched = (position?.batchSize ?? 1) > 1
+
   return (
     <div className="think-aloud">
       <header className="think-aloud__head">
-        <h2>{t('think_aloud.title')}</h2>
+        {position ? (
+          <p className="muted small">
+            {t('session.case_position', {
+              phase: t(`session.phase.${position.phaseType}`, {
+                defaultValue: position.phaseType,
+              }),
+              current: position.caseNumber,
+              total: position.caseTotal,
+            })}
+          </p>
+        ) : null}
+        <h2>
+          {batched
+            ? t('think_aloud.title_numbered', {
+                current: position?.batchPosition,
+                total: position?.batchSize,
+              })
+            : t('think_aloud.title')}
+        </h2>
         <p className="muted">{t('think_aloud.hint')}</p>
+        {/* Said once, at the top of a block: several recordings in a row is
+            not what the earlier cases led them to expect. */}
+        {batched && position?.batchPosition === 1 ? (
+          <p className="muted">{t('think_aloud.batch_hint', { total: position.batchSize })}</p>
+        ) : null}
       </header>
 
       <ReplayPlayer replay={replay.data} notes={notes.data ?? []} />
@@ -46,6 +116,7 @@ export default function ThinkAloudScreen({ videoId, onComplete }: Props) {
         <span className="muted">
           {t('think_aloud.stats', { points: replay.data.plotted_points })}
           {replay.data.source === 'clip' ? ` · ${t('think_aloud.clip_only')}` : ''}
+          {replay.data.recorder === 'browser' ? ` · ${t('think_aloud.browser_capture')}` : ''}
         </span>
         <button type="button" className="btn btn-primary btn-lg" onClick={onComplete}>
           {t('think_aloud.next')}
@@ -109,6 +180,8 @@ function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapsh
     if (video && stage && video.videoWidth && video.videoHeight) {
       stage.style.setProperty('--replay-aspect', `${video.videoWidth} / ${video.videoHeight}`)
     }
+    // A browser-made capture arrives without a duration; give it one.
+    if (video) settleDuration(video)
   }
 
   useEffect(() => {

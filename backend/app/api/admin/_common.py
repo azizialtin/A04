@@ -16,6 +16,8 @@ from app.models.video import Video
 from app.schemas.admin import (
     QuestionnaireOut,
     StudyResponse,
+    StudyTexts,
+    StudyVideoDefaults,
     VideoResponse,
 )
 from app.services.audit import record_audit
@@ -51,6 +53,22 @@ async def _participant_or_404(db: AsyncSession, participant_id: str) -> Particip
     return p
 
 
+async def _participant_for_update(db: AsyncSession, participant_id: str) -> Participant:
+    """The participant with their row locked until the request commits.
+
+    Anything that checks "have they started yet?" and then rewrites their run
+    has to hold the row across both, or the check and the write can straddle
+    the participant's own first login — and the case order would change under
+    someone already sitting in front of it.
+    """
+    p = await db.scalar(
+        select(Participant).where(Participant.id == participant_id).with_for_update()
+    )
+    if p is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Participant not found.")
+    return p
+
+
 def _audit(
     background_tasks: BackgroundTasks, admin: Researcher, action: str, meta: dict | None = None
 ) -> None:
@@ -73,6 +91,9 @@ def _study_out(s: Study) -> StudyResponse:
         sosci_posttest_url=s.sosci_posttest_url,
         sosci_id_param=s.sosci_id_param,
         is_active=s.is_active,
+        texts=StudyTexts.model_validate(s.texts or {}),
+        video_defaults=StudyVideoDefaults.model_validate(s.video_defaults or {}),
+        think_aloud_batch_size=s.think_aloud_batch_size,
     )
 
 
@@ -87,6 +108,8 @@ def _video_out(v: Video) -> VideoResponse:
         student_task_text=v.student_task_text,
         time_limit_seconds=v.time_limit_seconds,
         has_file=bool(v.gcp_filename),
+        use_default_task=v.use_default_task,
+        use_default_info=v.use_default_info,
     )
 
 

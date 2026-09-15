@@ -1,6 +1,23 @@
 import apiClient from './client'
 import type { ReplayPoint } from './participant'
 
+/** Participant-facing wording the researcher may change; empty means the app's default. */
+export interface StudyTexts {
+  welcome_title: string
+  welcome_intro: string
+  welcome_steps: string[]
+  welcome_note: string
+  case_intro_title: string
+  case_intro_body: string
+}
+
+/** What a new video starts from; the texts can be followed rather than copied. */
+export interface StudyVideoDefaults {
+  time_limit_seconds: number | null
+  task_description: string
+  info_text: string
+}
+
 export interface Study {
   id: number
   name: string
@@ -9,6 +26,10 @@ export interface Study {
   sosci_posttest_url: string
   sosci_id_param: string
   is_active: boolean
+  texts: StudyTexts
+  video_defaults: StudyVideoDefaults
+  /** Training cases worked through before their think-aloud screens play. */
+  think_aloud_batch_size: number
 }
 
 export interface AdminVideo {
@@ -21,12 +42,19 @@ export interface AdminVideo {
   student_task_text: string
   time_limit_seconds: number | null
   has_file: boolean
+  /** True: participants see the study's default text rather than this video's own. */
+  use_default_task: boolean
+  use_default_info: boolean
 }
 
 export interface AdminParticipant {
   id: string
   status: string
   slot_count: number
+  /** The set they were dealt at first login or given by hand; null before that
+   *  or when their sequence was hand-picked instead. */
+  video_set_id: number | null
+  video_set_name: string | null
 }
 
 export interface SequenceSlot {
@@ -41,6 +69,26 @@ export interface ParticipantDetail {
   status: string
   current_step_index: number | null
   sequence: SequenceSlot[]
+  video_set_id: number | null
+  video_set_name: string | null
+  /** Pinned when the run opened; null until then. */
+  think_aloud_batch_size: number | null
+}
+
+export interface VideoSetItem {
+  slot_index: number
+  video_id: number
+  video_title: string
+  phase_type: string
+}
+
+/** One of a study's fixed video orders — "A" or "B" — dealt out half and half. */
+export interface VideoSet {
+  id: number
+  study_id: number
+  name: string
+  items: VideoSetItem[]
+  participant_count: number
 }
 
 export interface AdminQuestionnaire {
@@ -59,10 +107,18 @@ export interface ScreenSummary {
   error: string | null
   duration_ms: number | null
   byte_size: number | null
+  /** "bridge" (ffmpeg on the lab machine) or "browser" (the page's own fallback). */
+  recorder: 'bridge' | 'browser'
+}
+
+/** Which endpoint plays this row back: the gaze recording, or the capture alone. */
+export interface ReplayRef {
+  kind: 'gaze' | 'screen'
+  id: number
 }
 
 export interface GazeRow {
-  id: number
+  replay: ReplayRef
   participant_id: string
   video_id: number
   video_title: string
@@ -83,6 +139,7 @@ export interface AdminReplay {
   source: 'screen' | 'clip'
   epoch_ms: number | null
   duration_ms: number | null
+  recorder: 'bridge' | 'browser' | null
   sampling_rate_hz: number
   plotted_points: number
   invalid_samples: number
@@ -224,6 +281,7 @@ export interface RosterRow {
   created_at: string | null
   cases: number
   assigned_sequence: boolean
+  video_set: string | null
   step: number
   total_steps: number
   progress: number | null
@@ -376,6 +434,7 @@ export interface ParticipantCaseStats {
     width: number | null
     height: number | null
     fps: number | null
+    recorder: 'bridge' | 'browser'
   } | null
 }
 
@@ -395,6 +454,7 @@ export interface ParticipantStats {
     progress: number | null
     current_step: string | null
     assigned_sequence: boolean
+    video_set: string | null
   }
   activity: {
     events: number
@@ -449,6 +509,8 @@ export interface SequenceItemInput {
 }
 
 export const EXPORT_KINDS = [
+  'participants',
+  'videos',
   'notes',
   'diagnoses',
   'responses',
@@ -458,6 +520,15 @@ export const EXPORT_KINDS = [
 ] as const
 export type ExportKind = (typeof EXPORT_KINDS)[number]
 
+export interface ExportInfo {
+  kind: ExportKind
+  filename: string
+  rows: number
+  // False where the study never collected this at all — in-app eye-tracker
+  // calibration is off — so an empty file is the expected result, not a fault.
+  collected: boolean
+}
+
 export interface VideoUploadInput {
   title: string
   phase_type: string
@@ -465,6 +536,8 @@ export interface VideoUploadInput {
   info_text: string
   student_task_text: string
   time_limit_seconds?: number | null
+  use_default_task?: boolean
+  use_default_info?: boolean
   file: File
 }
 
@@ -483,7 +556,11 @@ export interface VideoUploadTarget {
  * whole authorisation — putting our own Authorization header on it would leak
  * the admin's token to a third party.
  */
-function putToBucket(url: string, file: File, onProgress?: (percent: number) => void): Promise<void> {
+function putToBucket(
+  url: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url, true)
@@ -503,7 +580,8 @@ function putToBucket(url: string, file: File, onProgress?: (percent: number) => 
 
 export const adminApi = {
   listStudies: () => apiClient.get<Study[]>('/admin/studies').then((r) => r.data),
-  createStudy: (body: Partial<Study>) => apiClient.post<Study>('/admin/studies', body).then((r) => r.data),
+  createStudy: (body: Partial<Study>) =>
+    apiClient.post<Study>('/admin/studies', body).then((r) => r.data),
   getStudy: (id: number) => apiClient.get<Study>(`/admin/studies/${id}`).then((r) => r.data),
   updateStudy: (id: number, body: Partial<Study>) =>
     apiClient.patch<Study>(`/admin/studies/${id}`, body).then((r) => r.data),
@@ -548,14 +626,15 @@ export const adminApi = {
     if (meta.time_limit_seconds != null) {
       form.append('time_limit_seconds', String(meta.time_limit_seconds))
     }
+    form.append('use_default_task', String(!!meta.use_default_task))
+    form.append('use_default_info', String(!!meta.use_default_info))
     form.append('file', file)
     return apiClient
       .post<AdminVideo>(`/admin/studies/${studyId}/videos`, form, {
         // Case clips run to hundreds of megabytes; a button that just sits
         // there looks broken.
         timeout: 0,
-        onUploadProgress: (e) =>
-          onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
+        onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
       })
       .then((r) => r.data)
   },
@@ -565,11 +644,14 @@ export const adminApi = {
     apiClient.get<AdminParticipant[]>(`/admin/studies/${studyId}/participants`).then((r) => r.data),
   createParticipants: (studyId: number, ids: string[]) =>
     apiClient
-      .post<{ created: string[]; skipped: string[] }>(`/admin/studies/${studyId}/participants`, { ids })
+      .post<{ created: string[]; skipped: string[] }>(`/admin/studies/${studyId}/participants`, {
+        ids,
+      })
       .then((r) => r.data),
   getParticipant: (id: string) =>
     apiClient.get<ParticipantDetail>(`/admin/participants/${id}`).then((r) => r.data),
-  deleteParticipant: (id: string) => apiClient.delete(`/admin/participants/${id}`).then((r) => r.data),
+  deleteParticipant: (id: string) =>
+    apiClient.delete(`/admin/participants/${id}`).then((r) => r.data),
   setSequence: (id: string, items: SequenceItemInput[]) =>
     apiClient.put(`/admin/participants/${id}/videos`, { items }).then((r) => r.data),
   bulkAssign: (studyId: number, participant_ids: string[], items: SequenceItemInput[]) =>
@@ -579,11 +661,30 @@ export const adminApi = {
         items,
       })
       .then((r) => r.data),
+  assignVideoSet: (id: string, videoSetId: number) =>
+    apiClient
+      .put<{ status: string; slot_count: number; video_set_name: string }>(
+        `/admin/participants/${id}/video-set`,
+        { video_set_id: videoSetId },
+      )
+      .then((r) => r.data),
+
+  listVideoSets: (studyId: number) =>
+    apiClient.get<VideoSet[]>(`/admin/studies/${studyId}/video-sets`).then((r) => r.data),
+  createVideoSet: (studyId: number, body: { name: string; items: SequenceItemInput[] }) =>
+    apiClient.post<VideoSet>(`/admin/studies/${studyId}/video-sets`, body).then((r) => r.data),
+  updateVideoSet: (id: number, body: { name?: string; items?: SequenceItemInput[] }) =>
+    apiClient.put<VideoSet>(`/admin/video-sets/${id}`, body).then((r) => r.data),
+  deleteVideoSet: (id: number) => apiClient.delete(`/admin/video-sets/${id}`).then((r) => r.data),
 
   listQuestionnaires: (studyId: number) =>
-    apiClient.get<AdminQuestionnaire[]>(`/admin/studies/${studyId}/questionnaires`).then((r) => r.data),
+    apiClient
+      .get<AdminQuestionnaire[]>(`/admin/studies/${studyId}/questionnaires`)
+      .then((r) => r.data),
   createQuestionnaire: (studyId: number, body: Partial<AdminQuestionnaire>) =>
-    apiClient.post<AdminQuestionnaire>(`/admin/studies/${studyId}/questionnaires`, body).then((r) => r.data),
+    apiClient
+      .post<AdminQuestionnaire>(`/admin/studies/${studyId}/questionnaires`, body)
+      .then((r) => r.data),
   seedQuestionnaires: (studyId: number) =>
     apiClient
       .post<AdminQuestionnaire[]>(`/admin/studies/${studyId}/questionnaires/seed`)
@@ -595,21 +696,35 @@ export const adminApi = {
 
   listGaze: (studyId?: number) =>
     apiClient
-      .get<{ items: GazeRow[] }>('/admin/gaze/recordings', { params: studyId ? { study_id: studyId } : {} })
+      .get<{ items: GazeRow[] }>('/admin/gaze/recordings', {
+        params: studyId ? { study_id: studyId } : {},
+      })
       .then((r) => r.data.items),
-  getGazeReplay: (recordingId: number) =>
-    apiClient.get<AdminReplay>(`/admin/gaze/recordings/${recordingId}/replay`).then((r) => r.data),
+  getReplay: (ref: ReplayRef) =>
+    apiClient
+      .get<AdminReplay>(
+        ref.kind === 'gaze'
+          ? `/admin/gaze/recordings/${ref.id}/replay`
+          : `/admin/screen-recordings/${ref.id}/replay`,
+      )
+      .then((r) => r.data),
   listAudit: () => apiClient.get<{ items: AuditRow[] }>('/admin/audit').then((r) => r.data.items),
 
   overviewStats: (days = 30) =>
     apiClient.get<OverviewStats>('/admin/stats/overview', { params: { days } }).then((r) => r.data),
   studyStats: (studyId: number, days = 30) =>
-    apiClient.get<StudyStats>(`/admin/studies/${studyId}/stats`, { params: { days } }).then((r) => r.data),
+    apiClient
+      .get<StudyStats>(`/admin/studies/${studyId}/stats`, { params: { days } })
+      .then((r) => r.data),
   participantStats: (id: string) =>
     apiClient.get<ParticipantStats>(`/admin/participants/${id}/stats`).then((r) => r.data),
 
+  listExports: (studyId: number) =>
+    apiClient.get<ExportInfo[]>(`/admin/studies/${studyId}/exports`).then((r) => r.data),
   downloadExport: async (studyId: number, kind: ExportKind) => {
-    const res = await apiClient.get(`/admin/studies/${studyId}/export/${kind}`, { responseType: 'blob' })
+    const res = await apiClient.get(`/admin/studies/${studyId}/export/${kind}`, {
+      responseType: 'blob',
+    })
     const url = URL.createObjectURL(res.data as Blob)
     const a = document.createElement('a')
     a.href = url

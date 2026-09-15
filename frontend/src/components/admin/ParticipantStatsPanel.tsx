@@ -105,9 +105,11 @@ export default function ParticipantStatsPanel({
               ['Abgeschlossen', when(stats.data.session.completed_at)],
               [
                 'Reihenfolge',
-                stats.data.session.assigned_sequence
-                  ? 'individuell zugewiesen'
-                  : 'Standard der Studie',
+                stats.data.session.video_set
+                  ? `Set ${stats.data.session.video_set}`
+                  : stats.data.session.assigned_sequence
+                    ? 'individuell zugewiesen'
+                    : 'Standard der Studie',
               ],
               [
                 'Geschrieben',
@@ -318,7 +320,7 @@ function CaseCard({ row }: { row: ParticipantCaseStats }) {
                   ? screen.status === 'stored'
                     ? `${duration((screen.duration_ms ?? 0) / 1000)} · ${bytes(screen.byte_size)}${
                         screen.width ? ` · ${screen.width}×${screen.height}` : ''
-                      }`
+                      }${screen.recorder === 'browser' ? ' · vom Browser aufgezeichnet' : ''}`
                     : screen.status === 'failed'
                       ? `fehlgeschlagen: ${screen.error ?? 'ohne Angabe'}`
                       : 'Upload ausstehend'

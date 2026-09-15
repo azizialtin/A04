@@ -21,14 +21,28 @@ afterEach(() => vi.unstubAllGlobals())
 describe('toDisplay', () => {
   it('is the identity in fullscreen', () => {
     vi.stubGlobal('screen', { width: 2560, height: 1440 })
-    stubWindow({ screenX: 0, screenY: 0, outerWidth: 2560, outerHeight: 1440, innerWidth: 2560, innerHeight: 1440 })
+    stubWindow({
+      screenX: 0,
+      screenY: 0,
+      outerWidth: 2560,
+      outerHeight: 1440,
+      innerWidth: 2560,
+      innerHeight: 1440,
+    })
     expect(toDisplay({ x: 0.25, y: 0.75 })).toEqual({ x: 0.25, y: 0.75 })
   })
 
   it('accounts for a window that is not the whole screen', () => {
     // A 1280x720 viewport at (640, 260), with 100px of chrome above it.
     vi.stubGlobal('screen', { width: 2560, height: 1440 })
-    stubWindow({ screenX: 640, screenY: 260, outerWidth: 1280, outerHeight: 820, innerWidth: 1280, innerHeight: 720 })
+    stubWindow({
+      screenX: 640,
+      screenY: 260,
+      outerWidth: 1280,
+      outerHeight: 820,
+      innerWidth: 1280,
+      innerHeight: 720,
+    })
     // Viewport centre is screen (640 + 640, 360 + 360) = (1280, 720) = dead centre.
     expect(toDisplay({ x: 0.5, y: 0.5 })).toEqual({ x: 0.5, y: 0.5 })
     expect(toDisplay({ x: 0, y: 0 })).toEqual({ x: 640 / 2560, y: 360 / 1440 })
@@ -63,7 +77,13 @@ describe('offsetOf', () => {
 describe('meanOffset', () => {
   it('ignores targets with no valid gaze', () => {
     const base = { target_x: 0, target_y: 0, gaze_x: null, gaze_y: null, samples: 0 }
-    expect(meanOffset([{ ...base, offset: 0.02 }, { ...base, offset: 0.04 }, { ...base, offset: null }])).toBeCloseTo(0.03)
+    expect(
+      meanOffset([
+        { ...base, offset: 0.02 },
+        { ...base, offset: 0.04 },
+        { ...base, offset: null },
+      ]),
+    ).toBeCloseTo(0.03)
   })
 
   it('is null when nothing was measured', () => {

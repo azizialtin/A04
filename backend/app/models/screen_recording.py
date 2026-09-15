@@ -42,6 +42,11 @@ class ScreenRecording(Base):
     storage_mode: Mapped[str] = mapped_column(String(16), default="local")
     storage_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # "bridge": ffmpeg on the lab machine, the intended path. "browser": the
+    # page captured its own display because no bridge could — the fallback,
+    # whose clock anchor is the browser's and a frame or two less exact.
+    recorder: Mapped[str] = mapped_column(String(16), default="bridge", server_default="bridge")
+
     # Wall-clock ms on the lab machine at video position 0. Gaze samples carry
     # that same clock, so a sample's position in this recording is just
     # `ts - epoch_ms` — no playback spans to reconstruct, and a sample taken

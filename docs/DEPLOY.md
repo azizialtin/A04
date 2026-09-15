@@ -129,3 +129,12 @@ Frontend → the nginx image on Cloud Run, or the built `dist/` on any static ho
 Runs on the lab machine only (Python 3.10 + the Tobii Pro SDK). It also records
 the screen, which needs **ffmpeg on PATH** — without it the bridge says so at
 startup and the study runs on gaze alone. See `tobii-service/README.md`.
+
+A machine with no bridge running at all still gets a screen recording: the page
+asks for the display through the browser's own screen-share picker on the first
+case intro and records it itself. That needs `display-capture` to stay allowed
+for the app's own origin — nginx says so explicitly in its `Permissions-Policy`,
+so do not drop it from that header. That is the safety net for a test run on a
+laptop or a lab machine that has lost its bridge, not a replacement — the
+browser's picker and its "sharing your screen" bar can only be suppressed with a
+managed-browser policy, and the clock anchor is a frame or two less exact.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.models.video import Video
 
 
@@ -72,4 +74,4 @@ def resolve_screen_url(recording, settings) -> str | None:
         blob = storage.Client().bucket(settings.GCP_BUCKET_NAME).blob(recording.storage_path)
         return sign_blob_url(blob)
 
-    return f"/uploads/screens/{recording.participant_id}/{recording.id}.mp4"
+    return f"/uploads/screens/{recording.participant_id}/{Path(recording.storage_path).name}"

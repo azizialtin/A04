@@ -46,9 +46,18 @@ test('a participant works through their cases and reaches the end', async ({ pag
   )
   await page.getByRole('button', { name: /abgeschlossen/ }).click()
 
-  // --- calibration, with no tracker attached ------------------------------
-  await expect(page.getByRole('heading', { name: /Kalibrierung/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Ohne Eye-Tracking fortfahren' }).click({ timeout: 15_000 })
+  // --- calibration, when this deployment runs its own step ----------------
+  // The lab calibrates in Tobii Pro Eye Tracker Manager before the participant
+  // sits down, so `CALIBRATION_ENABLED` is off by default and the step is
+  // simply absent. The run has to work either way, so wait for whichever
+  // screen comes next rather than assuming.
+  const calibration = page.getByRole('heading', { name: /Kalibrierung/ })
+  await expect(calibration.or(page.getByText('Phase 1'))).toBeVisible()
+  if (await calibration.isVisible()) {
+    await page
+      .getByRole('button', { name: 'Ohne Eye-Tracking fortfahren' })
+      .click({ timeout: 15_000 })
+  }
 
   // --- two cases -----------------------------------------------------------
   for (const caseNumber of [1, 2]) {
@@ -73,7 +82,9 @@ test('a participant works through their cases and reaches the end', async ({ pag
     // Diagnosis, with their own notes shown back to them and the confidence
     // rating on the same screen: the write-up alone is not the whole answer.
     await expect(page.getByRole('heading', { name: 'Ihre Diagnose' })).toBeVisible()
-    await expect(page.getByText(`Die Schleife läuft einmal zu oft (Fall ${caseNumber})`)).toBeVisible()
+    await expect(
+      page.getByText(`Die Schleife läuft einmal zu oft (Fall ${caseNumber})`),
+    ).toBeVisible()
     await expect(page.getByRole('button', { name: 'Weiter' })).toBeDisabled()
     await page.getByLabel('Was war das Problem?').fill('Der Abbruch der Schleife ist off-by-one.')
     await expect(page.getByRole('button', { name: 'Weiter' })).toBeDisabled()
@@ -99,6 +110,12 @@ test('a participant works through their cases and reaches the end', async ({ pag
   await page.getByRole('button', { name: /abgeschlossen/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Vielen Dank!' })).toBeVisible()
+
+  // The hand-over: the study manager sends the machine back to the id prompt
+  // for the next sitting rather than finding the way there themselves.
+  await page.getByRole('button', { name: 'Mit der nächsten Person beginnen' }).click()
+  await expect(page.getByLabel('Teilnehmer-ID')).toBeVisible()
+
   expect(failures, `uncaught errors in the browser: ${failures.join('\n')}`).toEqual([])
 })
 

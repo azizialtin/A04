@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
 
 # Participant ids become directory names, so they are held to a charset that
-# cannot escape the uploads tree.
-SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# cannot escape the uploads tree. The charset alone is not enough — "." and
+# ".." are made of it — so at least one letter or digit is required too.
+SAFE_ID = re.compile(r"^(?=.*[A-Za-z0-9])[A-Za-z0-9._-]{1,64}$")
 
 
 # What a case clip is allowed to be. Anything else is either a mistake or an
@@ -93,22 +94,42 @@ def screens_dir() -> Path:
     return UPLOADS / "screens"
 
 
-def screen_blob_name(participant_id: str, recording_id: int) -> str:
-    return f"screens/{participant_id}/{recording_id}.mp4"
+# What a screen capture can arrive as: mp4 from ffmpeg in the bridge, WebM from
+# a browser's MediaRecorder. Stored under its real extension, so a researcher
+# who downloads one gets a file that opens.
+SCREEN_EXTENSIONS = {"video/mp4": ".mp4", "video/webm": ".webm"}
 
 
-def upload_screen_recording(local: Path, participant_id: str, recording_id: int, settings) -> str:
+def screen_extension(content_type: str | None, filename: str | None = None) -> str:
+    """The extension a capture should be stored under, from what the uploader
+    said it was. Anything unrecognised is treated as mp4, the historical case."""
+    suffix = Path(filename or "").suffix.lower()
+    if suffix in SCREEN_EXTENSIONS.values():
+        return suffix
+    return SCREEN_EXTENSIONS.get((content_type or "").split(";")[0].strip(), ".mp4")
+
+
+def screen_blob_name(participant_id: str, recording_id: int, ext: str = ".mp4") -> str:
+    return f"screens/{participant_id}/{recording_id}{ext}"
+
+
+def upload_screen_recording(
+    local: Path, participant_id: str, recording_id: int, settings, ext: str = ".mp4"
+) -> str:
     """Move a finished capture to wherever recordings live, and say where.
 
     Synchronous like `store_video` — a screen recording is hundreds of megabytes
     and the caller runs it in a threadpool.
     """
-    name = screen_blob_name(participant_id, recording_id)
+    name = screen_blob_name(participant_id, recording_id, ext)
+    content_type = next((t for t, e in SCREEN_EXTENSIONS.items() if e == ext), "video/mp4")
     if settings.SCREEN_STORAGE_MODE == "gcs":
-        _bucket(settings).blob(name).upload_from_filename(str(local), content_type="video/mp4")
+        _bucket(settings).blob(name).upload_from_filename(str(local), content_type=content_type)
         return name
 
-    dest = screens_dir() / participant_id / f"{recording_id}.mp4"
+    dest = screens_dir() / participant_id / f"{recording_id}{ext}"
+    if not _inside(screens_dir(), dest):
+        raise UploadRejected("That participant id cannot be stored under.")
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(local), dest)
     return str(dest)
@@ -165,13 +186,16 @@ def verify_uploaded_blob(blob_name: str, max_bytes: int, settings) -> int:
 
 
 def delete_screen_recording(participant_id: str, recording_id: int, settings) -> None:
+    # Whichever extension it was stored under: the id is the name, the rest is
+    # a prefix.
     try:
         if settings.GCP_BUCKET_NAME and settings.SCREEN_STORAGE_MODE == "gcs":
-            _bucket(settings).blob(screen_blob_name(participant_id, recording_id)).delete()
+            _delete_prefix(f"screens/{participant_id}/{recording_id}.", settings)
             return
-        path = screens_dir() / participant_id / f"{recording_id}.mp4"
-        if _inside(screens_dir(), path):
-            path.unlink(missing_ok=True)
+        folder = screens_dir() / participant_id
+        if _inside(screens_dir(), folder) and folder.is_dir():
+            for path in folder.glob(f"{recording_id}.*"):
+                path.unlink(missing_ok=True)
     except Exception:
         logger.exception("could not delete screen recording %s", recording_id)
 

@@ -64,8 +64,17 @@ to share the clock that stamps the gaze samples — which is this machine's, not
 the server's.
 
 Needs **ffmpeg on PATH**. Without it the bridge reports
-`screen_recording: false` in its status message, the browser never asks, and the
-think-aloud falls back to the clip. Nothing blocks the participant either way.
+`screen_recording: false` in its status message and the browser does not ask it
+to record. The tracker is not needed for any of this: a bridge with ffmpeg and
+no tracker still records the screen, and the think-aloud plays that back with
+no gaze on it.
+
+When the browser gets `screen_recording: false` — or no bridge answers at all —
+it records its own display instead, through the browser's screen-share picker
+(asked once per page load, on the case intro). Those captures reach the backend
+by the same routes as ours and are marked `recorder = "browser"`. The
+think-aloud falls back to the clip only when neither happened. Nothing blocks
+the participant either way.
 
 ```bash
 python tobii_bridge.py --no-screen-recording        # gaze only

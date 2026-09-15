@@ -20,6 +20,12 @@ export interface Question {
   options?: (string | QuestionOption)[]
   min?: number
   max?: number
+  /**
+   * Consecutive single-choice questions with the same key and the same options
+   * are shown as one table — a row each, the options listed once — rather
+   * than the same list repeated under every question.
+   */
+  matrix?: string
 }
 
 export type Answers = Record<string, unknown>
@@ -65,4 +71,46 @@ export function missingRequired(questions: Question[], answers: Answers): string
 
 export function normaliseOption(opt: string | QuestionOption): QuestionOption {
   return typeof opt === 'string' ? { value: opt, label: opt } : opt
+}
+
+export type QuestionBlock =
+  | { kind: 'single'; question: Question }
+  | { kind: 'matrix'; key: string; options: QuestionOption[]; questions: Question[] }
+
+/**
+ * Group the questions a screen is about to show into what gets rendered: a
+ * run of single-choice questions sharing a `matrix` key and identical options
+ * becomes one table; everything else stays a question of its own. A run is
+ * broken by any other question in between, and by a change of options — two
+ * ladders with different statements are two tables.
+ */
+function sameOptions(a: QuestionOption[], b: QuestionOption[]): boolean {
+  // Compared field by field rather than by serialising: the admin types this
+  // JSON by hand, so two identical ladders can differ in key order or carry a
+  // stray key, and a run that split there would repeat the whole legend.
+  return (
+    a.length === b.length && a.every((o, i) => o.value === b[i].value && o.label === b[i].label)
+  )
+}
+
+export function groupQuestions(questions: Question[]): QuestionBlock[] {
+  const blocks: QuestionBlock[] = []
+  for (const q of questions) {
+    const options =
+      q.type === 'multiple_choice' && q.matrix ? (q.options ?? []).map(normaliseOption) : null
+    const last = blocks[blocks.length - 1]
+    if (
+      options?.length &&
+      last?.kind === 'matrix' &&
+      last.key === q.matrix &&
+      sameOptions(last.options, options)
+    ) {
+      last.questions.push(q)
+    } else if (options?.length) {
+      blocks.push({ kind: 'matrix', key: q.matrix as string, options, questions: [q] })
+    } else {
+      blocks.push({ kind: 'single', question: q })
+    }
+  }
+  return blocks
 }

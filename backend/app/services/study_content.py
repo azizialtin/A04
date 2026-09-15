@@ -226,12 +226,25 @@ _CK_DEBUG_LEVELS: list[tuple[str, str]] = [
 ]
 
 
-def _ck(qid: str, concept: str, levels: list[tuple[str, str]] = _CK_LEVELS) -> Question:
+# Consecutive single-choice questions that carry the same `matrix` key and the
+# same options are shown as one table — a row per concept, the statements
+# listed once above it — instead of the seven statements repeated eight times.
+CK_MATRIX = "ck_concepts"
+CK_DEBUG_MATRIX = "ck_debug"
+
+
+def _ck(
+    qid: str,
+    concept: str,
+    levels: list[tuple[str, str]] = _CK_LEVELS,
+    matrix: str = CK_MATRIX,
+) -> Question:
     return {
         "id": qid,
         "type": "multiple_choice",
         "text": concept,
         "options": [{"value": value, "label": label} for value, label in levels],
+        "matrix": matrix,
     }
 
 
@@ -244,8 +257,18 @@ CK_PRE_TEST: list[Question] = [
     _ck("ck_pre_datastructures", "Datenstrukturen wie Arrays und Listen"),
     _ck("ck_pre_methods", "Methoden und Funktionen"),
     _ck("ck_pre_obj", "Klassen und Objekte"),
-    _ck("ck_pre_debug", "Debugging", _CK_DEBUG_LEVELS),
 ]
+
+# Its own page: the debugging ladder is a different set of statements, and
+# next to the concept table it read as an eighth row that did not fit.
+CK_DEBUG_PRE_TEST: list[Question] = [
+    _ck("ck_pre_debug", "Debugging", _CK_DEBUG_LEVELS, matrix=CK_DEBUG_MATRIX),
+]
+
+CK_DEBUG_TITLE = "Fachwissen Debugging"
+CK_DEBUG_DESCRIPTION = (
+    "Bitte wählen Sie die Aussage, die Ihre Erfahrung mit der Fehlersuche am besten beschreibt."
+)
 
 
 # --- Written diagnosis (sheet "Final Diagnosis on Written Diag") ----------
@@ -347,6 +370,13 @@ DEFAULT_BATTERIES: list[Battery] = [
         "Fachwissen Programmierung",
         "Bitte wählen Sie zu jedem Konzept die Aussage, die am besten auf Sie zutrifft.",
         CK_PRE_TEST,
+    ),
+    Battery(
+        QuestionnairePlacement.pre_test,
+        3,
+        CK_DEBUG_TITLE,
+        CK_DEBUG_DESCRIPTION,
+        CK_DEBUG_PRE_TEST,
     ),
     Battery(
         QuestionnairePlacement.diagnosis,

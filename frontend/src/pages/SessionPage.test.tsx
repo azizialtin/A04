@@ -38,7 +38,15 @@ const STEPS: SessionStep[] = [
     page_count: 2,
     questions: [{ id: 'ck_pre_loop', type: 'number', text: 'Schleifen' }],
   },
-  { index: 2, completed: false, kind: 'sosci', variant: 'pretest', url: '', id_param: 'id', participant_id: 'T-1' },
+  {
+    index: 2,
+    completed: false,
+    kind: 'sosci',
+    variant: 'pretest',
+    url: '',
+    id_param: 'id',
+    participant_id: 'T-1',
+  },
 ]
 
 vi.mock('../hooks/participant', () => ({

@@ -18,9 +18,11 @@ from app.models.enums import ActorType, ParticipantStatus
 from app.models.participant import Participant
 from app.models.researcher import Researcher
 from app.models.session import Session
+from app.models.study import Study
 from app.schemas.auth import AdminLoginRequest, ParticipantLoginRequest, TokenResponse
 from app.services.audit import record_audit
 from app.services.event_logger import log_event
+from app.services.video_sets import deal_on_first_login
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -64,8 +66,16 @@ async def participant_login(
             "You have already completed the study. Thank you!",
         )
 
-    # First login opens the single run and flips the status.
+    # First login opens the single run and flips the status. It is also the
+    # moment a participant without a hand-picked sequence is dealt one of the
+    # study's video sets, so the balance counts the people who turned up, and
+    # the moment the think-aloud batch size is pinned — after this the study
+    # can be edited without reordering a sitting that is already under way.
+    dealt = None
     if participant.status == ParticipantStatus.registered:
+        dealt = await deal_on_first_login(db, participant)
+        study = await db.get(Study, participant.study_id)
+        participant.think_aloud_batch_size = study.think_aloud_batch_size if study else 1
         db.add(Session(participant_id=participant.id))
         participant.status = ParticipantStatus.active
         await db.commit()
@@ -77,6 +87,13 @@ async def participant_login(
         expires=timedelta(hours=settings.PARTICIPANT_TOKEN_HOURS),
     )
     background_tasks.add_task(log_event, participant_id=participant.id, event_type="login")
+    if dealt is not None:
+        background_tasks.add_task(
+            log_event,
+            participant_id=participant.id,
+            event_type="video_set_dealt",
+            payload={"video_set_id": dealt.id, "video_set_name": dealt.name},
+        )
     return TokenResponse(access_token=token)
 
 

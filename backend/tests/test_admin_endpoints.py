@@ -75,6 +75,210 @@ async def test_participants_are_listed_with_their_slot_counts(
     assert by_id["T-002"]["status"] == "registered"
 
 
+async def test_the_welcome_wording_can_be_written_per_study(
+    client, study, seed_participant, admin_headers
+):
+    r = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={
+            "texts": {
+                "welcome_title": "  Herzlich willkommen ",
+                "welcome_intro": "Erster Absatz.\n\nZweiter Absatz.",
+                "welcome_steps": ["Fragen", "  ", "Neun Fälle"],
+                "welcome_note": "",
+            }
+        },
+        headers=admin_headers,
+    )
+    assert r.status_code == 200, r.text
+    # Trimmed, blank lines dropped; an empty field stays empty and means "default".
+    assert r.json()["texts"] == {
+        "welcome_title": "Herzlich willkommen",
+        "welcome_intro": "Erster Absatz.\n\nZweiter Absatz.",
+        "welcome_steps": ["Fragen", "Neun Fälle"],
+        "welcome_note": "",
+        "case_intro_title": "",
+        "case_intro_body": "",
+    }
+
+    # And the participant's script opens with exactly that wording.
+    login = await client.post(
+        "/auth/participant/login", json={"participant_id": seed_participant.id}
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    welcome = (await client.get("/participant/session", headers=headers)).json()["steps"][0]
+    assert welcome["kind"] == "welcome"
+    assert welcome["texts"]["welcome_title"] == "Herzlich willkommen"
+    assert welcome["texts"]["welcome_steps"] == ["Fragen", "Neun Fälle"]
+
+
+async def test_the_case_intro_wording_reaches_every_case(
+    client, study, videos, seed_participant, admin_headers
+):
+    r = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"texts": {"case_intro_title": "Nächster Fall", "case_intro_body": "Achtung, los."}},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200, r.text
+    login = await client.post(
+        "/auth/participant/login", json={"participant_id": seed_participant.id}
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    intros = [
+        s
+        for s in (await client.get("/participant/session", headers=headers)).json()["steps"]
+        if s["kind"] == "case_intro"
+    ]
+    assert len(intros) == len(videos)
+    assert {(s["title"], s["body"]) for s in intros} == {("Nächster Fall", "Achtung, los.")}
+
+
+async def test_a_video_can_follow_the_studys_default_texts(
+    client, db, study, seed_participant, admin_headers
+):
+    """One wording, edited in one place: a clip that opts in shows the study's
+    task and info text, and picks up a later edit without being touched."""
+    r = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={
+            "video_defaults": {
+                "time_limit_seconds": 300,
+                "task_description": " Was läuft hier schief? ",
+                "info_text": "Klasse 9, Java.",
+            }
+        },
+        headers=admin_headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["video_defaults"] == {
+        "time_limit_seconds": 300,
+        "task_description": "Was läuft hier schief?",
+        "info_text": "Klasse 9, Java.",
+    }
+
+    uploaded = await client.post(
+        f"/admin/studies/{study.id}/videos",
+        data={
+            "title": "Folgt dem Standard",
+            "phase_type": "training",
+            "task_description": "eigener Text, der nicht gezeigt wird",
+            "use_default_task": "true",
+            "use_default_info": "true",
+        },
+        files={"file": ("clip.mp4", MP4, "video/mp4")},
+        headers=admin_headers,
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    assert uploaded.json()["use_default_task"] is True
+    assert uploaded.json()["use_default_info"] is True
+
+    login = await client.post(
+        "/auth/participant/login", json={"participant_id": seed_participant.id}
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    def case_steps(script):
+        return [s for s in script["steps"] if s["kind"] in ("case_video", "diagnosis")]
+
+    script = (await client.get("/participant/session", headers=headers)).json()
+    assert {s["task_description"] for s in case_steps(script)} == {"Was läuft hier schief?"}
+    assert next(s for s in script["steps"] if s["kind"] == "case_video")["info_text"] == (
+        "Klasse 9, Java."
+    )
+
+    # The default changes; the clip follows.
+    await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"video_defaults": {"task_description": "Neu formuliert.", "info_text": ""}},
+        headers=admin_headers,
+    )
+    script = (await client.get("/participant/session", headers=headers)).json()
+    assert {s["task_description"] for s in case_steps(script)} == {"Neu formuliert."}
+
+
+async def test_a_video_with_its_own_text_keeps_it(client, study, videos, admin_headers):
+    r = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"video_defaults": {"task_description": "Standard"}},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200
+    r = await client.patch(
+        f"/admin/videos/{videos[0].id}",
+        json={"task_description": "Eigene Aufgabe", "use_default_task": False},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["task_description"] == "Eigene Aufgabe"
+    assert r.json()["use_default_task"] is False
+
+
+async def test_changing_one_text_leaves_the_others_alone(client, study, admin_headers):
+    """A PATCH of one field must not wipe the rest of the object — the admin
+    form sends them together, but the endpoint is not the only caller."""
+    await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"texts": {"welcome_title": "Willkommen bei A04", "welcome_note": "Merken!"}},
+        headers=admin_headers,
+    )
+    r = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"texts": {"case_intro_title": "Nächster Fall"}},
+        headers=admin_headers,
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["texts"]["welcome_title"] == "Willkommen bei A04"
+    assert r.json()["texts"]["welcome_note"] == "Merken!"
+    assert r.json()["texts"]["case_intro_title"] == "Nächster Fall"
+
+    # And clearing one is still saying so explicitly.
+    cleared = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"texts": {"welcome_note": "   "}},
+        headers=admin_headers,
+    )
+    assert cleared.json()["texts"]["welcome_note"] == ""
+    assert cleared.json()["texts"]["welcome_title"] == "Willkommen bei A04"
+
+
+async def test_changing_one_video_default_leaves_the_others_alone(client, study, admin_headers):
+    await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"video_defaults": {"time_limit_seconds": 420, "task_description": "Fehler finden"}},
+        headers=admin_headers,
+    )
+    r = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={"video_defaults": {"info_text": "Klasse 9"}},
+        headers=admin_headers,
+    )
+
+    assert r.json()["video_defaults"] == {
+        "time_limit_seconds": 420,
+        "task_description": "Fehler finden",
+        "info_text": "Klasse 9",
+    }
+
+
+async def test_a_study_without_its_own_wording_says_so(client, study, admin_headers):
+    r = await client.get(f"/admin/studies/{study.id}", headers=admin_headers)
+    assert r.json()["texts"] == {
+        "welcome_title": "",
+        "welcome_intro": "",
+        "welcome_steps": [],
+        "welcome_note": "",
+        "case_intro_title": "",
+        "case_intro_body": "",
+    }
+    assert r.json()["video_defaults"] == {
+        "time_limit_seconds": None,
+        "task_description": "",
+        "info_text": "",
+    }
+
+
 async def test_questionnaires_are_listed_in_the_order_they_are_shown(client, study, admin_headers):
     for title, order in [("Second", 1), ("First", 0)]:
         await client.post(
@@ -274,6 +478,70 @@ async def test_gaze_recordings_are_listed_newest_first(
     assert body["items"][0]["participant_id"] == seed_participant.id
     assert body["items"][0]["video_title"] in {"Case 0", "Case 1"}
     assert body["items"][0]["sample_count"] == 100
+    assert body["items"][0]["replay"]["kind"] == "gaze"
+
+
+async def test_a_capture_without_a_tracker_is_still_listed_and_playable(
+    client, db, study, videos, seed_participant, admin_headers, uploads
+):
+    """A session whose bridge was down has no gaze rows at all. Keying the list
+    on those would leave its recordings in the bucket, unreachable."""
+    from app.models.screen_recording import ScreenRecording
+
+    path = uploads / "screens" / seed_participant.id
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "1.webm").write_bytes(b"\x1a\x45\xdf\xa3" + b"\0" * 64)
+    db.add(
+        ScreenRecording(
+            id=1,
+            participant_id=seed_participant.id,
+            video_id=videos[0].id,
+            status="stored",
+            storage_mode="local",
+            storage_path=str(path / "1.webm"),
+            epoch_ms=1_700_000_000_000,
+            duration_ms=30_000,
+            recorder="browser",
+        )
+    )
+    await db.flush()
+
+    body = (await client.get("/admin/gaze/recordings", headers=admin_headers)).json()
+    row = next(r for r in body["items"] if r["video_id"] == videos[0].id)
+    assert row["replay"] == {"kind": "screen", "id": 1}
+    assert row["screen"]["recorder"] == "browser"
+    assert row["sample_count"] == 0
+
+    replay = await client.get("/admin/screen-recordings/1/replay", headers=admin_headers)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["source"] == "screen"
+    assert replay.json()["recorder"] == "browser"
+    assert replay.json()["points"] == []
+    assert replay.json()["video_url"].endswith("1.webm")
+
+
+async def test_a_capture_that_never_landed_has_nothing_to_play(
+    client, db, study, videos, seed_participant, admin_headers
+):
+    from app.models.screen_recording import ScreenRecording
+
+    db.add(
+        ScreenRecording(
+            id=2,
+            participant_id=seed_participant.id,
+            video_id=videos[0].id,
+            status="failed",
+            error="no ffmpeg",
+        )
+    )
+    await db.flush()
+
+    assert (
+        await client.get("/admin/screen-recordings/2/replay", headers=admin_headers)
+    ).status_code == 404
+    assert (
+        await client.get("/admin/screen-recordings/999/replay", headers=admin_headers)
+    ).status_code == 404
 
 
 async def test_gaze_recordings_can_be_filtered(

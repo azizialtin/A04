@@ -27,6 +27,7 @@ function stats(overrides: Partial<ParticipantStats> = {}): ParticipantStats {
       progress: 66.7,
       current_step: 'case_intro',
       assigned_sequence: false,
+      video_set: null,
     },
     activity: {
       events: 93,
@@ -95,6 +96,7 @@ function stats(overrides: Partial<ParticipantStats> = {}): ParticipantStats {
           width: 1920,
           height: 1080,
           fps: 30,
+          recorder: 'bridge',
         },
       },
       {
@@ -185,6 +187,7 @@ test('a failed screen capture is called out, not left blank', () => {
     width: null,
     height: null,
     fps: null,
+    recorder: 'bridge',
   }
   useParticipantStats.mockReturnValue({ data: failed, isLoading: false, isError: false })
   render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)

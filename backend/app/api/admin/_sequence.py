@@ -3,6 +3,8 @@ endpoints."""
 
 from __future__ import annotations
 
+from collections import Counter
+
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,27 +39,48 @@ async def _screen_owners(db: AsyncSession, **where) -> list[tuple[str, int]]:
     return await _recording_owners(db, ScreenRecording, **where)
 
 
+async def _require_study_videos(db: AsyncSession, study_id: int, video_ids: set[int]) -> None:
+    """400 unless every one of these videos belongs to the study. A sequence or
+    a set that reaches into another study's clips is a mistake, not a feature."""
+    if not video_ids:
+        return
+    found = set(
+        (
+            await db.execute(
+                select(Video.id).where(Video.id.in_(video_ids), Video.study_id == study_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    missing = video_ids - found
+    if missing:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"Videos not in this study: {sorted(missing)}"
+        )
+
+
+def reject_repeated_videos(items: list[SequenceItem]) -> None:
+    """A clip may appear once in a run.
+
+    Notes, the diagnosis, the gaze samples and the screen capture are all keyed
+    by (participant, video), so a second showing would overwrite the first
+    rather than be recorded beside it — the researcher would lose a case and
+    nothing would say so.
+    """
+    repeated = sorted(v for v, n in Counter(i.video_id for i in items).items() if n > 1)
+    if repeated:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"A clip can only appear once in a run; repeated: {repeated}",
+        )
+
+
 async def _assign_sequence(
     db: AsyncSession, participant: Participant, items: list[SequenceItem]
 ) -> None:
-    video_ids = {i.video_id for i in items}
-    if video_ids:
-        found = set(
-            (
-                await db.execute(
-                    select(Video.id).where(
-                        Video.id.in_(video_ids), Video.study_id == participant.study_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        missing = video_ids - found
-        if missing:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, f"Videos not in this study: {sorted(missing)}"
-            )
+    reject_repeated_videos(items)
+    await _require_study_videos(db, participant.study_id, {i.video_id for i in items})
     await db.execute(
         delete(ParticipantVideo).where(ParticipantVideo.participant_id == participant.id)
     )
@@ -70,3 +93,5 @@ async def _assign_sequence(
                 phase_type=_phase(it.phase_type),
             )
         )
+    # A hand-picked order is the personalisation; it is not one of the sets.
+    participant.video_set_id = None

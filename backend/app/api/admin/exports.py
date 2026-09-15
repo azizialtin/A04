@@ -12,10 +12,12 @@ import io
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_admin
 from app.models.gaze_calibration import GazeCalibration
@@ -23,10 +25,20 @@ from app.models.gaze_recording import GazeRecording
 from app.models.interaction_log import InteractionLog
 from app.models.note import Note
 from app.models.participant import Participant
+from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.researcher import Researcher
 from app.models.text_entry import TextEntry
-from app.services.log_data import variable_name
+from app.models.video import Video
+from app.models.video_set import VideoSet
+from app.schemas.admin import ExportInfo
+from app.services.log_data import (
+    completed_step_label,
+    playhead_seconds,
+    seek_origin_seconds,
+    variable_name,
+)
+from app.services.timecode import timecode
 
 from ._common import _study_or_404
 
@@ -85,6 +97,38 @@ def _csv_stream(
     )
 
 
+@router.get("/studies/{study_id}/exports", response_model=list[ExportInfo])
+async def list_exports(
+    study_id: int,
+    admin: Researcher = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[ExportInfo]:
+    """Every export this study can produce, with how many rows it holds.
+
+    A download that turns out to be a header and nothing else is impossible to
+    tell from a broken one, and the calibration export is exactly that on any
+    study run since the tracker started being calibrated outside the app.
+    """
+    await _study_or_404(db, study_id)
+    in_app_calibration = get_settings().CALIBRATION_ENABLED
+
+    infos = []
+    for kind, (filename, _header, build, _shape) in _EXPORTS.items():
+        rows = await db.scalar(
+            # Ordering a row count is work Postgres would do and then throw away.
+            select(func.count()).select_from(build(study_id).order_by(None).subquery())
+        )
+        infos.append(
+            ExportInfo(
+                kind=kind,
+                filename=filename,
+                rows=rows or 0,
+                collected=in_app_calibration if kind == "calibration" else True,
+            )
+        )
+    return infos
+
+
 @router.get("/studies/{study_id}/export/{kind}")
 async def export_csv(
     study_id: int,
@@ -104,6 +148,31 @@ async def export_csv(
 
 def _iso(value) -> str:
     return value.isoformat() if value else ""
+
+
+def _participants_query(study_id: int):
+    # The set is the condition every other table is analysed against, the
+    # sequence is the order the cases were actually met in, and the batch size
+    # says whether a think-aloud followed its case or a block of them — none of
+    # it is on any other row.
+    return (
+        select(
+            Participant.id,
+            Participant.status,
+            Participant.video_set_id,
+            VideoSet.name,
+            func.array_agg(
+                aggregate_order_by(ParticipantVideo.video_id, ParticipantVideo.slot_index)
+            ).filter(ParticipantVideo.id.is_not(None)),
+            Participant.think_aloud_batch_size,
+            Participant.created_at,
+        )
+        .outerjoin(VideoSet, VideoSet.id == Participant.video_set_id)
+        .outerjoin(ParticipantVideo, ParticipantVideo.participant_id == Participant.id)
+        .where(Participant.study_id == study_id)
+        .group_by(Participant.id, VideoSet.name)
+        .order_by(Participant.id)
+    )
 
 
 def _notes_query(study_id: int):
@@ -169,6 +238,23 @@ def _events_query(study_id: int):
     )
 
 
+def _videos_query(study_id: int):
+    # The key every other export's `video_id` points at. Without it a researcher
+    # holding notes.csv has no way to say which case a row belongs to.
+    return (
+        select(
+            Video.id,
+            Video.title,
+            Video.phase_type,
+            Video.time_limit_seconds,
+            Video.duration_seconds,
+            Video.created_at,
+        )
+        .where(Video.study_id == study_id)
+        .order_by(Video.id)
+    )
+
+
 def _gaze_query(study_id: int):
     return (
         select(
@@ -202,11 +288,49 @@ def _calibration_query(study_id: int):
 
 # name -> (filename, header, query builder, row shaper)
 _EXPORTS = {
+    "participants": (
+        "participants.csv",
+        [
+            "participant_id",
+            "status",
+            "video_set_id",
+            "video_set",
+            "sequence",
+            "think_aloud_batch_size",
+            "created_at",
+        ],
+        _participants_query,
+        lambda r: [r[0], r[1].value, r[2], r[3], json.dumps(list(r[4] or [])), r[5], _iso(r[6])],
+    ),
+    "videos": (
+        "videos.csv",
+        [
+            "video_id",
+            "title",
+            "phase_type",
+            "time_limit_seconds",
+            "time_limit",
+            "duration_seconds",
+            "duration",
+            "created_at",
+        ],
+        _videos_query,
+        lambda r: [
+            r[0],
+            r[1],
+            r[2].value,
+            r[3],
+            timecode(r[3]),
+            r[4],
+            timecode(r[4]),
+            _iso(r[5]),
+        ],
+    ),
     "notes": (
         "notes.csv",
-        ["participant_id", "video_id", "video_time_seconds", "text", "created_at"],
+        ["participant_id", "video_id", "video_time_seconds", "video_time", "text", "created_at"],
         _notes_query,
-        lambda r: [r[0], r[1], r[2], r[3], _iso(r[4])],
+        lambda r: [r[0], r[1], r[2], timecode(r[2]), r[3], _iso(r[4])],
     ),
     "diagnoses": (
         "diagnoses.csv",
@@ -236,12 +360,29 @@ _EXPORTS = {
             "event_type",
             "variable_name",
             "video_id",
+            # Where the clip stood when this happened, and — for a seek — where
+            # it was dragged from. `payload` keeps the raw seconds.
+            "video_time",
+            "video_time_from",
+            # Which screen a `progress_update` finished; empty on every other row.
+            "completed_step",
             "payload",
             "client_ts",
             "created_at",
         ],
         _events_query,
-        lambda r: [r[0], r[1], variable_name(r[1]), r[2], json.dumps(r[3]), r[4], _iso(r[5])],
+        lambda r: [
+            r[0],
+            r[1],
+            variable_name(r[1]),
+            r[2],
+            timecode(playhead_seconds(r[3])),
+            timecode(seek_origin_seconds(r[3])),
+            completed_step_label(r[3]),
+            json.dumps(r[3]),
+            r[4],
+            _iso(r[5]),
+        ],
     ),
     "gaze": (
         "gaze.csv",

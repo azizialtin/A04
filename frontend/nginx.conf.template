@@ -37,7 +37,10 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "no-referrer" always;
-    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    # display-capture is spelled out rather than left to the browser default:
+    # the case intro asks for the screen when no bridge is recording it, and a
+    # policy that silently dropped that would lose the think-aloud's picture.
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=(), display-capture=(self)" always;
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
     # Never cache the entry point, or a deploy leaves clients on the previous
     # bundle pointing at the previous API.

@@ -357,7 +357,11 @@ function RosterLine({ row, onOpen }: { row: RosterRow; onOpen: () => void }) {
     <tr>
       <td>
         {row.id}
-        {!row.assigned_sequence && <div className="muted small">Standardreihenfolge</div>}
+        {row.video_set ? (
+          <div className="muted small">Set {row.video_set}</div>
+        ) : (
+          !row.assigned_sequence && <div className="muted small">Standardreihenfolge</div>
+        )}
       </td>
       <td>
         {row.status === 'completed' ? (

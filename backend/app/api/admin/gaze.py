@@ -1,4 +1,10 @@
-"""Looking at what the eye tracker recorded, from the researcher's side."""
+"""Looking at what was recorded of a case, from the researcher's side.
+
+Listed per (participant, case) rather than per gaze recording: a session with
+no tracker — a machine whose bridge was down, where the page captured its own
+screen — produces no gaze rows at all, and keying the list on those would leave
+its recordings in the bucket with nothing in the app able to find them.
+"""
 
 from __future__ import annotations
 
@@ -41,24 +47,85 @@ async def list_gaze_recordings(
         q = q.where(func.lower(GazeRecording.participant_id) == participant_id.strip().lower())
     rows = (await db.execute(q)).all()
     screens = await _screens_for(db, [(r.participant_id, r.video_id) for r, _ in rows])
-    return {
-        "items": [
+    items = [
+        {
+            # What to ask for the replay: the gaze recording where there is
+            # one, else the capture on its own.
+            "replay": {"kind": "gaze", "id": r.id},
+            "participant_id": r.participant_id,
+            "video_id": r.video_id,
+            "video_title": title,
+            "sample_count": r.sample_count,
+            "sampling_rate_hz": r.sampling_rate_hz,
+            "started_at": r.started_at.isoformat(),
+            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            # Whether the replay for this case has a screen capture behind
+            # it, so a failed one is visible rather than just quietly absent.
+            "screen": screens.get((r.participant_id, r.video_id)),
+        }
+        for r, title in rows
+    ]
+    items.extend(
+        await _screen_only_rows(
+            db, study_id, participant_id, {(r.participant_id, r.video_id) for r, _ in rows}, limit
+        )
+    )
+    items.sort(key=lambda row: row["started_at"], reverse=True)
+    return {"items": items[:limit]}
+
+
+async def _screen_only_rows(
+    db: AsyncSession,
+    study_id: int | None,
+    participant_id: str | None,
+    covered: set[tuple[str, int]],
+    limit: int,
+) -> list[dict]:
+    """Cases whose screen was captured but whose eyes were not.
+
+    The whole reason the browser fallback exists is a session without a bridge,
+    and such a session has no gaze recording to hang the row on.
+    """
+    q = (
+        select(ScreenRecording, Video.title)
+        .join(Video, Video.id == ScreenRecording.video_id)
+        .join(Participant, Participant.id == ScreenRecording.participant_id)
+        .order_by(ScreenRecording.started_at.desc())
+        .limit(limit)
+    )
+    if study_id is not None:
+        q = q.where(Participant.study_id == study_id)
+    if participant_id:
+        q = q.where(func.lower(ScreenRecording.participant_id) == participant_id.strip().lower())
+
+    seen: set[tuple[str, int]] = set()
+    rows = []
+    for s, title in (await db.execute(q)).all():
+        key = (s.participant_id, s.video_id)
+        if key in covered or key in seen:
+            continue
+        seen.add(key)
+        rows.append(
             {
-                "id": r.id,
-                "participant_id": r.participant_id,
-                "video_id": r.video_id,
+                "replay": {"kind": "screen", "id": s.id},
+                "participant_id": s.participant_id,
+                "video_id": s.video_id,
                 "video_title": title,
-                "sample_count": r.sample_count,
-                "sampling_rate_hz": r.sampling_rate_hz,
-                "started_at": r.started_at.isoformat(),
-                "completed_at": r.completed_at.isoformat() if r.completed_at else None,
-                # Whether the replay for this case has a screen capture behind
-                # it, so a failed one is visible rather than just quietly absent.
-                "screen": screens.get((r.participant_id, r.video_id)),
+                "sample_count": 0,
+                "sampling_rate_hz": 0,
+                "started_at": s.started_at.isoformat(),
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "screen": {
+                    "id": s.id,
+                    "status": s.status,
+                    "error": s.error,
+                    "duration_ms": s.duration_ms,
+                    "byte_size": s.byte_size,
+                    "recorder": s.recorder,
+                },
             }
-            for r, title in rows
-        ]
-    }
+        )
+    return rows
 
 
 async def _screens_for(
@@ -89,6 +156,7 @@ async def _screens_for(
             "error": s.error,
             "duration_ms": s.duration_ms,
             "byte_size": s.byte_size,
+            "recorder": s.recorder,
         }
         for s in rows
     }
@@ -107,6 +175,53 @@ async def _newest_screen(db: AsyncSession, participant_id: str, video_id: int):
     )
 
 
+@router.get("/screen-recordings/{recording_id}/replay")
+async def admin_screen_replay(
+    recording_id: int,
+    admin: Researcher = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """A capture with no gaze recording behind it — the bridge-less session.
+
+    The picture is the whole point of the think-aloud, so it is worth watching
+    on its own; there is simply no dot on top of it.
+    """
+    screen = await db.get(ScreenRecording, recording_id)
+    if screen is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found.")
+    settings = get_settings()
+    video = await db.get(Video, screen.video_id)
+
+    url = None
+    if screen.status == "stored" and screen.epoch_ms is not None:
+        try:
+            url = resolve_screen_url(screen, settings)
+        except Exception:
+            url = None
+    if url is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That capture has no playable file.")
+
+    data = await compute_screen_replay(None, screen, settings)
+    return {
+        "recording_id": screen.id,
+        "participant_id": screen.participant_id,
+        "video_id": screen.video_id,
+        "video_title": video.title if video else "",
+        "video_url": url,
+        "source": "screen",
+        "epoch_ms": screen.epoch_ms,
+        "duration_ms": screen.duration_ms,
+        "recorder": screen.recorder,
+        "sampling_rate_hz": 0,
+        "plotted_points": data["mapped_samples"],
+        "invalid_samples": data["invalid_samples"],
+        "unmapped_samples": data["unmapped_samples"],
+        "offscreen_samples": data["offscreen_samples"],
+        "has_geometry": data["has_geometry"],
+        "points": data["points"],
+    }
+
+
 @router.get("/gaze/recordings/{recording_id}/replay")
 async def admin_gaze_replay(
     recording_id: int,
@@ -123,6 +238,7 @@ async def admin_gaze_replay(
     # if there is one, because it is what they actually narrated.
     screen = await _newest_screen(db, rec.participant_id, rec.video_id)
     source, url, epoch_ms, duration_ms = "clip", None, None, None
+    recorder = None
     if screen is not None:
         try:
             url = resolve_screen_url(screen, settings)
@@ -130,6 +246,7 @@ async def admin_gaze_replay(
             url = None
         if url:
             source, epoch_ms, duration_ms = "screen", screen.epoch_ms, screen.duration_ms
+            recorder = screen.recorder
             data = await compute_screen_replay(rec, screen, settings)
     if source == "clip":
         try:
@@ -147,6 +264,7 @@ async def admin_gaze_replay(
         "source": source,
         "epoch_ms": epoch_ms,
         "duration_ms": duration_ms,
+        "recorder": recorder,
         "sampling_rate_hz": rec.sampling_rate_hz,
         "plotted_points": data["mapped_samples"],
         "invalid_samples": data["invalid_samples"],

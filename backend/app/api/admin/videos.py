@@ -95,6 +95,9 @@ class VideoFinalizeRequest(BaseModel):
     info_text: str = ""
     student_task_text: str = ""
     time_limit_seconds: int | None = None
+    # Follow the study's default text rather than carrying one of its own.
+    use_default_task: bool = False
+    use_default_info: bool = False
 
 
 def _checked_extension(filename: str | None, content_type: str | None) -> str:
@@ -124,6 +127,8 @@ async def _add_video(
     student_task_text: str,
     time_limit_seconds: int | None,
     stored_name: str,
+    use_default_task: bool = False,
+    use_default_info: bool = False,
 ) -> Video:
     video = Video(
         study_id=study_id,
@@ -134,6 +139,8 @@ async def _add_video(
         student_task_text=student_task_text,
         time_limit_seconds=time_limit_seconds,
         gcp_filename=stored_name,
+        use_default_task=use_default_task,
+        use_default_info=use_default_info,
     )
     db.add(video)
     await db.commit()
@@ -236,6 +243,8 @@ async def finalize_video(
         student_task_text=body.student_task_text,
         time_limit_seconds=body.time_limit_seconds,
         stored_name=body.object_name,
+        use_default_task=body.use_default_task,
+        use_default_info=body.use_default_info,
     )
     _audit(background_tasks, admin, "video_uploaded", {"video_id": video.id})
     return _video_out(video)
@@ -253,6 +262,8 @@ async def upload_video(
     info_text: str = Form(""),
     student_task_text: str = Form(""),
     time_limit_seconds: int | None = Form(None),
+    use_default_task: bool = Form(False),
+    use_default_info: bool = Form(False),
     file: UploadFile = File(...),
     admin: Researcher = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
@@ -300,6 +311,8 @@ async def upload_video(
         student_task_text=student_task_text,
         time_limit_seconds=time_limit_seconds,
         stored_name=stored_name,
+        use_default_task=use_default_task,
+        use_default_info=use_default_info,
     )
     _audit(background_tasks, admin, "video_uploaded", {"video_id": video.id})
     return _video_out(video)
@@ -349,7 +362,7 @@ async def delete_video(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "Video is used in a participant sequence."
+            status.HTTP_409_CONFLICT, "Video is used in a participant sequence or a video set."
         ) from None
 
     settings = get_settings()

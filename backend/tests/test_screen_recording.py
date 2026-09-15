@@ -311,6 +311,66 @@ async def test_a_screen_recording_replays_without_any_gaze(
     assert data["sampling_rate_hz"] == 0
 
 
+async def test_a_browser_capture_keeps_its_own_format(
+    client, assigned_video, participant_headers, uploads, db
+):
+    """No bridge means the page records its own display as WebM. It is stored
+    as what it is, and the row says who made it."""
+    opened = await client.post(
+        "/screen/recordings",
+        json={"video_id": assigned_video.id, "recorder": "browser"},
+        headers=participant_headers,
+    )
+    recording_id = opened.json()["recording_id"]
+    webm = b"\x1a\x45\xdf\xa3" + b"\0" * 1020
+    r = await client.post(
+        f"/screen/recordings/{recording_id}/upload",
+        headers={"Authorization": f"Bearer {opened.json()['upload_token']}"},
+        files={"file": ("screen.webm", webm, "video/webm")},
+        data={"epoch_ms": str(EPOCH), "duration_ms": "1000"},
+    )
+    assert r.status_code == 200, r.text
+    assert (uploads / "screens" / "T-001" / f"{recording_id}.webm").is_file()
+    assert not (uploads / "screens" / "T-001" / f"{recording_id}.mp4").exists()
+
+    row = await db.get(ScreenRecording, recording_id)
+    await db.refresh(row)
+    assert row.recorder == "browser"
+
+    replay = (
+        await client.get(f"/gaze/videos/{assigned_video.id}/replay", headers=participant_headers)
+    ).json()
+    assert replay["source"] == "screen"
+    assert replay["video_url"].endswith(f"{recording_id}.webm")
+
+
+async def test_deleting_a_browser_capture_finds_the_webm(
+    client, assigned_video, participant_headers, admin_headers, uploads
+):
+    opened = await client.post(
+        "/screen/recordings",
+        json={"video_id": assigned_video.id, "recorder": "browser"},
+        headers=participant_headers,
+    )
+    recording_id = opened.json()["recording_id"]
+    await client.post(
+        f"/screen/recordings/{recording_id}/upload",
+        headers={"Authorization": f"Bearer {opened.json()['upload_token']}"},
+        files={"file": ("screen.webm", b"\x1a\x45\xdf\xa3" + b"\0" * 1020, "video/webm")},
+        data={"epoch_ms": str(EPOCH)},
+    )
+    path = uploads / "screens" / "T-001" / f"{recording_id}.webm"
+    assert path.is_file()
+
+    assert (
+        await client.delete(f"/admin/videos/{assigned_video.id}", headers=admin_headers)
+    ).status_code == 409
+    assert (
+        await client.delete("/admin/participants/T-001", headers=admin_headers)
+    ).status_code == 200
+    assert not path.exists()
+
+
 async def test_deleting_a_participant_deletes_their_screen_recordings(
     client, assigned_video, participant_headers, admin_headers, uploads
 ):

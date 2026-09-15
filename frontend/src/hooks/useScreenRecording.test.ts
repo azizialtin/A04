@@ -15,6 +15,21 @@ vi.mock('../api/screen', () => ({
   },
 }))
 
+// The page's own capture, for when the bridge is not there. Stubbed: what it
+// does is its own test's business; here only *when* it is asked matters.
+const browserRecording = { stop: vi.fn().mockResolvedValue(undefined) }
+const startBrowserRecording = vi.fn<(videoId: number, stream: unknown) => typeof browserRecording>(
+  () => browserRecording,
+)
+let held: object | null = null
+const noteBridgeCaptureFailed = vi.fn()
+vi.mock('../lib/screenCapture', () => ({
+  heldStream: () => held,
+  noteBridgeCaptureFailed: () => noteBridgeCaptureFailed(),
+  startBrowserRecording: (videoId: number, stream: unknown) =>
+    startBrowserRecording(videoId, stream),
+}))
+
 const start = vi.mocked(screenApi.start)
 const markFailed = vi.mocked(screenApi.markFailed)
 
@@ -26,6 +41,8 @@ class FakeSocket {
   static readonly CLOSED = 3
   readyState = FakeSocket.OPEN
   onmessage: ((event: { data: string }) => void) | null = null
+  onerror: (() => void) | null = null
+  onclose: (() => void) | null = null
   sent: Record<string, unknown>[] = []
   closed = false
 
@@ -49,6 +66,9 @@ class FakeSocket {
 
 beforeEach(() => {
   FakeSocket.last = null
+  held = null
+  startBrowserRecording.mockClear()
+  browserRecording.stop.mockClear()
   vi.stubGlobal('WebSocket', FakeSocket)
   start.mockReset().mockResolvedValue({ recording_id: 7, upload_token: 'tok' })
   markFailed.mockReset().mockResolvedValue({} as never)
@@ -61,7 +81,7 @@ test('asks the bridge to record once it says it can', async () => {
   FakeSocket.last!.say({ type: 'status', connected: true, screen_recording: true })
 
   await waitFor(() => expect(FakeSocket.last!.sent).toHaveLength(1))
-  expect(start).toHaveBeenCalledWith(42)
+  expect(start).toHaveBeenCalledWith(42, 'bridge')
   expect(FakeSocket.last!.sent[0]).toEqual({
     type: 'start_screen_recording',
     upload_url: 'http://api.test/screen/recordings/7/upload',
@@ -80,6 +100,41 @@ test('does not open a recording when the bridge cannot capture', async () => {
 
   await Promise.resolve()
   expect(start).not.toHaveBeenCalled()
+  // ...and with no display granted, the page cannot step in either.
+  expect(startBrowserRecording).not.toHaveBeenCalled()
+})
+
+test('records in the browser when the bridge cannot capture but the display was granted', () => {
+  held = { fake: 'stream' }
+  const { unmount } = renderHook(() => useScreenRecording(42))
+  FakeSocket.last!.say({ type: 'status', connected: true, screen_recording: false })
+
+  expect(startBrowserRecording).toHaveBeenCalledWith(42, held)
+  expect(start).not.toHaveBeenCalled() // the browser path opens its own row
+
+  unmount()
+  expect(browserRecording.stop).toHaveBeenCalledTimes(1)
+})
+
+test('records in the browser when the bridge is not there at all', () => {
+  held = { fake: 'stream' }
+  renderHook(() => useScreenRecording(42))
+  // A refused connection: the socket errors and closes before any status.
+  FakeSocket.last!.onerror?.()
+  FakeSocket.last!.onclose?.()
+
+  expect(startBrowserRecording).toHaveBeenCalledTimes(1)
+})
+
+test('the bridge wins once it has said it will record', async () => {
+  held = { fake: 'stream' }
+  renderHook(() => useScreenRecording(42))
+  FakeSocket.last!.say({ type: 'status', screen_recording: true })
+  await waitFor(() => expect(start).toHaveBeenCalledWith(42, 'bridge'))
+
+  // A later close is the bridge going away, not a reason to start a second capture.
+  FakeSocket.last!.onclose?.()
+  expect(startBrowserRecording).not.toHaveBeenCalled()
 })
 
 test('stops the capture when the case screen goes away', async () => {
@@ -101,6 +156,9 @@ test('marks the recording failed when the bridge will not start', async () => {
 
   FakeSocket.last!.say({ type: 'screen_recording_started', ok: false, error: 'no ffmpeg' })
   expect(markFailed).toHaveBeenCalledWith(7, 'no ffmpeg')
+  // Remembered, so the next case intro secures the display instead of losing
+  // the whole session to the same fault.
+  expect(noteBridgeCaptureFailed).toHaveBeenCalled()
 })
 
 test('closes out a recording opened after the case already ended', async () => {
@@ -116,7 +174,7 @@ test('closes out a recording opened after the case already ended', async () => {
   await waitFor(() => expect(markFailed).toHaveBeenCalledWith(9, expect.stringContaining('ended')))
 })
 
-test('stays out of the way when there is no bridge at all', () => {
+test('stays out of the way when there is no bridge and no display', () => {
   vi.stubGlobal(
     'WebSocket',
     class {
@@ -127,4 +185,5 @@ test('stays out of the way when there is no bridge at all', () => {
   )
   expect(() => renderHook(() => useScreenRecording(42))).not.toThrow()
   expect(start).not.toHaveBeenCalled()
+  expect(startBrowserRecording).not.toHaveBeenCalled()
 })

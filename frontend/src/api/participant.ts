@@ -38,6 +38,8 @@ export interface ReplayData {
   // clock — the notes — lands on the same timeline. Null for a clip replay.
   epoch_ms: number | null
   duration_ms: number | null
+  // Who made the screen recording: the bridge, or the page itself as fallback.
+  recorder: 'bridge' | 'browser' | null
 }
 
 interface StepBase {
@@ -45,8 +47,16 @@ interface StepBase {
   completed: boolean
 }
 
+/** The welcome page's wording as the study has it; empty strings mean the app's default. */
+export interface WelcomeTexts {
+  welcome_title: string
+  welcome_intro: string
+  welcome_steps: string[]
+  welcome_note: string
+}
+
 export type SessionStep =
-  | (StepBase & { kind: 'welcome' })
+  | (StepBase & { kind: 'welcome'; texts?: WelcomeTexts })
   | (StepBase & {
       kind: 'sosci'
       variant: 'pretest' | 'posttest'
@@ -56,7 +66,14 @@ export type SessionStep =
     })
   | (StepBase & { kind: 'calibration' })
   | (StepBase & { kind: 'phase_transition'; phase_type: string; phase_number: number })
-  | (StepBase & { kind: 'case_intro'; phase_type: string; video_id: number })
+  | (StepBase & {
+      kind: 'case_intro'
+      phase_type: string
+      video_id: number
+      // The study's own wording, or empty for the app's default.
+      title: string
+      body: string
+    })
   | (StepBase & {
       // The pre-test block: one page per battery, answered once for the run.
       kind: 'questionnaire'
@@ -91,10 +108,25 @@ export type SessionStep =
       video_id: number
       phase_type: string
       questionnaire_id: number | null
+      // The battery's name. Not rendered — the screen leads with the
+      // instruction — but it is what the interaction log calls this step.
+      title: string
       instruction: string
       questions: Question[]
     })
-  | (StepBase & { kind: 'think_aloud'; video_id: number })
+  | (StepBase & {
+      kind: 'think_aloud'
+      video_id: number
+      title: string
+      // Where this case sits in its phase, and which of the block's recordings
+      // this is. A block is one screen unless the study batches the training
+      // phase, so `batch_size` is 1 for most runs.
+      phase_type: string
+      case_number: number
+      case_total: number
+      batch_position: number
+      batch_size: number
+    })
   | (StepBase & { kind: 'thanks' })
 
 export interface SessionScript {
@@ -127,7 +159,9 @@ export const participantApi = {
   getSession: () => apiClient.get<SessionScript>('/participant/session').then((r) => r.data),
   updateProgress: (currentStepIndex: number) =>
     apiClient
-      .patch<ProgressResult>('/participant/session/progress', { current_step_index: currentStepIndex })
+      .patch<ProgressResult>('/participant/session/progress', {
+        current_step_index: currentStepIndex,
+      })
       .then((r) => r.data),
   getVideoUrl: (videoId: number) =>
     apiClient.get<{ signed_url: string }>(`/participant/videos/${videoId}/url`).then((r) => r.data),
@@ -140,8 +174,7 @@ export const participantApi = {
     video_time_seconds: number
     client_ts?: number
     text: string
-  }) =>
-    apiClient.post<{ id: number }>('/participant/notes', body).then((r) => r.data),
+  }) => apiClient.post<{ id: number }>('/participant/notes', body).then((r) => r.data),
   createDiagnosis: (body: {
     video_id: number
     text: string
@@ -156,7 +189,10 @@ export const participantApi = {
       answers: Record<string, unknown>
       time_spent_seconds?: number
     },
-  ) => apiClient.post(`/participant/questionnaires/${questionnaireId}/respond`, body).then((r) => r.data),
+  ) =>
+    apiClient
+      .post(`/participant/questionnaires/${questionnaireId}/respond`, body)
+      .then((r) => r.data),
   logEvent: (body: {
     event_type: string
     video_id?: number

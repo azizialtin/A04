@@ -15,7 +15,13 @@ test('saves a snapshot tagged with the video time on blur', () => {
 })
 
 test('comes back with the notes already saved for this case', () => {
-  render(<NotesPanel getVideoTime={() => 0} onSnapshot={vi.fn()} initialText="written before the reload" />)
+  render(
+    <NotesPanel
+      getVideoTime={() => 0}
+      onSnapshot={vi.fn()}
+      initialText="written before the reload"
+    />,
+  )
   expect(screen.getByRole('textbox')).toHaveValue('written before the reload')
 })
 

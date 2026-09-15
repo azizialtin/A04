@@ -36,7 +36,7 @@ from app.schemas.participant import (
 )
 from app.services.event_logger import log_event
 from app.services.questionnaires import missing_required_answers
-from app.services.session_script import build_steps, video_in_run
+from app.services.session_script import build_steps, describe_step, video_in_run
 from app.services.video_url import sign_blob_url
 
 logger = logging.getLogger(__name__)
@@ -103,8 +103,9 @@ async def update_progress(
     total = len(raw)
 
     # Forward-only: a refresh or double-submit can never rewind the run.
+    was_at = session.current_step_index
     target = max(0, min(body.current_step_index, total))
-    if target > session.current_step_index:
+    if target > was_at:
         session.current_step_index = target
 
     # The script ends with a read-only `thanks` step that never reports its own
@@ -120,11 +121,7 @@ async def update_progress(
         log_event,
         participant_id=participant.id,
         event_type="progress_update",
-        payload={
-            "current_step_index": session.current_step_index,
-            "total_steps": total,
-            "complete": complete,
-        },
+        payload=_progress_payload(raw, was_at, session.current_step_index, complete),
     )
     return ProgressResult(
         status=participant.status.value,
@@ -132,6 +129,22 @@ async def update_progress(
         total_steps=total,
         complete=complete,
     )
+
+
+def _progress_payload(steps: list[dict], was_at: int, now_at: int, complete: bool) -> dict:
+    """What one advance through the script records.
+
+    The counts alone were unreadable — a row saying step 4 of 54 with nothing
+    about what step 4 *was* — so the screen that was just finished and the one
+    now on show travel with it. A repeated or rewinding request finishes
+    nothing, and says so by leaving `completed_step` out.
+    """
+    payload: dict = {"current_step_index": now_at, "total_steps": len(steps), "complete": complete}
+    if now_at > was_at and was_at < len(steps):
+        payload["completed_step"] = describe_step(steps[was_at], was_at)
+    if now_at < len(steps):
+        payload["current_step"] = describe_step(steps[now_at], now_at)
+    return payload
 
 
 @router.get("/videos/{video_id}/url", response_model=VideoUrlResponse)

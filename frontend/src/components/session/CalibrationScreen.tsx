@@ -44,7 +44,9 @@ export default function CalibrationScreen({ onComplete }: Props) {
   const [phase, setPhase] = useState<Phase>('connecting')
   const [target, setTarget] = useState<Target | null>(null)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
-  const [result, setResult] = useState<{ offset: number | null; degrees: number | null } | null>(null)
+  const [result, setResult] = useState<{ offset: number | null; degrees: number | null } | null>(
+    null,
+  )
   const [error, setError] = useState('')
 
   const bridgeRef = useRef<Bridge | null>(null)
@@ -112,7 +114,10 @@ export default function CalibrationScreen({ onComplete }: Props) {
       samples: samples.filter((s) => s.x !== null).length,
     }
     const distances = samples.map((s) => s.dz).filter((d): d is number => d !== null)
-    return { point, distance: distances.length ? distances.reduce((a, b) => a + b, 0) / distances.length : null }
+    return {
+      point,
+      distance: distances.length ? distances.reduce((a, b) => a + b, 0) / distances.length : null,
+    }
   }, [])
 
   const run = useCallback(async () => {
@@ -222,7 +227,11 @@ export default function CalibrationScreen({ onComplete }: Props) {
           <>
             <p className="muted">{t('calibration.no_tracker')}</p>
             <div className="panel__actions">
-              <button type="button" className="btn btn-secondary" onClick={() => window.location.reload()}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => window.location.reload()}
+              >
                 {t('calibration.retry')}
               </button>
               <button type="button" className="btn btn-primary" onClick={() => void skip()}>

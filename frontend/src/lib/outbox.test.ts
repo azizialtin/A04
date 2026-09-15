@@ -76,11 +76,7 @@ describe('failure', () => {
     await drain()
     await drain()
 
-    expect(createNote.mock.calls.map(([body]) => body.text)).toEqual([
-      'first',
-      'first',
-      'second',
-    ])
+    expect(createNote.mock.calls.map(([body]) => body.text)).toEqual(['first', 'first', 'second'])
   })
 
   it('drops a write the server will never accept, rather than blocking behind it', async () => {

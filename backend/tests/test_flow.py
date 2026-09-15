@@ -559,3 +559,66 @@ async def test_get_video_notes_in_order(client, run, participant_headers):
     notes = r.json()
     assert [n["text"] for n in notes] == ["first", "second"]
     assert notes[0]["video_time_seconds"] == 2.0
+
+
+async def test_an_advance_records_the_screen_it_finished(
+    client, run, participant_headers, monkeypatch
+):
+    """A progress row used to be three numbers, and no one could tell from it
+    which questionnaire or which case a participant had just come off."""
+    logged: list[dict] = []
+
+    async def record(**kwargs):
+        logged.append(kwargs)
+
+    monkeypatch.setattr("app.api.participant.log_event", record)
+
+    async def advance(to: int) -> dict:
+        await client.patch(
+            "/participant/session/progress",
+            json={"current_step_index": to},
+            headers=participant_headers,
+        )
+        return logged[-1]["payload"]
+
+    assert (await advance(1))["completed_step"]["kind"] == "welcome"
+
+    # Step 1 is the pre-test page — the event the researchers were reading.
+    finished = await advance(2)
+    assert finished["completed_step"] == {
+        "index": 1,
+        "kind": "questionnaire",
+        "title": "Angaben zur Person",
+        "placement": "pre_test",
+        "questionnaire_id": run["questionnaires"]["pre_test"].id,
+        "page": 1,
+        "page_count": 1,
+    }
+    # And where they went next, so one row tells the whole move.
+    assert finished["current_step"]["kind"] == "sosci"
+    assert finished["complete"] is False
+
+    # A refresh re-sending a step already behind them finished nothing.
+    assert "completed_step" not in await advance(1)
+
+
+async def test_a_case_advance_names_its_video(client, run, participant_headers, monkeypatch):
+    logged: list[dict] = []
+
+    async def record(**kwargs):
+        logged.append(kwargs)
+
+    monkeypatch.setattr("app.api.participant.log_event", record)
+
+    steps = (await client.get("/participant/session", headers=participant_headers)).json()["steps"]
+    clip = next(s for s in steps if s["kind"] == "case_video")
+
+    for target in (clip["index"], clip["index"] + 1):
+        await client.patch(
+            "/participant/session/progress",
+            json={"current_step_index": target},
+            headers=participant_headers,
+        )
+    completed = logged[-1]["payload"]["completed_step"]
+    assert completed["kind"] == "case_video"
+    assert (completed["title"], completed["video_id"]) == ("pre", run["videos"]["pre"].id)

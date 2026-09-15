@@ -14,6 +14,7 @@ from app.models.session import Session
 from app.models.study import Study
 from app.models.text_entry import TextEntry
 from app.models.video import Video
+from app.models.video_set import VideoSet, VideoSetItem
 
 __all__ = [
     "AuditLog",
@@ -31,4 +32,6 @@ __all__ = [
     "Study",
     "TextEntry",
     "Video",
+    "VideoSet",
+    "VideoSetItem",
 ]

@@ -12,7 +12,9 @@ describe('useLocalDraft', () => {
 
     act(() => result.current[1]('the loop bound is off'))
     expect(result.current[0]).toBe('the loop bound is off')
-    expect(window.localStorage.getItem(`${DRAFT_PREFIX}diagnosis.T-1.7`)).toBe('the loop bound is off')
+    expect(window.localStorage.getItem(`${DRAFT_PREFIX}diagnosis.T-1.7`)).toBe(
+      'the loop bound is off',
+    )
   })
 
   it('survives a remount, which is the whole point', () => {

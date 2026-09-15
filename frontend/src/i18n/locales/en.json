@@ -66,7 +66,8 @@
   },
   "case_intro": {
     "title": "New case",
-    "body": "You are about to see a new video. Watch closely and take notes while it plays."
+    "body": "You are about to see a new video. Watch closely and take notes while it plays.",
+    "preparing": "One moment…"
   },
   "case_outro": {
     "title": "Case complete",
@@ -107,15 +108,24 @@
     "clip_only": "video only (no screen recording)",
     "fullscreen": "Fullscreen",
     "exit_fullscreen": "Exit fullscreen",
-    "next": "Continue"
+    "next": "Continue",
+    "saving": "Saving the screen recording…",
+    "browser_capture": "recorded by the browser",
+    "title_numbered": "Think-aloud {{current}} of {{total}}",
+    "batch_hint": "You will now go through the recordings of the last {{total}} cases, one after another."
   },
   "questionnaire": {
     "submit": "Continue",
-    "unanswered": "Not answered yet"
+    "unanswered": "Not answered yet",
+    "legend": "Answer options",
+    "still_open": "{{count}} of {{total}} questions still open",
+    "unsupported": "Question type “{{type}}” is not supported — please tell the study manager."
   },
   "thanks": {
     "title": "Thank you!",
-    "body": "You have completed the study. You may now close this window."
+    "body": "You have completed the study. You may now close this window.",
+    "next_participant": "Start with the next participant",
+    "next_participant_waiting": "Not everything has been saved yet ({{pending}}). Please wait a moment."
   },
   "session": {
     "loading": "Loading session…",

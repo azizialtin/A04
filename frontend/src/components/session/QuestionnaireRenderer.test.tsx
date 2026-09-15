@@ -120,3 +120,46 @@ test('tabbing onto an untouched slider does not answer it', () => {
   expect(screen.getByText('—')).toBeInTheDocument()
   expect(screen.getByRole('button')).toBeDisabled()
 })
+
+test('questions that share a matrix key are one table with the statements listed once', () => {
+  const onSubmit = vi.fn()
+  const ladder = [
+    { value: 'A0', label: 'Dieses Konzept ist mir nicht bekannt.' },
+    { value: 'A1', label: 'Im Allgemeinen weiß ich, was dieses Konzept bedeutet.' },
+  ]
+  const rows: Question[] = [
+    {
+      id: 'ck_pre_vars',
+      type: 'multiple_choice',
+      text: 'Variablen',
+      options: ladder,
+      matrix: 'ck',
+    },
+    {
+      id: 'ck_pre_loop',
+      type: 'multiple_choice',
+      text: 'Schleifen',
+      options: ladder,
+      matrix: 'ck',
+    },
+  ]
+  render(<QuestionnaireRenderer title="Fachwissen" questions={rows} onSubmit={onSubmit} />)
+
+  // The statements appear once, in the legend, not under every row.
+  expect(screen.getAllByText('Dieses Konzept ist mir nicht bekannt.')).toHaveLength(1)
+  expect(screen.getByRole('table')).toBeInTheDocument()
+  expect(screen.getAllByRole('row')).toHaveLength(3) // header + two concepts
+
+  // One choice per row, each row required on its own.
+  fireEvent.click(screen.getByRole('radio', { name: /^Variablen: 2/ }))
+  expect(screen.getByRole('button')).toBeDisabled()
+  fireEvent.click(screen.getByRole('radio', { name: /^Schleifen: 1/ }))
+  expect(screen.getByRole('button')).toBeEnabled()
+
+  fireEvent.click(screen.getByRole('button'))
+  // Stored under the rows' own variable names, with the data dictionary's values.
+  expect(onSubmit).toHaveBeenCalledWith(
+    { ck_pre_vars: 'A1', ck_pre_loop: 'A0' },
+    expect.any(Number),
+  )
+})

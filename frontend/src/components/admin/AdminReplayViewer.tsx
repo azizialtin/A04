@@ -3,9 +3,16 @@ import { useEffect, useRef, useState } from 'react'
 import apiClient from '../../api/client'
 import type { AdminReplay } from '../../api/admin'
 import { frameToElement } from '../../lib/gazeGeometry'
+import { settleDuration } from '../../lib/media'
 import { gazeAt } from '../../lib/replay'
 
-export default function AdminReplayViewer({ replay, onClose }: { replay: AdminReplay; onClose: () => void }) {
+export default function AdminReplayViewer({
+  replay,
+  onClose,
+}: {
+  replay: AdminReplay
+  onClose: () => void
+}) {
   const stageRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const dotRef = useRef<HTMLDivElement>(null)
@@ -39,6 +46,7 @@ export default function AdminReplayViewer({ replay, onClose }: { replay: AdminRe
     if (video && stage && video.videoWidth && video.videoHeight) {
       stage.style.setProperty('--replay-aspect', `${video.videoWidth} / ${video.videoHeight}`)
     }
+    if (video) settleDuration(video)
   }
 
   useEffect(() => {
@@ -104,8 +112,12 @@ export default function AdminReplayViewer({ replay, onClose }: { replay: AdminRe
         </button>
       </div>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        {replay.source === 'screen' ? 'Bildschirmaufzeichnung' : 'nur das Video'} ·{' '}
-        {replay.plotted_points} Blickpunkte · {replay.invalid_samples} ungültig ·{' '}
+        {replay.source === 'screen'
+          ? replay.recorder === 'browser'
+            ? 'Bildschirmaufzeichnung (vom Browser, ohne Bridge)'
+            : 'Bildschirmaufzeichnung'
+          : 'nur das Video'}{' '}
+        · {replay.plotted_points} Blickpunkte · {replay.invalid_samples} ungültig ·{' '}
         {replay.unmapped_samples} außerhalb der Aufzeichnung · {replay.offscreen_samples} daneben ·{' '}
         {replay.sampling_rate_hz} Hz
       </p>

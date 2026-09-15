@@ -12,6 +12,9 @@ progress tick, a client error), not part of the main-screen log.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 MAIN_SCREEN_VARIABLES: dict[str, str] = {
     "case_screen_entered": "enter_main_screen",
     "case_screen_exited": "exit_main_screen",
@@ -34,3 +37,57 @@ MAIN_SCREEN_VARIABLES: dict[str, str] = {
 
 def variable_name(event_type: str) -> str:
     return MAIN_SCREEN_VARIABLES.get(event_type, "")
+
+
+# Where the playhead stood when an event fired. The player stamps every playback
+# event with `currentTime`; a note carries the same thing under the name the
+# notes API uses.
+_PLAYHEAD_KEYS = ("currentTime", "video_time_seconds")
+
+
+def _number(value: object) -> float | None:
+    # Payloads are JSONB written by the browser: anything in them is a guess
+    # until it has been looked at. bool is an int in Python and never a time.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def playhead_seconds(payload: Mapping[str, Any] | None) -> float | None:
+    for key in _PLAYHEAD_KEYS:
+        seconds = _number((payload or {}).get(key))
+        if seconds is not None:
+            return seconds
+    return None
+
+
+def seek_origin_seconds(payload: Mapping[str, Any] | None) -> float | None:
+    """Where a seek started. Only `video_seeked` has one."""
+    return _number((payload or {}).get("from"))
+
+
+def step_label(step: Mapping[str, Any] | None) -> str:
+    """A step of the session script named for a human reading the export.
+
+    Reads the descriptor `session_script.describe_step` writes into a
+    `progress_update` payload — `questionnaire: Angaben zur Person (page 1/2)`,
+    `case_video: Fall 3` — and is empty for a run recorded before that existed.
+    """
+    if not isinstance(step, Mapping):
+        return ""
+    kind = str(step.get("kind") or "")
+    if not kind:
+        return ""
+
+    name = step.get("title") or step.get("variant") or step.get("phase_type") or ""
+    label = f"{kind}: {name}" if name else kind
+
+    page, page_count = step.get("page"), step.get("page_count")
+    if isinstance(page, int) and isinstance(page_count, int) and page_count > 1:
+        label += f" (page {page}/{page_count})"
+    return label
+
+
+def completed_step_label(payload: Mapping[str, Any] | None) -> str:
+    """The screen a `progress_update` says the participant just finished."""
+    return step_label((payload or {}).get("completed_step"))

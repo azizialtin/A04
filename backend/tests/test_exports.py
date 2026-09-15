@@ -14,7 +14,9 @@ from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.text_entry import TextEntry
 from app.models.video import Video
 
-KINDS = ["notes", "diagnoses", "responses", "events", "gaze", "calibration"]
+# Everything keyed by participant, which is every export but the video list.
+KINDS = ["participants", "notes", "diagnoses", "responses", "events", "gaze", "calibration"]
+ALL_KINDS = [*KINDS, "videos"]
 
 
 def read(response) -> list[dict]:
@@ -117,11 +119,12 @@ async def test_an_unknown_kind_is_404(client, data, admin_headers):
 
 
 async def test_an_empty_study_exports_just_its_header(client, seed_study, admin_headers):
-    for kind in KINDS:
+    for kind in ALL_KINDS:
         r = await client.get(f"/admin/studies/{seed_study.id}/export/{kind}", headers=admin_headers)
         assert r.status_code == 200
         assert read(r) == [], kind
-        assert r.content.decode("utf-8-sig").strip().startswith("participant_id")
+        first = "video_id" if kind == "videos" else "participant_id"
+        assert r.content.decode("utf-8-sig").strip().startswith(first), kind
 
 
 async def test_streaming_does_not_truncate_a_large_export(
@@ -158,4 +161,86 @@ async def test_exports_are_admin_only(client, data, participant_headers):
     r = await client.get(
         f"/admin/studies/{data['study'].id}/export/notes", headers=participant_headers
     )
+    assert r.status_code == 401
+
+
+async def test_playback_times_are_readable_as_well_as_exact(client, db, data, admin_headers):
+    # The line a researcher asked about: a seek, logged in fractional seconds.
+    db.add(
+        InteractionLog(
+            participant_id="T-001",
+            video_id=data["video"].id,
+            event_type="video_seeked",
+            payload={"to": 65.5, "from": 0.719483, "currentTime": 65.5},
+        )
+    )
+    await db.flush()
+
+    rows = read(
+        await client.get(f"/admin/studies/{data['study'].id}/export/events", headers=admin_headers)
+    )
+    seek = next(r for r in rows if r["event_type"] == "video_seeked")
+    assert (seek["video_time_from"], seek["video_time"]) == ("00:00", "01:05")
+    # And the exact figures are still there to compute with.
+    assert '"from": 0.719483' in seek["payload"]
+
+
+async def test_a_progress_row_names_the_screen_that_was_finished(client, db, data, admin_headers):
+    db.add(
+        InteractionLog(
+            participant_id="T-001",
+            event_type="progress_update",
+            payload={
+                "current_step_index": 2,
+                "total_steps": 12,
+                "complete": False,
+                "completed_step": {
+                    "index": 1,
+                    "kind": "questionnaire",
+                    "title": "Angaben zur Person",
+                    "page": 1,
+                    "page_count": 3,
+                },
+            },
+        )
+    )
+    await db.flush()
+
+    rows = read(
+        await client.get(f"/admin/studies/{data['study'].id}/export/events", headers=admin_headers)
+    )
+    progress = next(r for r in rows if r["event_type"] == "progress_update")
+    assert progress["completed_step"] == "questionnaire: Angaben zur Person (page 1/3)"
+    # Playback columns stay empty on a row that is not about the clip.
+    assert progress["video_time"] == ""
+
+
+async def test_the_video_export_is_what_every_video_id_points_at(client, data, admin_headers):
+    rows = read(
+        await client.get(f"/admin/studies/{data['study'].id}/export/videos", headers=admin_headers)
+    )
+    assert rows[0]["video_id"] == str(data["video"].id)
+    assert rows[0]["title"] == "V"
+    assert rows[0]["phase_type"] == "pre_test"
+
+
+async def test_the_catalogue_counts_every_export(client, data, admin_headers):
+    r = await client.get(f"/admin/studies/{data['study'].id}/exports", headers=admin_headers)
+    assert r.status_code == 200
+    by_kind = {row["kind"]: row for row in r.json()}
+
+    assert set(by_kind) == set(ALL_KINDS)
+    assert by_kind["notes"] == {
+        "kind": "notes",
+        "filename": "notes.csv",
+        "rows": 1,
+        "collected": True,
+    }
+    # An empty calibration file is the expected shape of a study calibrated in
+    # Eye Tracker Manager rather than in the app, and the tab has to say so.
+    assert by_kind["calibration"]["collected"] is False
+
+
+async def test_the_catalogue_is_admin_only(client, data, participant_headers):
+    r = await client.get(f"/admin/studies/{data['study'].id}/exports", headers=participant_headers)
     assert r.status_code == 401

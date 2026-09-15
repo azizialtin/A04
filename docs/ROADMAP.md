@@ -118,6 +118,73 @@ Incremental, each phase runnable and tested before the next.
   the data dictionary does. The VAS slider has no answer until it is touched, so
   a skipped rating is not recorded as a zero.
 
+- [x] **P14 — Two video sets, and a capture without the bridge.** A study
+  now carries fixed video orders — two, in the design — and a participant with
+  no hand-picked sequence is dealt one at their first login. The deal is
+  balanced rather than random: the least-dealt set goes next and only a tie is
+  a coin toss, so the halves come out equal over the people who actually turn
+  up. The set is copied into the participant's slots, so editing a set cannot
+  change a run in progress; the participant list, the statistics and a new
+  `participants.csv` export say who got which. And the screen recording no
+  longer needs the bridge: when none is running (a test on a laptop, a lab
+  machine that lost it) the page captures its own display through the browser's
+  picker, asked once on the first case intro, and uploads it the same two ways
+  the bridge does. Such a recording is stored as WebM under its own extension
+  and marked `recorder = "browser"`, because its clock anchor is the browser's.
+
+- [x] **P15 — Room to read, and words the researcher owns.** The question
+  screens — the outro after each case, the pre-test pages, the ratings under
+  the diagnosis — were a 680px card with long German items, a scale whose
+  anchors wrapped, and a fieldset border drawn through every question text.
+  They are now a wider form panel with each item on its own rule, the two
+  anchors above the scale flush with its ends, likert points as equal-width
+  cells, and a readout beside the slider. The welcome page's title,
+  introduction, list of steps and id note can be written per study on the
+  Details tab; empty means the built-in text. The CK self-assessment, eight
+  concepts each followed by the same seven statements, is one table now: a
+  question's `matrix` key groups it with its neighbours that share the
+  options, the statements are listed once and numbered, and each row is a
+  single choice under those numbers. The debugging ladder, whose statements
+  differ, has a page of its own. A data migration gives studies seeded before
+  this the same shape without touching any wording. The page before each case
+  is editable the same way as the welcome page. And a study keeps defaults for
+  new videos: a timer that is copied into each upload, and a task and info
+  text a video can *follow* rather than copy — tick the box when uploading and
+  the clip shows whatever the study's default says, now and after it is
+  edited, so one wording is maintained in one place for sixteen clips.
+
+- [x] **P16 — Think-aloud in blocks.** Validation asked for the training phase
+  to be able to run *n* cases before their think-aloud screens play one after
+  the other, rather than one narration per case. A study now carries that
+  number (1 by default, which is the original layout); `think_aloud_groups`
+  splits the cases into the blocks that share a run of narrations, and only the
+  training phase batches — the pre-test and post-test case are always narrated
+  immediately, and a block never spans a phase change, so a short final block
+  is normal. Batching moves think-aloud steps without adding or removing one,
+  which is what keeps `count_steps` honest. Each narration screen now says
+  which case it is of ("Training · Fall 5 von 7", "Lautes Denken 2 von 3"),
+  because three recordings in a row are otherwise a guess. The value is pinned
+  onto the participant when their run opens, so an edit cannot reorder a
+  sitting that has already begun.
+
+- [x] **P17 — Exports you can read, and the hand-over between sittings.** Four
+  things the researchers asked for after the first data came back. `events.csv`
+  carries every video position as a timecode beside the raw seconds
+  (`video_time`, and `video_time_from` for a seek), so a drag reads as
+  `00:00 → 01:05` rather than as six decimal places; `notes.csv` does the same
+  for the playhead a note was written at. A `progress_update` row now says
+  *which* screen was finished — `describe_step` puts the questionnaire's title
+  and page, or the case and its video, into the payload, and the export renders
+  it in a `completed_step` column — because a row saying "step 4 of 54" named
+  nothing. A `videos.csv` export gives every other file's `video_id` something
+  to join against. The exports tab lists what each file holds and how many rows
+  it has, so an empty download is legible: `calibration.csv` is empty by design
+  wherever the tracker is calibrated in Eye Tracker Manager, and the tab says
+  so rather than leaving it as a mystery. And the closing screen has a button
+  back to the id prompt for the next participant, which signs the finished run
+  out and clears its cache — it waits while the outbox still holds writes,
+  since logging out parks them under an id nobody will sign in as again.
+
 ## Still open
 
 Ordered roughly by cost of getting it wrong. See the production-readiness review
@@ -125,7 +192,14 @@ for the detail.
 
 - **Deferred by choice.** The vite 6 / vitest 3 major bump — the remaining npm
   advisories are dev-toolchain only and never reach the bundle. A deeper
-  accessibility audit. Named sequence templates (bulk-assign covers the need).
+  accessibility audit. Named sequence templates beyond the video sets
+  (bulk-assign covers the rest of the need).
+- **The browser capture asks.** Chrome shows its screen-share picker once per
+  page load and a "sharing your screen" bar for the rest of the session. Both
+  can be suppressed with a managed-browser policy on the lab machines
+  (`--auto-select-desktop-capture-source` / `ScreenCaptureAllowedByOrigins`),
+  which is a deployment step nobody has taken yet. The bridge remains the
+  intended recorder; this is the net under it.
 - **Retention period.** `docs/OPERATIONS.md` describes how erasure works but
   the period itself is an ethics-board decision that has not been made. The
   screen recordings make it more pressing: ~1–1.5 GB per participant.

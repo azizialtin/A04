@@ -10,7 +10,13 @@ interface Props {
 export default function Modal({ open, title, onClose, children }: Props) {
   if (!open) return null
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={onClose}
+    >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal__header">
           <h3 className="modal__title">{title}</h3>

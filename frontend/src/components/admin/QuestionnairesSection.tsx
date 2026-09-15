@@ -52,7 +52,12 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
     }
     setErr('')
     create.mutate(
-      { placement, title: title.trim(), order_index: Number(order) || 0, questions: questions as unknown[] },
+      {
+        placement,
+        title: title.trim(),
+        order_index: Number(order) || 0,
+        questions: questions as unknown[],
+      },
       {
         onSuccess: () => setTitle(''),
         onError: (error) =>
@@ -88,7 +93,12 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           so, wie sie im Datenlexikon der Studie stehen. Neue Studien bekommen sie automatisch;
           fehlende werden hier ergänzt, vorhandene bleiben unverändert.
         </p>
-        <button type="button" className="btn btn-secondary" onClick={() => seed.mutate()} disabled={seed.isPending}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => seed.mutate()}
+          disabled={seed.isPending}
+        >
           Fehlende Standard-Fragebögen anlegen
         </button>
         {seed.isSuccess && (
@@ -102,7 +112,11 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
         <h2>Fragebogen anlegen</h2>
         <div className="form-row">
           <label className="label">Platzierung</label>
-          <select className="input" value={placement} onChange={(e) => setPlacement(e.target.value)}>
+          <select
+            className="input"
+            value={placement}
+            onChange={(e) => setPlacement(e.target.value)}
+          >
             {PLACEMENTS.map(([v, l]) => (
               <option key={v} value={v}>
                 {l}
@@ -116,7 +130,12 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
         </div>
         <div className="form-row">
           <label className="label">Reihenfolge</label>
-          <input className="input" type="number" value={order} onChange={(e) => setOrder(e.target.value)} />
+          <input
+            className="input"
+            type="number"
+            value={order}
+            onChange={(e) => setOrder(e.target.value)}
+          />
         </div>
         <div className="form-row">
           <label className="label">Fragen (JSON-Array)</label>
@@ -126,9 +145,19 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             value={json}
             onChange={(e) => setJson(e.target.value)}
           />
+          <p className="muted small">
+            Aufeinanderfolgende Einfachauswahl-Fragen mit denselben Optionen und demselben Wert
+            unter <code>"matrix"</code> werden als eine Tabelle gezeigt: die Antworten einmal oben,
+            eine Zeile pro Frage.
+          </p>
         </div>
         {err && <p className="error-text">{err}</p>}
-        <button type="button" className="btn btn-primary" onClick={submit} disabled={create.isPending}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={submit}
+          disabled={create.isPending}
+        >
           Anlegen
         </button>
       </div>

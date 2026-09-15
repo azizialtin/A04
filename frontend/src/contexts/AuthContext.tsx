@@ -11,6 +11,7 @@ import {
 import { AUTH_STORAGE_KEY } from '../api/client'
 import { clearAllDrafts } from '../hooks/useLocalDraft'
 import { decodeJwt, isExpired } from '../lib/jwt'
+import { queryClient } from '../queryClient'
 
 interface User {
   id: string
@@ -45,11 +46,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(AUTH_STORAGE_KEY)
     // The lab machine is shared; unsubmitted text must not outlive the session.
     clearAllDrafts()
+    // Nor may the cached queries: `me` and `session` are not keyed by
+    // participant, so without this the next person to sign in on this machine
+    // is handed the previous one's script — and their step pointer — for as
+    // long as the refetch takes.
+    queryClient.clear()
     setUser(null)
   }, [])
 
   const login = useCallback((token: string) => {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token }))
+    queryClient.clear()
     setUser(readUser())
   }, [])
 

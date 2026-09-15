@@ -5,7 +5,14 @@
 export interface GazeGeometry {
   ts: number
   screen: { w: number; h: number }
-  window: { x: number; y: number; outer_w: number; outer_h: number; inner_w: number; inner_h: number }
+  window: {
+    x: number
+    y: number
+    outer_w: number
+    outer_h: number
+    inner_w: number
+    inner_h: number
+  }
   video: { x: number; y: number; w: number; h: number }
   frame: { w: number; h: number }
   dpr: number

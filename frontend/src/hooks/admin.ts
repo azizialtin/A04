@@ -2,7 +2,13 @@ import { useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { adminApi, type SequenceItemInput, type Study, type VideoUploadInput } from '../api/admin'
+import {
+  adminApi,
+  type ReplayRef,
+  type SequenceItemInput,
+  type Study,
+  type VideoUploadInput,
+} from '../api/admin'
 
 export function useStudies() {
   return useQuery({ queryKey: ['studies'], queryFn: adminApi.listStudies })
@@ -39,6 +45,10 @@ export function useDeleteStudy() {
   })
 }
 
+export function useExports(studyId: number) {
+  return useQuery({ queryKey: ['exports', studyId], queryFn: () => adminApi.listExports(studyId) })
+}
+
 export function useVideos(studyId: number) {
   return useQuery({ queryKey: ['videos', studyId], queryFn: () => adminApi.listVideos(studyId) })
 }
@@ -68,7 +78,10 @@ export function useDeleteVideo(studyId: number) {
 }
 
 export function useParticipants(studyId: number) {
-  return useQuery({ queryKey: ['participants', studyId], queryFn: () => adminApi.listParticipants(studyId) })
+  return useQuery({
+    queryKey: ['participants', studyId],
+    queryFn: () => adminApi.listParticipants(studyId),
+  })
 }
 
 export function useCreateParticipants(studyId: number) {
@@ -84,12 +97,73 @@ export function useSetSequence(studyId: number) {
   return useMutation({
     mutationFn: ({ id, items }: { id: string; items: SequenceItemInput[] }) =>
       adminApi.setSequence(id, items),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['participants', studyId] }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['participants', studyId] })
+      qc.invalidateQueries({ queryKey: ['participant', id] })
+      // A hand-picked order leaves whichever set they had, so its count moves.
+      qc.invalidateQueries({ queryKey: ['video-sets', studyId] })
+    },
+  })
+}
+
+export function useAssignVideoSet(studyId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, videoSetId }: { id: string; videoSetId: number }) =>
+      adminApi.assignVideoSet(id, videoSetId),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['participants', studyId] })
+      qc.invalidateQueries({ queryKey: ['participant', id] })
+      qc.invalidateQueries({ queryKey: ['video-sets', studyId] })
+    },
+  })
+}
+
+export function useVideoSets(studyId: number) {
+  return useQuery({
+    queryKey: ['video-sets', studyId],
+    queryFn: () => adminApi.listVideoSets(studyId),
+  })
+}
+
+export function useCreateVideoSet(studyId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { name: string; items: SequenceItemInput[] }) =>
+      adminApi.createVideoSet(studyId, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['video-sets', studyId] }),
+  })
+}
+
+export function useUpdateVideoSet(studyId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; name?: string; items?: SequenceItemInput[] }) =>
+      adminApi.updateVideoSet(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['video-sets', studyId] })
+      // A rename shows up against every participant who was dealt the set.
+      qc.invalidateQueries({ queryKey: ['participants', studyId] })
+    },
+  })
+}
+
+export function useDeleteVideoSet(studyId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => adminApi.deleteVideoSet(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['video-sets', studyId] })
+      qc.invalidateQueries({ queryKey: ['participants', studyId] })
+    },
   })
 }
 
 export function useQuestionnaires(studyId: number) {
-  return useQuery({ queryKey: ['questionnaires', studyId], queryFn: () => adminApi.listQuestionnaires(studyId) })
+  return useQuery({
+    queryKey: ['questionnaires', studyId],
+    queryFn: () => adminApi.listQuestionnaires(studyId),
+  })
 }
 
 export function useCreateQuestionnaire(studyId: number) {
@@ -112,25 +186,32 @@ export function useSeedQuestionnaires(studyId: number) {
 export function useDeleteQuestionnaire(studyId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, force }: { id: number; force?: boolean }) => adminApi.deleteQuestionnaire(id, force),
+    mutationFn: ({ id, force }: { id: number; force?: boolean }) =>
+      adminApi.deleteQuestionnaire(id, force),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['questionnaires', studyId] }),
   })
 }
 
 export function useGazeRecordings(studyId?: number) {
-  return useQuery({ queryKey: ['gaze', studyId ?? null], queryFn: () => adminApi.listGaze(studyId) })
+  return useQuery({
+    queryKey: ['gaze', studyId ?? null],
+    queryFn: () => adminApi.listGaze(studyId),
+  })
 }
 
-export function useGazeReplay(recordingId: number | null) {
+export function useReplay(ref: ReplayRef | null) {
   return useQuery({
-    queryKey: ['gaze-replay', recordingId],
-    queryFn: () => adminApi.getGazeReplay(recordingId as number),
-    enabled: recordingId != null,
+    queryKey: ['replay', ref?.kind, ref?.id],
+    queryFn: () => adminApi.getReplay(ref as ReplayRef),
+    enabled: ref != null,
   })
 }
 
 export function useOverviewStats(days = 30) {
-  return useQuery({ queryKey: ['stats', 'overview', days], queryFn: () => adminApi.overviewStats(days) })
+  return useQuery({
+    queryKey: ['stats', 'overview', days],
+    queryFn: () => adminApi.overviewStats(days),
+  })
 }
 
 export function useStudyStats(studyId: number, days = 30) {

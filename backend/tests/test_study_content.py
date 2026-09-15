@@ -7,7 +7,7 @@ from app.models.enums import QuestionnairePlacement
 from app.models.questionnaire import Questionnaire
 from app.services.log_data import MAIN_SCREEN_VARIABLES, variable_name
 from app.services.questionnaires import visible_question_ids
-from app.services.study_content import DEFAULT_BATTERIES
+from app.services.study_content import CK_DEBUG_PRE_TEST, CK_PRE_TEST, DEFAULT_BATTERIES
 
 ALL_QUESTIONS = [q for battery in DEFAULT_BATTERIES for q in battery.questions]
 
@@ -63,6 +63,17 @@ def test_a_conditional_question_is_hidden_until_its_trigger_says_so():
     assert "st_semester" in visible_question_ids(demographics, {"st_enrollment": 1})
 
 
+def test_the_concept_ladder_is_one_table_and_debugging_its_own_page():
+    # Same key and the same seven statements on every concept row, or the
+    # renderer would break them into separate tables.
+    assert {q["matrix"] for q in CK_PRE_TEST} == {"ck_concepts"}
+    assert len({tuple(o["value"] for o in q["options"]) for q in CK_PRE_TEST}) == 1
+    assert [q["id"] for q in CK_DEBUG_PRE_TEST] == ["ck_pre_debug"]
+    assert CK_DEBUG_PRE_TEST[0]["matrix"] == "ck_debug"
+    titles = [b.title for b in DEFAULT_BATTERIES if b.placement.value == "pre_test"]
+    assert titles.index("Fachwissen Programmierung") + 1 == titles.index("Fachwissen Debugging")
+
+
 def test_the_variable_names_are_the_ones_the_data_dictionary_uses():
     ids = {q["id"] for q in ALL_QUESTIONS}
     assert {"sex", "age", "participant_group", "st_schulform", "java_ex"} <= ids
@@ -98,6 +109,7 @@ async def test_a_new_study_arrives_with_the_standard_batteries(client, db, admin
         (QuestionnairePlacement.pre_test, 0),
         (QuestionnairePlacement.pre_test, 1),
         (QuestionnairePlacement.pre_test, 2),
+        (QuestionnairePlacement.pre_test, 3),
     ]
 
 
@@ -150,6 +162,7 @@ async def test_reordering_a_page_does_not_earn_a_second_copy(client, db, admin_h
         (QuestionnairePlacement.diagnosis, 0),
         (QuestionnairePlacement.pre_test, 0),
         (QuestionnairePlacement.pre_test, 1),
+        (QuestionnairePlacement.pre_test, 3),
         (QuestionnairePlacement.pre_test, 5),
     ]
 
@@ -173,6 +186,7 @@ async def test_an_older_study_can_be_brought_up_to_date(client, db, seed_study, 
     )
     assert seeded.status_code == 201
     assert [q["placement"] for q in seeded.json()] == [
+        "pre_test",
         "pre_test",
         "pre_test",
         "pre_test",

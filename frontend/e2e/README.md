@@ -33,9 +33,14 @@ failure that looks like a broken login.
 
 ## What it does not cover
 
-- **The eye tracker.** There is none in CI, so the calibration step takes its
-  documented no-tracker path. The gaze mapping is covered by unit tests
-  instead.
+- **The eye tracker.** There is none in CI. The in-app calibration step is off
+  by default (the lab calibrates in Tobii Pro Eye Tracker Manager beforehand),
+  so the run walks straight past it; with `CALIBRATION_ENABLED=true` the spec
+  takes the documented no-tracker path through it instead. The gaze mapping is
+  covered by unit tests either way.
+- **The screen recording.** Headless Chromium has no bridge and refuses the
+  display picker, so the case intro's capture attempt is declined and the
+  think-aloud falls back to the clip — which is the path this exercises.
 - **Video playback.** The seeded clip is a valid container header and nothing
   more; the case screen is exercised, the decoder is not.
 - **The admin UI.** The seeding goes through the admin *API*, so those

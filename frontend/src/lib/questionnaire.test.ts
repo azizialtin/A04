@@ -1,5 +1,5 @@
 import type { Question } from './questionnaire'
-import { missingRequired, visibleQuestionIds } from './questionnaire'
+import { groupQuestions, missingRequired, visibleQuestionIds } from './questionnaire'
 
 test('required field must be answered', () => {
   const qs: Question[] = [{ id: 'a', type: 'free_text', text: 'why' }]
@@ -31,4 +31,27 @@ test('show_if resolves transitively', () => {
   expect(hidden.has('b')).toBe(false)
   expect(hidden.has('c')).toBe(false)
   expect(visibleQuestionIds(qs, { a: 1, b: 'yes' })).toEqual(new Set(['a', 'b', 'c']))
+})
+
+test('a run of matrix questions with the same options is one block; anything else breaks it', () => {
+  const ladder = ['nie', 'manchmal', 'oft']
+  const other = ['ja', 'nein']
+  const blocks = groupQuestions([
+    { id: 'a', type: 'multiple_choice', text: 'A', options: ladder, matrix: 'm' },
+    { id: 'b', type: 'multiple_choice', text: 'B', options: ladder, matrix: 'm' },
+    { id: 'c', type: 'multiple_choice', text: 'C', options: other, matrix: 'm' },
+    { id: 'd', type: 'free_text', text: 'D' },
+    { id: 'e', type: 'multiple_choice', text: 'E', options: ladder, matrix: 'm' },
+    { id: 'f', type: 'multiple_choice', text: 'F', options: ladder },
+  ])
+
+  expect(
+    blocks.map((b) => (b.kind === 'matrix' ? b.questions.map((q) => q.id) : b.question.id)),
+  ).toEqual([
+    ['a', 'b'], // same key, same options
+    ['c'], // same key, different options: its own table
+    'd',
+    ['e'], // the free-text question broke the run
+    'f', // no key: an ordinary question, even with the same options
+  ])
 })

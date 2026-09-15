@@ -37,13 +37,27 @@ export default function AdminStudyListPage() {
         </div>
         <div className="form-row">
           <label className="label">SoSci-Link (Vortest)</label>
-          <input className="input" value={pre} onChange={(e) => setPre(e.target.value)} placeholder="https://…" />
+          <input
+            className="input"
+            value={pre}
+            onChange={(e) => setPre(e.target.value)}
+            placeholder="https://…"
+          />
         </div>
         <div className="form-row">
           <label className="label">SoSci-Link (Nachtest)</label>
-          <input className="input" value={post} onChange={(e) => setPost(e.target.value)} placeholder="https://…" />
+          <input
+            className="input"
+            value={post}
+            onChange={(e) => setPost(e.target.value)}
+            placeholder="https://…"
+          />
         </div>
-        <button className="btn btn-primary" type="submit" disabled={!name.trim() || createStudy.isPending}>
+        <button
+          className="btn btn-primary"
+          type="submit"
+          disabled={!name.trim() || createStudy.isPending}
+        >
           Anlegen
         </button>
       </form>

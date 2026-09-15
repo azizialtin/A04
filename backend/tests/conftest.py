@@ -105,7 +105,7 @@ def _silence_background_writers(monkeypatch):
     async def _noop(*args, **kwargs):
         return None
 
-    for module in ("app.api.auth", "app.api.participant", "app.api.admin"):
+    for module in ("app.api.auth", "app.api.participant", "app.api.admin", "app.api.admin._common"):
         for name in ("log_event", "record_audit"):
             monkeypatch.setattr(f"{module}.{name}", _noop, raising=False)
 

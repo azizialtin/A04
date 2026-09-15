@@ -133,7 +133,9 @@ export default function CaseVideoScreen({
         <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{infoText || t('case.no_content')}</p>
       </Modal>
       <Modal open={showTask} title={t('case.student_task_title')} onClose={closeTask}>
-        <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{studentTaskText || t('case.no_content')}</p>
+        <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+          {studentTaskText || t('case.no_content')}
+        </p>
       </Modal>
     </div>
   )

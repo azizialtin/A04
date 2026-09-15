@@ -158,6 +158,8 @@ class ReplayResponse(BaseModel):
     # on that clock — the notes — onto the same timeline.
     epoch_ms: int | None = None
     duration_ms: int | None = None
+    # "bridge" or "browser" for a screen replay; None on the clip.
+    recorder: str | None = None
 
 
 async def _require_assigned(db: AsyncSession, participant: Participant, video_id: int) -> None:
@@ -415,6 +417,7 @@ async def get_replay(
                 points=data["points"],
                 epoch_ms=screen.epoch_ms,
                 duration_ms=screen.duration_ms,
+                recorder=screen.recorder,
             )
 
     try:
