@@ -5,6 +5,7 @@ import type { NoteSnapshot } from '../../api/participant'
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
 import { useLocalDraft } from '../../hooks/useLocalDraft'
 import { missingRequired, type Answers, type Question } from '../../lib/questionnaire'
+import StudyText from '../StudyText'
 import { QuestionnaireFields } from './QuestionnaireRenderer'
 
 interface Props {
@@ -39,7 +40,7 @@ export default function DiagnosisView({
   return (
     <div className="panel panel--form">
       <h2>{t('diagnosis.title')}</h2>
-      {taskDescription ? <p className="muted">{taskDescription}</p> : null}
+      {taskDescription ? <StudyText text={taskDescription} className="muted" /> : null}
 
       <label className="label" htmlFor="diagnosis-text">
         {t('diagnosis.prompt')}

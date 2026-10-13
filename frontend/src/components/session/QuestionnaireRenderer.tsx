@@ -2,6 +2,8 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
+import CodeBlock from '../CodeBlock'
+import StudyText from '../StudyText'
 import {
   groupQuestions,
   missingRequired,
@@ -40,8 +42,8 @@ export default function QuestionnaireRenderer({
     <div className="panel panel--form">
       <header className="qhead">
         <h2>{title}</h2>
-        {description ? <p className="muted">{description}</p> : null}
-        {instruction ? <p className="lead">{instruction}</p> : null}
+        {description ? <StudyText text={description} className="muted" /> : null}
+        {instruction ? <StudyText text={instruction} className="lead" /> : null}
       </header>
 
       <QuestionnaireFields questions={questions} answers={answers} onChange={setAnswers} />
@@ -204,6 +206,7 @@ function Field({
         {question.text}
         {required ? <span className="req"> *</span> : null}
       </legend>
+      {question.code ? <CodeBlock code={question.code} /> : null}
       <Control question={question} value={value} onChange={onChange} />
     </fieldset>
   )

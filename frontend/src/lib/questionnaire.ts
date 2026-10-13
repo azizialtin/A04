@@ -26,6 +26,12 @@ export interface Question {
    * than the same list repeated under every question.
    */
   matrix?: string
+  /**
+   * Java shown above the answer field as a numbered code window — one entry
+   * per line, or a string with newlines. For "which line is the bug in?", the
+   * question itself is then a `number`.
+   */
+  code?: string | string[]
 }
 
 export type Answers = Record<string, unknown>

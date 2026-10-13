@@ -840,6 +840,60 @@ h3 {
   font-size: 0.95rem;
 }
 
+/* Code shown to participants: the pupils' Java in the Schüler-Aufgabe, a
+   snippet under a pre-test question. Lines are numbered so an answer can name
+   one, and never wrapped — a long line scrolls, so the numbering stays true.
+   The numbers are drawn here, not written into the text, so a copy of the
+   block is the code alone. */
+.code {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 4;
+}
+
+.code code {
+  font: inherit;
+}
+
+.code__line::before {
+  content: attr(data-line);
+  display: inline-block;
+  min-width: 3ch;
+  margin-right: 1.4ch;
+  padding-right: 0.8ch;
+  border-right: 1px solid var(--border);
+  text-align: right;
+  color: var(--muted);
+  user-select: none;
+}
+
+.tok--kw {
+  color: #6f2c80;
+  font-weight: 600;
+}
+
+.tok--str {
+  color: #9a3b1e;
+}
+
+.tok--com {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.tok--num {
+  color: #1f5fa8;
+}
+
 .rail-actions {
   display: flex;
   gap: 8px;

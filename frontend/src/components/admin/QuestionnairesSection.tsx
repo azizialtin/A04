@@ -166,6 +166,12 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             unter <code>"matrix"</code> werden als eine Tabelle gezeigt: die Antworten einmal oben,
             eine Zeile pro Frage.
           </p>
+          <p className="muted small">
+            Java-Code zu einer Frage kommt unter <code>"code"</code>, ein Eintrag pro Zeile:{' '}
+            <code>{'"code": ["int i = 0;", "while (i <= n) {", "  i++;", "}"]'}</code>. Er erscheint
+            als Codefenster mit Zeilennummern über dem Antwortfeld – für „In welcher Zeile steckt
+            der Fehler?“ ist die Frage dann vom Typ <code>number</code>.
+          </p>
         </div>
         {err && <p className="error-text">{err}</p>}
         <button

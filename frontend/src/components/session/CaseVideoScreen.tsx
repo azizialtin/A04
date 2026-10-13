@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useVideoNotes } from '../../hooks/participant'
 import { enqueue } from '../../lib/outbox'
 import Modal from '../Modal'
+import StudyText from '../StudyText'
 import NotesPanel from './NotesPanel'
 import Timer from './Timer'
 import VideoPlayer from './VideoPlayer'
@@ -90,7 +91,7 @@ export default function CaseVideoScreen({
 
         <div className="rail-block">
           <span className="rail-label">{t('case.task_label')}</span>
-          <p className="rail-task">{taskDescription}</p>
+          <StudyText text={taskDescription} className="rail-task" />
         </div>
 
         <div className="rail-actions">
@@ -130,12 +131,14 @@ export default function CaseVideoScreen({
       </aside>
 
       <Modal open={showInfo} title={t('case.info_title')} onClose={closeInfo}>
-        <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{infoText || t('case.no_content')}</p>
+        <StudyText text={infoText || t('case.no_content')} mode="preserve" style={{ margin: 0 }} />
       </Modal>
       <Modal open={showTask} title={t('case.student_task_title')} onClose={closeTask}>
-        <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
-          {studentTaskText || t('case.no_content')}
-        </p>
+        <StudyText
+          text={studentTaskText || t('case.no_content')}
+          mode="preserve"
+          style={{ margin: 0 }}
+        />
       </Modal>
     </div>
   )

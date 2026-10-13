@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { bridgeCanRecord, prepareCapture } from '../../lib/screenCapture'
-import { paragraphs } from '../../lib/text'
+import StudyText from '../StudyText'
 
 /**
  * Text only: nothing is asked before a case, so the clip is one click away.
@@ -46,16 +46,10 @@ export default function CaseIntroScreen({
     onContinue()
   }
 
-  const lines = body ? paragraphs(body) : [t('case_intro.body')]
-
   return (
     <div className="panel">
       <h2>{title || t('case_intro.title')}</h2>
-      {lines.map((line, i) => (
-        <p key={i} className="lead">
-          {line}
-        </p>
-      ))}
+      <StudyText text={body || t('case_intro.body')} className="lead" />
       <div className="panel__actions">
         <button
           type="button"

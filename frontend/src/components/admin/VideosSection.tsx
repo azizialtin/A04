@@ -164,6 +164,11 @@ export default function VideosSection({ studyId }: { studyId: number }) {
             value={studentTask}
             onChange={(e) => setStudentTask(e.target.value)}
           />
+          <p className="muted small">
+            Java-Code in diesem wie in den anderen Textfeldern: zwischen eine Zeile mit{' '}
+            <code>```</code> und eine weitere Zeile mit <code>```</code> setzen, die Einrückung
+            bleibt erhalten. Er erscheint als Codefenster mit Zeilennummern.
+          </p>
         </div>
         <div className="form-row">
           <label className="label" htmlFor="video-limit">

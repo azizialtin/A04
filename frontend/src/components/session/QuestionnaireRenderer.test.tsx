@@ -163,3 +163,34 @@ test('questions that share a matrix key are one table with the statements listed
     expect.any(Number),
   )
 })
+
+test('a question can show code above its answer field, numbered line by line', () => {
+  const debugging: Question[] = [
+    {
+      id: 'debug_exe_1',
+      type: 'number',
+      text: 'In welcher Zeile steckt der Fehler?',
+      code: ['int i = 0;', 'while (i <= n) {', '  sum += a[i];', '}'],
+      min: 1,
+      max: 4,
+    },
+  ]
+  const onSubmit = vi.fn()
+  render(<QuestionnaireRenderer title="Debugging" questions={debugging} onSubmit={onSubmit} />)
+
+  const lines = document.querySelectorAll('.code__line')
+  expect(lines).toHaveLength(4)
+  expect(lines[1].getAttribute('data-line')).toBe('2')
+  // The numbers are drawn by the stylesheet; the text is the code alone.
+  expect(document.querySelector('.code')?.textContent).toBe(
+    'int i = 0;\nwhile (i <= n) {\n  sum += a[i];\n}\n',
+  )
+  // The code sits between the question and its field, and the field still works.
+  const field = screen.getByRole('spinbutton')
+  expect(document.querySelector('.code')?.compareDocumentPosition(field)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  )
+  fireEvent.change(field, { target: { value: '2' } })
+  fireEvent.click(screen.getByRole('button'))
+  expect(onSubmit).toHaveBeenCalledWith({ debug_exe_1: 2 }, expect.any(Number))
+})

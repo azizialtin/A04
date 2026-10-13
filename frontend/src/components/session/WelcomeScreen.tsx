@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
 import type { WelcomeTexts } from '../../api/participant'
-import { paragraphs } from '../../lib/text'
+import StudyText from '../StudyText'
 
 // What the sitting consists of, in order. Shown up front so the participant
 // knows the SoSciSurvey tab and the eye tracker are coming before they arrive.
@@ -29,17 +29,13 @@ export default function WelcomeScreen({
     (key) => t(`welcome.steps.${key}`),
   )
   const steps = texts?.welcome_steps?.length ? texts.welcome_steps : defaultSteps
-  const intro = texts?.welcome_intro ? paragraphs(texts.welcome_intro) : [t('welcome.intro')]
+  const intro = texts?.welcome_intro || t('welcome.intro')
 
   return (
     <div className="fullpage">
       <div className="panel">
         <h1>{texts?.welcome_title || t('welcome.title')}</h1>
-        {intro.map((p, i) => (
-          <p key={i} className="lead">
-            {p}
-          </p>
-        ))}
+        <StudyText text={intro} className="lead" />
 
         <span className="label">{t('welcome.overview')}</span>
         <ol className="steps">
