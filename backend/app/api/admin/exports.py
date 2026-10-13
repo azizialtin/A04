@@ -12,14 +12,16 @@ import io
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, exists, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from starlette.responses import StreamingResponse
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_admin
+from app.models.enums import PhaseType
 from app.models.gaze_calibration import GazeCalibration
 from app.models.gaze_recording import GazeRecording
 from app.models.interaction_log import InteractionLog
@@ -150,6 +152,79 @@ def _iso(value) -> str:
     return value.isoformat() if value else ""
 
 
+# The columns every per-case file carries right after `video_id`.
+CASE_COLUMNS = ("case_number", "phase_type", "video_title")
+
+
+def _default_positions(study_id: int):
+    """video_id -> 1-based position in the study's default order.
+
+    A participant with no sequence of their own meets the study's videos in
+    phase order, then upload order (`session_script.default_order`). The same
+    ranking is written here in SQL so that such a run is numbered the way the
+    script numbered it; a test pins the two together.
+    """
+    rank = case(
+        (Video.phase_type == PhaseType.pre_test, 0),
+        (Video.phase_type == PhaseType.training, 1),
+        (Video.phase_type == PhaseType.post_test, 2),
+        else_=9,
+    )
+    return (
+        select(
+            Video.id.label("video_id"),
+            func.row_number().over(order_by=(rank, Video.id)).label("position"),
+        )
+        .where(Video.study_id == study_id)
+        .subquery()
+    )
+
+
+def _with_case(stmt, participant_col, video_col, study_id: int):
+    """Append the columns that say which case a row belongs to.
+
+    `video_id` alone is a database number the researchers never chose, and it
+    says nothing about *when* in the run the case came: the two video sets show
+    the training clips in opposite orders, so clip 8 is one person's second
+    case and another's eighth. The position comes from the sequence copied onto
+    the participant — the order they actually met the cases in, whichever set
+    was dealt or whatever was hand-picked. A run with no sequence at all is on
+    the study's default order and is numbered like that. Rows with no case, a
+    login or a pre-test page, leave all three empty.
+
+    The four columns land at the end of the row, where `_case_cells` reads them.
+    """
+    slot = aliased(ParticipantVideo)
+    any_slot = aliased(ParticipantVideo)
+    positions = _default_positions(study_id)
+    has_sequence = exists().where(any_slot.participant_id == participant_col)
+    position = case(
+        (slot.slot_index.is_not(None), slot.slot_index + 1),
+        (and_(video_col.is_not(None), ~has_sequence), positions.c.position),
+        else_=None,
+    )
+    return (
+        stmt.add_columns(
+            position.label("case_number"),
+            slot.phase_type.label("slot_phase"),
+            Video.phase_type.label("video_phase"),
+            Video.title.label("video_title"),
+        )
+        .outerjoin(slot, and_(slot.participant_id == participant_col, slot.video_id == video_col))
+        .outerjoin(Video, Video.id == video_col)
+        .outerjoin(positions, positions.c.video_id == video_col)
+    )
+
+
+def _case_cells(r) -> list:
+    """The case columns as the file shows them, read from where `_with_case` put them."""
+    position, slot_phase, video_phase, title = r[-4:]
+    # The slot's phase is the one the participant was shown; the clip's own is
+    # the fallback for a run on the default order.
+    phase = slot_phase or video_phase
+    return [position, phase.value if phase else "", title or ""]
+
+
 def _participants_query(study_id: int):
     # The set is the condition every other table is analysed against, the
     # sequence is the order the cases were actually met in, and the batch size
@@ -176,7 +251,7 @@ def _participants_query(study_id: int):
 
 
 def _notes_query(study_id: int):
-    return (
+    stmt = (
         select(
             Note.participant_id, Note.video_id, Note.video_time_seconds, Note.text, Note.created_at
         )
@@ -184,10 +259,11 @@ def _notes_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(Note.participant_id, Note.id)
     )
+    return _with_case(stmt, Note.participant_id, Note.video_id, study_id)
 
 
 def _diagnoses_query(study_id: int):
-    return (
+    stmt = (
         select(
             TextEntry.participant_id,
             TextEntry.video_id,
@@ -199,12 +275,13 @@ def _diagnoses_query(study_id: int):
         .where(Participant.study_id == study_id, TextEntry.kind == "diagnosis")
         .order_by(TextEntry.participant_id, TextEntry.id)
     )
+    return _with_case(stmt, TextEntry.participant_id, TextEntry.video_id, study_id)
 
 
 def _responses_query(study_id: int):
     # Placement travels with the row: without it a pre-test page and a case
     # battery are told apart only by an empty video_id, which is a guess.
-    return (
+    stmt = (
         select(
             QuestionnaireResponse.participant_id,
             QuestionnaireResponse.questionnaire_id,
@@ -220,10 +297,13 @@ def _responses_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(QuestionnaireResponse.participant_id, QuestionnaireResponse.id)
     )
+    return _with_case(
+        stmt, QuestionnaireResponse.participant_id, QuestionnaireResponse.video_id, study_id
+    )
 
 
 def _events_query(study_id: int):
-    return (
+    stmt = (
         select(
             InteractionLog.participant_id,
             InteractionLog.event_type,
@@ -236,6 +316,7 @@ def _events_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(InteractionLog.id)
     )
+    return _with_case(stmt, InteractionLog.participant_id, InteractionLog.video_id, study_id)
 
 
 def _videos_query(study_id: int):
@@ -256,7 +337,7 @@ def _videos_query(study_id: int):
 
 
 def _gaze_query(study_id: int):
-    return (
+    stmt = (
         select(
             GazeRecording.participant_id,
             GazeRecording.video_id,
@@ -269,6 +350,7 @@ def _gaze_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(GazeRecording.participant_id, GazeRecording.id)
     )
+    return _with_case(stmt, GazeRecording.participant_id, GazeRecording.video_id, study_id)
 
 
 def _calibration_query(study_id: int):
@@ -328,15 +410,23 @@ _EXPORTS = {
     ),
     "notes": (
         "notes.csv",
-        ["participant_id", "video_id", "video_time_seconds", "video_time", "text", "created_at"],
+        [
+            "participant_id",
+            "video_id",
+            *CASE_COLUMNS,
+            "video_time_seconds",
+            "video_time",
+            "text",
+            "created_at",
+        ],
         _notes_query,
-        lambda r: [r[0], r[1], r[2], timecode(r[2]), r[3], _iso(r[4])],
+        lambda r: [r[0], r[1], *_case_cells(r), r[2], timecode(r[2]), r[3], _iso(r[4])],
     ),
     "diagnoses": (
         "diagnoses.csv",
-        ["participant_id", "video_id", "text", "time_spent_seconds", "created_at"],
+        ["participant_id", "video_id", *CASE_COLUMNS, "text", "time_spent_seconds", "created_at"],
         _diagnoses_query,
-        lambda r: [r[0], r[1], r[2], r[3], _iso(r[4])],
+        lambda r: [r[0], r[1], *_case_cells(r), r[2], r[3], _iso(r[4])],
     ),
     "responses": (
         "responses.csv",
@@ -346,12 +436,23 @@ _EXPORTS = {
             "placement",
             "questionnaire_title",
             "video_id",
+            *CASE_COLUMNS,
             "answers",
             "time_spent_seconds",
             "created_at",
         ],
         _responses_query,
-        lambda r: [r[0], r[1], r[2].value, r[3], r[4], json.dumps(r[5]), r[6], _iso(r[7])],
+        lambda r: [
+            r[0],
+            r[1],
+            r[2].value,
+            r[3],
+            r[4],
+            *_case_cells(r),
+            json.dumps(r[5]),
+            r[6],
+            _iso(r[7]),
+        ],
     ),
     "events": (
         "events.csv",
@@ -360,6 +461,7 @@ _EXPORTS = {
             "event_type",
             "variable_name",
             "video_id",
+            *CASE_COLUMNS,
             # Where the clip stood when this happened, and — for a seek — where
             # it was dragged from. `payload` keeps the raw seconds.
             "video_time",
@@ -376,6 +478,7 @@ _EXPORTS = {
             r[1],
             variable_name(r[1]),
             r[2],
+            *_case_cells(r),
             timecode(playhead_seconds(r[3])),
             timecode(seek_origin_seconds(r[3])),
             completed_step_label(r[3]),
@@ -389,13 +492,14 @@ _EXPORTS = {
         [
             "participant_id",
             "video_id",
+            *CASE_COLUMNS,
             "sampling_rate_hz",
             "sample_count",
             "started_at",
             "completed_at",
         ],
         _gaze_query,
-        lambda r: [r[0], r[1], r[2], r[3], _iso(r[4]), _iso(r[5])],
+        lambda r: [r[0], r[1], *_case_cells(r), r[2], r[3], _iso(r[4]), _iso(r[5])],
     ),
     "calibration": (
         "calibration.csv",

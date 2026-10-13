@@ -242,7 +242,10 @@ async def test_export_notes_csv(client, db, admin_headers, study_id):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     text = r.text
-    assert "participant_id,video_id,video_time_seconds,video_time,text,created_at" in text
+    assert (
+        "participant_id,video_id,case_number,phase_type,video_title,"
+        "video_time_seconds,video_time,text,created_at"
+    ) in text
     assert "E-1" in text and "looks wrong" in text
     # The raw seconds for the analysis, the timecode for whoever opens the file.
     assert "3.0,00:03" in text

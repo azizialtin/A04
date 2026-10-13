@@ -26,7 +26,9 @@ export default function ExportsSection({ studyId }: { studyId: number }) {
     <div className="card">
       <h2>Exporte (CSV)</h2>
       <p className="muted">
-        Alle Rohdaten der Studie als CSV (UTF-8 mit BOM, öffnet direkt in Excel).
+        Alle Rohdaten der Studie als CSV (UTF-8 mit BOM, öffnet direkt in Excel). Jede Zeile mit
+        Fallbezug trägt neben der video_id auch case_number (Position des Falls im Durchlauf dieser
+        Person), phase_type und video_title.
       </p>
       <table className="table">
         <thead>

@@ -10,6 +10,7 @@ from app.models.gaze_calibration import GazeCalibration
 from app.models.gaze_recording import GazeRecording
 from app.models.interaction_log import InteractionLog
 from app.models.note import Note
+from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.text_entry import TextEntry
 from app.models.video import Video
@@ -244,3 +245,126 @@ async def test_the_catalogue_counts_every_export(client, data, admin_headers):
 async def test_the_catalogue_is_admin_only(client, data, participant_headers):
     r = await client.get(f"/admin/studies/{data['study'].id}/exports", headers=participant_headers)
     assert r.status_code == 401
+
+
+PER_CASE_KINDS = ["notes", "diagnoses", "responses", "events", "gaze"]
+
+
+async def test_every_per_case_file_says_which_case_the_row_belongs_to(
+    client, db, data, seed_participant, admin_headers
+):
+    # T-001's run: another clip first, then the fixture's clip — so the
+    # fixture's rows are the *second* case, whatever its database id says.
+    other = Video(study_id=data["study"].id, title="W", phase_type=PhaseType.training)
+    db.add(other)
+    await db.flush()
+    db.add_all(
+        [
+            ParticipantVideo(
+                participant_id=seed_participant.id,
+                video_id=other.id,
+                slot_index=0,
+                phase_type=PhaseType.training,
+            ),
+            # The slot's phase is what the participant was shown. Here it
+            # differs from the clip's own, and the export follows the slot.
+            ParticipantVideo(
+                participant_id=seed_participant.id,
+                video_id=data["video"].id,
+                slot_index=1,
+                phase_type=PhaseType.post_test,
+            ),
+        ]
+    )
+    await db.flush()
+
+    for kind in PER_CASE_KINDS:
+        rows = read(
+            await client.get(
+                f"/admin/studies/{data['study'].id}/export/{kind}", headers=admin_headers
+            )
+        )
+        row = rows[0]
+        assert row["video_id"] == str(data["video"].id), kind
+        assert row["case_number"] == "2", kind
+        assert row["phase_type"] == "post_test", kind
+        assert row["video_title"] == "V", kind
+        # Right after video_id, where someone filtering by case looks first.
+        columns = list(row)
+        at = columns.index("video_id")
+        assert columns[at + 1 : at + 4] == ["case_number", "phase_type", "video_title"], kind
+
+
+async def test_a_run_on_the_study_default_order_is_numbered_like_the_script(
+    client, db, seed_study, seed_participant, admin_headers
+):
+    # Uploaded in the wrong order on purpose. The script still shows them
+    # pre-test, training, post-test, and the export has to count the same way.
+    training = Video(study_id=seed_study.id, title="Training", phase_type=PhaseType.training)
+    post = Video(study_id=seed_study.id, title="Post", phase_type=PhaseType.post_test)
+    pre = Video(study_id=seed_study.id, title="Pre", phase_type=PhaseType.pre_test)
+    db.add_all([training, post, pre])
+    await db.flush()
+    db.add_all(
+        InteractionLog(
+            participant_id=seed_participant.id,
+            video_id=v.id,
+            event_type="video_started",
+            payload={},
+        )
+        for v in (training, post, pre)
+    )
+    await db.flush()
+
+    login = await client.post("/auth/participant/login", json={"participant_id": "T-001"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    script = (await client.get("/participant/session", headers=headers)).json()
+    scripted = [s["video_id"] for s in script["steps"] if s["kind"] == "case_video"]
+    assert scripted == [pre.id, training.id, post.id]
+
+    rows = read(
+        await client.get(f"/admin/studies/{seed_study.id}/export/events", headers=admin_headers)
+    )
+    numbered = {int(r["video_id"]): int(r["case_number"]) for r in rows if r["video_id"]}
+    assert numbered == {vid: i + 1 for i, vid in enumerate(scripted)}
+    phases = {r["video_id"]: r["phase_type"] for r in rows if r["video_id"]}
+    assert phases == {
+        str(pre.id): "pre_test",
+        str(training.id): "training",
+        str(post.id): "post_test",
+    }
+
+
+async def test_rows_without_a_case_leave_the_case_columns_empty(client, db, data, admin_headers):
+    page = Questionnaire(
+        study_id=data["study"].id, placement="pre_test", title="Angaben zur Person"
+    )
+    db.add(page)
+    await db.flush()
+    db.add_all(
+        [
+            InteractionLog(participant_id="T-001", event_type="login", payload={}),
+            QuestionnaireResponse(
+                questionnaire_id=page.id, participant_id="T-001", video_id=None, answers={"age": 30}
+            ),
+        ]
+    )
+    await db.flush()
+
+    events = read(
+        await client.get(f"/admin/studies/{data['study'].id}/export/events", headers=admin_headers)
+    )
+    login = next(r for r in events if r["event_type"] == "login")
+    assert (login["case_number"], login["phase_type"], login["video_title"]) == ("", "", "")
+
+    responses = read(
+        await client.get(
+            f"/admin/studies/{data['study'].id}/export/responses", headers=admin_headers
+        )
+    )
+    pre_test = next(r for r in responses if r["placement"] == "pre_test")
+    assert (pre_test["case_number"], pre_test["phase_type"], pre_test["video_title"]) == (
+        "",
+        "",
+        "",
+    )
