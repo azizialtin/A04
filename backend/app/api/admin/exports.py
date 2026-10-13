@@ -10,8 +10,9 @@ from __future__ import annotations
 import csv
 import io
 import json
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, case, exists, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -99,9 +100,68 @@ def _csv_stream(
     )
 
 
+async def _chosen_participants(
+    db: AsyncSession, study_id: int, raw: list[str] | None
+) -> list[str] | None:
+    """The participants an export is limited to, or None for the whole study.
+
+    The researchers asked to pull one new person's data without downloading
+    everyone again. Ids are checked against the study rather than dropped
+    quietly: a typo would otherwise produce a file that lacks someone and
+    says nothing about it.
+    """
+    wanted: list[str] = []
+    for raw_id in raw or []:
+        pid = raw_id.strip()
+        if pid and pid not in wanted:
+            wanted.append(pid)
+    if not wanted:
+        return None
+
+    known = set(
+        (
+            await db.execute(
+                select(Participant.id).where(
+                    Participant.study_id == study_id, Participant.id.in_(wanted)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    unknown = [pid for pid in wanted if pid not in known]
+    if unknown:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"Not participants of this study: {unknown}"
+        )
+    return wanted
+
+
+def _only(stmt, column, participant_ids: list[str] | None):
+    """Narrow a per-participant query to the chosen people, or leave it whole."""
+    return stmt.where(column.in_(participant_ids)) if participant_ids else stmt
+
+
+def _filename(kind: str, filename: str, participant_ids: list[str] | None) -> str:
+    """`events.csv` for the whole study, `events-TN-006.csv` for one person,
+    `events-auswahl.csv` for a hand-picked few, so files on a laptop do not
+    overwrite each other. Ids are held to a filename-safe charset on creation.
+    The video list is not per person, so its name never changes.
+    """
+    if not participant_ids or kind == "videos":
+        return filename
+    stem, ext = filename.rsplit(".", 1)
+    suffix = participant_ids[0] if len(participant_ids) == 1 else "auswahl"
+    return f"{stem}-{suffix}.{ext}"
+
+
+ParticipantIds = Annotated[list[str] | None, Query()]
+
+
 @router.get("/studies/{study_id}/exports", response_model=list[ExportInfo])
 async def list_exports(
     study_id: int,
+    participant_ids: ParticipantIds = None,
     admin: Researcher = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[ExportInfo]:
@@ -110,20 +170,22 @@ async def list_exports(
     A download that turns out to be a header and nothing else is impossible to
     tell from a broken one, and the calibration export is exactly that on any
     study run since the tracker started being calibrated outside the app.
+    With `participant_ids` the counts are for those people only.
     """
     await _study_or_404(db, study_id)
+    chosen = await _chosen_participants(db, study_id, participant_ids)
     in_app_calibration = get_settings().CALIBRATION_ENABLED
 
     infos = []
     for kind, (filename, _header, build, _shape) in _EXPORTS.items():
         rows = await db.scalar(
             # Ordering a row count is work Postgres would do and then throw away.
-            select(func.count()).select_from(build(study_id).order_by(None).subquery())
+            select(func.count()).select_from(build(study_id, chosen).order_by(None).subquery())
         )
         infos.append(
             ExportInfo(
                 kind=kind,
-                filename=filename,
+                filename=_filename(kind, filename, chosen),
                 rows=rows or 0,
                 collected=in_app_calibration if kind == "calibration" else True,
             )
@@ -135,6 +197,7 @@ async def list_exports(
 async def export_csv(
     study_id: int,
     kind: str,
+    participant_ids: ParticipantIds = None,
     admin: Researcher = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
@@ -144,8 +207,11 @@ async def export_csv(
     if export is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unknown export: {kind!r}")
 
+    chosen = await _chosen_participants(db, study_id, participant_ids)
     filename, header, build, shape = export
-    return _csv_stream(db, filename, header, build(study_id), shape)
+    return _csv_stream(
+        db, _filename(kind, filename, chosen), header, build(study_id, chosen), shape
+    )
 
 
 def _iso(value) -> str:
@@ -225,12 +291,12 @@ def _case_cells(r) -> list:
     return [position, phase.value if phase else "", title or ""]
 
 
-def _participants_query(study_id: int):
+def _participants_query(study_id: int, participant_ids: list[str] | None = None):
     # The set is the condition every other table is analysed against, the
     # sequence is the order the cases were actually met in, and the batch size
     # says whether a think-aloud followed its case or a block of them — none of
     # it is on any other row.
-    return (
+    stmt = (
         select(
             Participant.id,
             Participant.status,
@@ -248,9 +314,10 @@ def _participants_query(study_id: int):
         .group_by(Participant.id, VideoSet.name)
         .order_by(Participant.id)
     )
+    return _only(stmt, Participant.id, participant_ids)
 
 
-def _notes_query(study_id: int):
+def _notes_query(study_id: int, participant_ids: list[str] | None = None):
     stmt = (
         select(
             Note.participant_id, Note.video_id, Note.video_time_seconds, Note.text, Note.created_at
@@ -259,10 +326,11 @@ def _notes_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(Note.participant_id, Note.id)
     )
+    stmt = _only(stmt, Note.participant_id, participant_ids)
     return _with_case(stmt, Note.participant_id, Note.video_id, study_id)
 
 
-def _diagnoses_query(study_id: int):
+def _diagnoses_query(study_id: int, participant_ids: list[str] | None = None):
     stmt = (
         select(
             TextEntry.participant_id,
@@ -275,10 +343,11 @@ def _diagnoses_query(study_id: int):
         .where(Participant.study_id == study_id, TextEntry.kind == "diagnosis")
         .order_by(TextEntry.participant_id, TextEntry.id)
     )
+    stmt = _only(stmt, TextEntry.participant_id, participant_ids)
     return _with_case(stmt, TextEntry.participant_id, TextEntry.video_id, study_id)
 
 
-def _responses_query(study_id: int):
+def _responses_query(study_id: int, participant_ids: list[str] | None = None):
     # Placement travels with the row: without it a pre-test page and a case
     # battery are told apart only by an empty video_id, which is a guess.
     stmt = (
@@ -297,12 +366,13 @@ def _responses_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(QuestionnaireResponse.participant_id, QuestionnaireResponse.id)
     )
+    stmt = _only(stmt, QuestionnaireResponse.participant_id, participant_ids)
     return _with_case(
         stmt, QuestionnaireResponse.participant_id, QuestionnaireResponse.video_id, study_id
     )
 
 
-def _events_query(study_id: int):
+def _events_query(study_id: int, participant_ids: list[str] | None = None):
     stmt = (
         select(
             InteractionLog.participant_id,
@@ -316,12 +386,14 @@ def _events_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(InteractionLog.id)
     )
+    stmt = _only(stmt, InteractionLog.participant_id, participant_ids)
     return _with_case(stmt, InteractionLog.participant_id, InteractionLog.video_id, study_id)
 
 
-def _videos_query(study_id: int):
+def _videos_query(study_id: int, participant_ids: list[str] | None = None):
     # The key every other export's `video_id` points at. Without it a researcher
-    # holding notes.csv has no way to say which case a row belongs to.
+    # holding notes.csv has no way to say which case a row belongs to. Not per
+    # participant, so the filter does not apply.
     return (
         select(
             Video.id,
@@ -336,7 +408,7 @@ def _videos_query(study_id: int):
     )
 
 
-def _gaze_query(study_id: int):
+def _gaze_query(study_id: int, participant_ids: list[str] | None = None):
     stmt = (
         select(
             GazeRecording.participant_id,
@@ -350,11 +422,12 @@ def _gaze_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(GazeRecording.participant_id, GazeRecording.id)
     )
+    stmt = _only(stmt, GazeRecording.participant_id, participant_ids)
     return _with_case(stmt, GazeRecording.participant_id, GazeRecording.video_id, study_id)
 
 
-def _calibration_query(study_id: int):
-    return (
+def _calibration_query(study_id: int, participant_ids: list[str] | None = None):
+    stmt = (
         select(
             GazeCalibration.participant_id,
             GazeCalibration.status,
@@ -366,6 +439,7 @@ def _calibration_query(study_id: int):
         .where(Participant.study_id == study_id)
         .order_by(GazeCalibration.participant_id, GazeCalibration.id)
     )
+    return _only(stmt, GazeCalibration.participant_id, participant_ids)
 
 
 # name -> (filename, header, query builder, row shaper)

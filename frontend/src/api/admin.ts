@@ -719,17 +719,39 @@ export const adminApi = {
   participantStats: (id: string) =>
     apiClient.get<ParticipantStats>(`/admin/participants/${id}/stats`).then((r) => r.data),
 
-  listExports: (studyId: number) =>
-    apiClient.get<ExportInfo[]>(`/admin/studies/${studyId}/exports`).then((r) => r.data),
-  downloadExport: async (studyId: number, kind: ExportKind) => {
+  // `participantIds` limits an export to those people; absent means the whole
+  // study. Sent as a repeated query key, which is how FastAPI reads a list.
+  listExports: (studyId: number, participantIds?: string[]) =>
+    apiClient
+      .get<ExportInfo[]>(`/admin/studies/${studyId}/exports`, {
+        params: exportParams(participantIds),
+      })
+      .then((r) => r.data),
+  downloadExport: async (studyId: number, kind: ExportKind, participantIds?: string[]) => {
     const res = await apiClient.get(`/admin/studies/${studyId}/export/${kind}`, {
+      params: exportParams(participantIds),
       responseType: 'blob',
     })
     const url = URL.createObjectURL(res.data as Blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${kind}.csv`
+    // The server names the file for what it holds (events-TN-006.csv for one
+    // person), so files on a laptop do not overwrite each other.
+    a.download = filenameFrom(res.headers['content-disposition']) ?? `${kind}.csv`
     a.click()
     URL.revokeObjectURL(url)
   },
+}
+
+function exportParams(participantIds?: string[]): URLSearchParams | undefined {
+  if (!participantIds?.length) return undefined
+  const params = new URLSearchParams()
+  for (const id of participantIds) params.append('participant_ids', id)
+  return params
+}
+
+export function filenameFrom(contentDisposition: unknown): string | null {
+  if (typeof contentDisposition !== 'string') return null
+  const match = /filename="([^"]+)"/.exec(contentDisposition)
+  return match ? match[1] : null
 }

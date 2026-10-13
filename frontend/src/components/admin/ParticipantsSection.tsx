@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 
 import { adminApi, type AdminVideo } from '../../api/admin'
 import {
@@ -134,6 +135,14 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
                   >
                     Statistik
                   </button>
+                  <Link
+                    className="btn btn-secondary btn-sm"
+                    // The export tab with only this person chosen: one
+                    // participant's files without downloading everyone again.
+                    to={`/admin/studies/${studyId}?tab=export&participant=${encodeURIComponent(p.id)}`}
+                  >
+                    Export
+                  </Link>
                 </div>
               </td>
             </tr>

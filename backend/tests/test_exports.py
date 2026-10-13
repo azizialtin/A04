@@ -10,8 +10,10 @@ from app.models.gaze_calibration import GazeCalibration
 from app.models.gaze_recording import GazeRecording
 from app.models.interaction_log import InteractionLog
 from app.models.note import Note
+from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.study import Study
 from app.models.text_entry import TextEntry
 from app.models.video import Video
 
@@ -368,3 +370,102 @@ async def test_rows_without_a_case_leave_the_case_columns_empty(client, db, data
         "",
         "",
     )
+
+
+@pytest_asyncio.fixture
+async def second_participant(db, data, seed_study):
+    # Someone else with a note of their own, so a filter has a row to leave out.
+    other = Participant(id="T-002", study_id=seed_study.id)
+    db.add(other)
+    await db.flush()
+    db.add(
+        Note(participant_id="T-002", video_id=data["video"].id, video_time_seconds=1.0, text="x")
+    )
+    await db.flush()
+    return other
+
+
+async def test_an_export_can_be_limited_to_chosen_participants(
+    client, data, second_participant, admin_headers
+):
+    study_id = data["study"].id
+
+    one = await client.get(
+        f"/admin/studies/{study_id}/export/notes",
+        params={"participant_ids": ["T-002"]},
+        headers=admin_headers,
+    )
+    assert one.status_code == 200
+    assert [row["participant_id"] for row in read(one)] == ["T-002"]
+    # Named for what it holds, so it cannot overwrite the whole-study file.
+    assert one.headers["content-disposition"] == 'attachment; filename="notes-T-002.csv"'
+
+    both = await client.get(
+        f"/admin/studies/{study_id}/export/notes",
+        params={"participant_ids": ["T-001", "T-002"]},
+        headers=admin_headers,
+    )
+    assert sorted(row["participant_id"] for row in read(both)) == ["T-001", "T-002"]
+    assert both.headers["content-disposition"] == 'attachment; filename="notes-auswahl.csv"'
+
+    whole = await client.get(f"/admin/studies/{study_id}/export/notes", headers=admin_headers)
+    assert len(read(whole)) == 2
+    assert whole.headers["content-disposition"] == 'attachment; filename="notes.csv"'
+
+
+async def test_the_filter_reaches_every_per_person_file_but_not_the_video_list(
+    client, data, second_participant, admin_headers
+):
+    study_id = data["study"].id
+    for kind in KINDS:
+        rows = read(
+            await client.get(
+                f"/admin/studies/{study_id}/export/{kind}",
+                params={"participant_ids": ["T-001"]},
+                headers=admin_headers,
+            )
+        )
+        assert {row["participant_id"] for row in rows} <= {"T-001"}, kind
+
+    videos = read(
+        await client.get(
+            f"/admin/studies/{study_id}/export/videos",
+            params={"participant_ids": ["T-002"]},
+            headers=admin_headers,
+        )
+    )
+    assert len(videos) == 1  # the clip list is not per person
+
+
+async def test_the_catalogue_counts_follow_the_filter(
+    client, data, second_participant, admin_headers
+):
+    r = await client.get(
+        f"/admin/studies/{data['study'].id}/exports",
+        params={"participant_ids": ["T-002"]},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200
+    by_kind = {row["kind"]: row for row in r.json()}
+    assert by_kind["notes"]["rows"] == 1
+    assert by_kind["notes"]["filename"] == "notes-T-002.csv"
+    assert by_kind["events"]["rows"] == 0  # T-002 has no events
+    assert by_kind["videos"]["rows"] == 1  # not filtered, so not renamed either
+    assert by_kind["videos"]["filename"] == "videos.csv"
+
+
+async def test_an_id_outside_the_study_is_refused(client, db, data, seed_researcher, admin_headers):
+    elsewhere = Study(name="Elsewhere", created_by=seed_researcher.id)
+    db.add(elsewhere)
+    await db.flush()
+    db.add(Participant(id="X-001", study_id=elsewhere.id))
+    await db.flush()
+
+    for pid in ("X-001", "T-00l"):  # another study's participant, and a typo
+        r = await client.get(
+            f"/admin/studies/{data['study'].id}/export/notes",
+            params={"participant_ids": [pid]},
+            headers=admin_headers,
+        )
+        assert r.status_code == 400, pid
+        assert pid in r.json()["detail"]

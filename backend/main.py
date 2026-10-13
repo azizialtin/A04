@@ -48,7 +48,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-    expose_headers=["X-Request-ID"],
+    # Content-Disposition carries the export filename; without exposing it the
+    # browser hides it from the page and every download would be "events.csv".
+    expose_headers=["X-Request-ID", "Content-Disposition"],
     max_age=600,
 )
 app.add_middleware(SecurityHeadersMiddleware)

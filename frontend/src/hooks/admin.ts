@@ -45,8 +45,17 @@ export function useDeleteStudy() {
   })
 }
 
-export function useExports(studyId: number) {
-  return useQuery({ queryKey: ['exports', studyId], queryFn: () => adminApi.listExports(studyId) })
+export function useExports(studyId: number, participantIds?: string[]) {
+  // Part of the key, so narrowing the selection fetches fresh counts rather
+  // than showing the whole study's under a filtered heading.
+  const scope = participantIds ? [...participantIds].sort().join(',') : 'all'
+  return useQuery({
+    queryKey: ['exports', studyId, scope],
+    queryFn: () => adminApi.listExports(studyId, participantIds),
+    // An empty selection has nothing to count; without this it would read as
+    // "no filter" and fetch the whole study.
+    enabled: participantIds === undefined || participantIds.length > 0,
+  })
 }
 
 export function useVideos(studyId: number) {

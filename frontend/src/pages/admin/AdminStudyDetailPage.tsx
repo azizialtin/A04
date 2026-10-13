@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import type { Study, StudyTexts } from '../../api/admin'
 import ExportsSection from '../../components/admin/ExportsSection'
@@ -25,7 +25,12 @@ export default function AdminStudyDetailPage() {
   const { studyId } = useParams()
   const id = Number(studyId)
   const study = useStudy(id)
-  const [tab, setTab] = useState<string>('stats')
+  // The tab is in the URL so another screen can open one directly — the
+  // participant list sends "Export" here with that person preselected.
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') ?? 'stats'
+  const preselected = params.get('participant')
+  const setTab = (key: string) => setParams({ tab: key }, { replace: true })
 
   if (study.isLoading) return <p className="muted">Wird geladen…</p>
   if (study.isError || !study.data) return <p className="error-text">Studie nicht gefunden.</p>
@@ -55,7 +60,7 @@ export default function AdminStudyDetailPage() {
       {tab === 'sets' && <VideoSetsSection studyId={id} />}
       {tab === 'participants' && <ParticipantsSection studyId={id} />}
       {tab === 'questionnaires' && <QuestionnairesSection studyId={id} />}
-      {tab === 'export' && <ExportsSection studyId={id} />}
+      {tab === 'export' && <ExportsSection studyId={id} preselected={preselected} />}
       {tab === 'details' && (
         <>
           <DetailsSection study={study.data} />

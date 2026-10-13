@@ -1,5 +1,7 @@
+import { useEffect, useMemo, useState } from 'react'
+
 import { adminApi, EXPORT_KINDS, type ExportKind } from '../../api/admin'
-import { useExports } from '../../hooks/admin'
+import { useExports, useParticipants } from '../../hooks/admin'
 
 // What each file holds, in the terms the analysis plan uses. A researcher
 // downloading `events.csv` for the first time should not have to guess.
@@ -18,9 +20,48 @@ const NOT_COLLECTED =
   'Wird nicht erhoben: die Kalibrierung läuft im Eye Tracker Manager, nicht in dieser App. ' +
   'Zeilen gibt es nur für Durchläufe von vor dieser Umstellung.'
 
-export default function ExportsSection({ studyId }: { studyId: number }) {
-  const exports = useExports(studyId)
+interface Props {
+  studyId: number
+  /** A participant to start with as the only one chosen — the "Export" shortcut
+   *  on the participant list lands here. Null starts with everyone. */
+  preselected?: string | null
+}
+
+export default function ExportsSection({ studyId, preselected = null }: Props) {
+  const participants = useParticipants(studyId)
+  const ids = useMemo(() => (participants.data ?? []).map((p) => p.id), [participants.data])
+
+  // Who is left *out*. Everyone is in by default, so a person added after this
+  // tab was opened is included without anyone having to notice — the whole
+  // study is the common case, and it must not quietly lose a row.
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set())
+  const [appliedFor, setAppliedFor] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (!preselected || preselected === appliedFor || !ids.includes(preselected)) return
+    setExcluded(new Set(ids.filter((id) => id !== preselected)))
+    setAppliedFor(preselected)
+  }, [preselected, appliedFor, ids])
+
+  const chosen = ids.filter((id) => !excluded.has(id))
+  // Absent means the whole study, which is also what keeps the filenames plain.
+  const filter = excluded.size === 0 ? undefined : chosen
+  const nobody = ids.length > 0 && chosen.length === 0
+
+  const exports = useExports(studyId, filter)
   const byKind = new Map((exports.data ?? []).map((e) => [e.kind, e]))
+
+  const toggle = (id: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const needle = search.trim().toLowerCase()
+  const shown = needle ? ids.filter((id) => id.toLowerCase().includes(needle)) : ids
 
   return (
     <div className="card">
@@ -30,7 +71,62 @@ export default function ExportsSection({ studyId }: { studyId: number }) {
         Fallbezug trägt neben der video_id auch case_number (Position des Falls im Durchlauf dieser
         Person), phase_type und video_title.
       </p>
-      <table className="table">
+
+      <h3>Teilnehmer auswählen</h3>
+      <p className="muted small">
+        Die Dateien enthalten nur die ausgewählten Personen — so lässt sich eine neue Person
+        herunterladen, ohne alle anderen erneut zu laden. Bei einer Auswahl trägt der Dateiname die
+        ID bzw. „auswahl“.
+      </p>
+      <div className="inline-form" style={{ marginBottom: 8 }}>
+        <span className="pill pill--idle">
+          {chosen.length} von {ids.length} ausgewählt
+        </span>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => setExcluded(new Set())}
+          disabled={excluded.size === 0}
+        >
+          Alle
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => setExcluded(new Set(ids))}
+          disabled={ids.length === 0 || nobody}
+        >
+          Keine
+        </button>
+        <input
+          className="input"
+          style={{ maxWidth: 220 }}
+          placeholder="ID filtern…"
+          aria-label="Teilnehmer-IDs filtern"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      {ids.length === 0 ? (
+        <p className="muted small">Noch keine Teilnehmer in dieser Studie.</p>
+      ) : (
+        <div className="picker">
+          {shown.map((id) => (
+            <label key={id}>
+              <input type="checkbox" checked={!excluded.has(id)} onChange={() => toggle(id)} />
+              <span>{id}</span>
+            </label>
+          ))}
+          {shown.length === 0 && <span className="muted small">Keine ID passt zu „{search}“.</span>}
+        </div>
+      )}
+      {nobody && (
+        <p className="error-text" style={{ marginTop: 8 }}>
+          Keine Person ausgewählt — es gibt nichts herunterzuladen.
+        </p>
+      )}
+
+      <table className="table" style={{ marginTop: 16 }}>
         <thead>
           <tr>
             <th>Datei</th>
@@ -45,13 +141,13 @@ export default function ExportsSection({ studyId }: { studyId: number }) {
             const empty = info?.rows === 0
             return (
               <tr key={kind}>
-                <td>{kind}.csv</td>
+                <td>{info?.filename ?? `${kind}.csv`}</td>
                 <td>
                   {DESCRIPTIONS[kind]}
                   {info && !info.collected && <div className="small muted">{NOT_COLLECTED}</div>}
                 </td>
                 <td className="num">
-                  {info ? (
+                  {info && !nobody ? (
                     <span className={empty ? 'pill pill--idle' : 'pill pill--ok'}>{info.rows}</span>
                   ) : (
                     '—'
@@ -63,7 +159,8 @@ export default function ExportsSection({ studyId }: { studyId: number }) {
                     className="btn btn-secondary btn-sm"
                     // Downloadable even when empty: the header alone documents
                     // the columns, and a researcher may want it for a template.
-                    onClick={() => void adminApi.downloadExport(studyId, kind)}
+                    disabled={nobody}
+                    onClick={() => void adminApi.downloadExport(studyId, kind, filter)}
                   >
                     Herunterladen
                   </button>
