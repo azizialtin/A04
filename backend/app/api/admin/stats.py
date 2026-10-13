@@ -18,6 +18,7 @@ up — are spans between paired events and are reconstructed in
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -319,6 +320,68 @@ async def overview_stats(
 
 
 # --- one study ------------------------------------------------------------
+
+
+def _section_name(q: Questionnaire) -> str:
+    # A page without a section is a section of its own.
+    return q.section or q.title
+
+
+def _section_totals(batteries, per_page: Sequence[Any]) -> list[dict[str, Any]]:
+    """Time per section, added up per participant first.
+
+    A section is the instrument a page belongs to — "Demographics",
+    "CK-Pretest". The sum is over every page of the section a person answered,
+    so a per-case battery answered nine times adds all nine; the average and
+    median are then taken over people, not over responses, which is the figure
+    the researchers asked for: how long the pre-test took someone.
+    `per_page` rows are (participant_id, questionnaire_id, seconds).
+    """
+    section_of = {q.id: _section_name(q) for q in batteries}
+    pages: dict[str, list[Questionnaire]] = {}
+    # The pre-test sections first, in page order, then the per-case batteries:
+    # the pre-test is what the researchers asked about, and a stable sort keeps
+    # the admin's own ordering within each group.
+    for q in sorted(batteries, key=lambda q: q.placement != QuestionnairePlacement.pre_test):
+        pages.setdefault(section_of[q.id], []).append(q)
+
+    per_person: dict[str, dict[str, float]] = defaultdict(dict)
+    for participant_id, questionnaire_id, seconds in per_page:
+        name = section_of.get(questionnaire_id)
+        if name is None or seconds is None:
+            continue
+        per_person[name][participant_id] = per_person[name].get(participant_id, 0) + seconds
+
+    out = []
+    for name, qs in pages.items():
+        totals = list(per_person.get(name, {}).values())
+        out.append(
+            {
+                "section": name,
+                "pages": len(qs),
+                "pre_test": all(q.placement == QuestionnairePlacement.pre_test for q in qs),
+                "participants": len(totals),
+                "avg_seconds": mean(totals),
+                "median_seconds": median(totals),
+            }
+        )
+    return out
+
+
+def _participant_sections(responses: Sequence[Any]) -> list[dict[str, Any]]:
+    """What one person spent per section, in the order the sections were met."""
+    out: dict[str, dict[str, Any]] = {}
+    for r, q in responses:
+        name = _section_name(q)
+        entry = out.setdefault(
+            name, {"section": name, "pages": 0, "seconds": None, "pre_test": True}
+        )
+        entry["pages"] += 1
+        if r.time_spent_seconds is not None:
+            entry["seconds"] = (entry["seconds"] or 0) + r.time_spent_seconds
+        if q.placement != QuestionnairePlacement.pre_test:
+            entry["pre_test"] = False
+    return list(out.values())
 
 
 @router.get("/studies/{study_id}/stats")
@@ -651,6 +714,7 @@ async def study_stats(
                 "id": q.id,
                 "title": q.title,
                 "placement": q.placement.value,
+                "section": q.section,
                 "questions": len(q.questions or []),
                 "responses": count,
                 "participants": people,
@@ -660,6 +724,20 @@ async def study_stats(
                 "last_response_at": _iso(latest),
             }
         )
+
+    # --- time per section -------------------------------------------------
+    per_page = (
+        await db.execute(
+            select(
+                QuestionnaireResponse.participant_id,
+                QuestionnaireResponse.questionnaire_id,
+                func.sum(QuestionnaireResponse.time_spent_seconds),
+            )
+            .where(QuestionnaireResponse.participant_id.in_(ids))
+            .group_by(QuestionnaireResponse.participant_id, QuestionnaireResponse.questionnaire_id)
+        )
+    ).all()
+    section_stats = _section_totals(batteries, per_page)
 
     # --- calibration ------------------------------------------------------
     by_status: dict[str, dict[str, Any]] = {}
@@ -742,6 +820,7 @@ async def study_stats(
         },
         "cases": case_stats,
         "questionnaires": battery_stats,
+        "sections": section_stats,
         "calibration": calibration,
         "roster": roster,
         "activity": await _activity(db, days, study_id),
@@ -840,6 +919,7 @@ def _empty_study_stats(study, videos, batteries, days, db) -> dict[str, Any]:
                 "id": q.id,
                 "title": q.title,
                 "placement": q.placement.value,
+                "section": q.section,
                 "questions": len(q.questions or []),
                 "responses": 0,
                 "participants": 0,
@@ -850,6 +930,7 @@ def _empty_study_stats(study, videos, batteries, days, db) -> dict[str, Any]:
             }
             for q in batteries
         ],
+        "sections": _section_totals(batteries, []),
         "calibration": {"attempts": 0, "participants": 0, "by_status": {}},
         "roster": [],
         "activity": [],
@@ -1174,6 +1255,7 @@ async def participant_stats(
                 "response_id": r.id,
                 "title": q.title,
                 "placement": q.placement.value,
+                "section": q.section,
                 "video_id": r.video_id,
                 "video_title": titles[r.video_id].title if r.video_id in titles else None,
                 "questions": len(q.questions or []),
@@ -1183,6 +1265,7 @@ async def participant_stats(
             }
             for r, q in responses
         ],
+        "sections": _participant_sections(responses),
         "calibrations": calibrations,
         "events_by_type": by_type,
     }

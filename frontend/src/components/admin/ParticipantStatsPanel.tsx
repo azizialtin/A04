@@ -1,4 +1,4 @@
-import type { ParticipantCaseStats } from '../../api/admin'
+import type { ParticipantCaseStats, ParticipantSectionTime } from '../../api/admin'
 import { useParticipantStats } from '../../hooks/admin'
 import {
   bytes,
@@ -129,11 +129,13 @@ export default function ParticipantStatsPanel({
           </div>
 
           <h4 className="section-head">Fragebögen</h4>
+          {stats.data.sections.length > 0 && <SectionTotals rows={stats.data.sections} />}
           <div className="table-scroll">
             <table className="table">
               <thead>
                 <tr>
                   <th>Titel</th>
+                  <th>Abschnitt</th>
                   <th>Platzierung</th>
                   <th>Fall</th>
                   <th className="num">Beantwortet</th>
@@ -145,6 +147,7 @@ export default function ParticipantStatsPanel({
                 {stats.data.questionnaires.map((q) => (
                   <tr key={q.response_id}>
                     <td>{q.title}</td>
+                    <td className="muted">{q.section || '—'}</td>
                     <td>{placementLabel(q.placement)}</td>
                     <td className="muted">{q.video_title ?? '—'}</td>
                     <td className="num">
@@ -156,7 +159,7 @@ export default function ParticipantStatsPanel({
                 ))}
                 {!stats.data.questionnaires.length && (
                   <tr>
-                    <td colSpan={6} className="muted">
+                    <td colSpan={7} className="muted">
                       Noch nichts beantwortet.
                     </td>
                   </tr>
@@ -239,6 +242,24 @@ export default function ParticipantStatsPanel({
       )}
     </div>
   )
+}
+
+/**
+ * Time per section — every page of "Demographics" or "CK-Pretest" this person
+ * answered, added up — and the pre-test as a whole, which is the figure the
+ * researchers asked for first.
+ */
+function SectionTotals({ rows }: { rows: ParticipantSectionTime[] }) {
+  const preTest = rows.filter((s) => s.pre_test && s.seconds != null)
+  const lines = rows.map((s): [string, string] => [
+    s.section,
+    `${duration(s.seconds)} · ${num(s.pages)} ${s.pages === 1 ? 'Seite' : 'Seiten'}`,
+  ])
+  if (preTest.length) {
+    const total = preTest.reduce((sum, s) => sum + (s.seconds ?? 0), 0)
+    lines.push(['Vortest gesamt', duration(total)])
+  }
+  return <Facts rows={lines} />
 }
 
 function CaseCard({ row }: { row: ParticipantCaseStats }) {

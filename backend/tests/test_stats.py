@@ -16,6 +16,7 @@ from app.models.gaze_calibration import GazeCalibration
 from app.models.gaze_recording import GazeRecording
 from app.models.interaction_log import InteractionLog
 from app.models.note import Note
+from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.screen_recording import ScreenRecording
@@ -428,3 +429,113 @@ async def test_the_activity_timeline_only_covers_the_window_asked_for(
 
     days = {row["date"] for row in r.json()["activity"]}
     assert (datetime.now(UTC) - timedelta(days=90)).date().isoformat() not in days
+
+
+@pytest_asyncio.fixture
+async def pre_tests(db, seed_study, seed_participant):
+    """Three pre-test pages in two sections, answered by two people with known
+    times — the figures the researchers asked to see added up."""
+    pages = [
+        Questionnaire(
+            study_id=seed_study.id,
+            placement=QuestionnairePlacement.pre_test,
+            title="Angaben zur Person",
+            section="Demographics",
+            order_index=0,
+            questions=[{"id": "age", "type": "number", "text": "Alter"}],
+        ),
+        Questionnaire(
+            study_id=seed_study.id,
+            placement=QuestionnairePlacement.pre_test,
+            title="Fachwissen Programmierung",
+            section="CK-Pretest",
+            order_index=1,
+            questions=[{"id": "ck_pre_loop", "type": "number", "text": "Schleifen"}],
+        ),
+        Questionnaire(
+            study_id=seed_study.id,
+            placement=QuestionnairePlacement.pre_test,
+            title="Fachwissen Debugging",
+            section="CK-Pretest",
+            order_index=2,
+            questions=[{"id": "ck_pre_debug", "type": "number", "text": "Debugging"}],
+        ),
+    ]
+    db.add_all(pages)
+    other = Participant(id="T-002", study_id=seed_study.id)
+    db.add(other)
+    await db.flush()
+
+    # T-001: 100 s + 60 s + 40 s; T-002: 200 s on demographics only.
+    for pid, page, seconds in [
+        ("T-001", pages[0], 100),
+        ("T-001", pages[1], 60),
+        ("T-001", pages[2], 40),
+        ("T-002", pages[0], 200),
+    ]:
+        db.add(
+            QuestionnaireResponse(
+                questionnaire_id=page.id,
+                participant_id=pid,
+                video_id=None,
+                answers={"x": 1},
+                time_spent_seconds=seconds,
+            )
+        )
+    await db.flush()
+    return pages
+
+
+async def test_study_stats_add_up_the_time_per_section_over_people(
+    client, seed_study, pre_tests, admin_headers
+):
+    r = await client.get(f"/admin/studies/{seed_study.id}/stats", headers=admin_headers)
+    assert r.status_code == 200
+    body = r.json()
+
+    assert [q["section"] for q in body["questionnaires"]] == [
+        "Demographics",
+        "CK-Pretest",
+        "CK-Pretest",
+    ]
+    # Pre-test sections first, in page order.
+    assert [s["section"] for s in body["sections"]] == ["Demographics", "CK-Pretest"]
+    by_name = {s["section"]: s for s in body["sections"]}
+    # Demographics: 100 s and 200 s, one page each.
+    assert by_name["Demographics"]["pages"] == 1
+    assert by_name["Demographics"]["participants"] == 2
+    assert by_name["Demographics"]["avg_seconds"] == 150
+    assert by_name["Demographics"]["median_seconds"] == 150
+    # CK-Pretest: two pages, only T-001 answered them, 60 + 40.
+    assert by_name["CK-Pretest"]["pages"] == 2
+    assert by_name["CK-Pretest"]["participants"] == 1
+    assert by_name["CK-Pretest"]["avg_seconds"] == 100
+    assert by_name["CK-Pretest"]["pre_test"] is True
+
+
+async def test_participant_stats_total_each_section_in_the_order_it_was_met(
+    client, pre_tests, admin_headers
+):
+    r = await client.get("/admin/participants/T-001/stats", headers=admin_headers)
+    assert r.status_code == 200
+    body = r.json()
+
+    assert [q["section"] for q in body["questionnaires"]] == [
+        "Demographics",
+        "CK-Pretest",
+        "CK-Pretest",
+    ]
+    assert body["sections"] == [
+        {"section": "Demographics", "pages": 1, "seconds": 100, "pre_test": True},
+        {"section": "CK-Pretest", "pages": 2, "seconds": 100, "pre_test": True},
+    ]
+
+
+async def test_a_page_without_a_section_is_a_section_of_its_own(client, run, admin_headers):
+    # The `run` fixture's outro battery has no section: it must still appear,
+    # under its own title, rather than vanish from the totals.
+    r = await client.get(f"/admin/studies/{run['study'].id}/stats", headers=admin_headers)
+    sections = r.json()["sections"]
+    assert [s["section"] for s in sections] == ["Outro"]
+    assert sections[0]["pre_test"] is False
+    assert sections[0]["avg_seconds"] == 20

@@ -204,6 +204,7 @@ async def test_questionnaire_crud_and_forced_delete(client, db, admin_headers, s
         json={
             "placement": "pre_test",
             "title": "Vorwissen",
+            "section": " CK-Pretest ",
             "order_index": 9,
             "questions": [{"id": "c", "type": "likert", "text": "confidence"}],
         },
@@ -211,6 +212,19 @@ async def test_questionnaire_crud_and_forced_delete(client, db, admin_headers, s
     )
     assert created.status_code == 201
     qid = created.json()["id"]
+    assert created.json()["section"] == "CK-Pretest"
+
+    renamed = await client.patch(
+        f"/admin/questionnaires/{qid}", json={"section": "MSK"}, headers=admin_headers
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["section"] == "MSK"
+    # Clearing it, by null or by blank, leaves the page standing alone.
+    cleared = await client.patch(
+        f"/admin/questionnaires/{qid}", json={"section": None}, headers=admin_headers
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["section"] == ""
 
     # A response makes a plain delete refuse.
     await client.post(

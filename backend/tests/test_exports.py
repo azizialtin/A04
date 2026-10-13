@@ -101,6 +101,10 @@ async def test_the_columns_researchers_asked_for_are_there(client, data, admin_h
     # Which battery this was, without having to join back to the questionnaire.
     assert responses[0]["placement"] == "case_outro"
     assert responses[0]["questionnaire_title"] == "Nach dem Fall"
+    # The instrument the page belongs to, next to its title.
+    assert responses[0]["section"] == ""
+    columns = list(responses[0])
+    assert columns[columns.index("questionnaire_title") + 1] == "section"
 
     events = read(
         await client.get(f"/admin/studies/{study_id}/export/events", headers=admin_headers)

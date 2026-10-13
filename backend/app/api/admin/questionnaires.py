@@ -75,6 +75,7 @@ async def create_questionnaire(
         placement=_placement(body.placement),
         title=body.title,
         description=body.description,
+        section=body.section.strip(),
         order_index=body.order_index,
         questions=body.questions,
     )
@@ -127,6 +128,8 @@ async def update_questionnaire(
     else:
         data.pop("placement", None)
     for field, value in data.items():
+        if field == "section":
+            value = (value or "").strip()
         setattr(q, field, value)
     await _commit_unique(db)
     await db.refresh(q)

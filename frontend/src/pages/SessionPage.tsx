@@ -1,6 +1,7 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { SessionStep } from '../api/participant'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import CalibrationScreen from '../components/session/CalibrationScreen'
 import CaseIntroScreen from '../components/session/CaseIntroScreen'
@@ -31,6 +32,58 @@ const CHROMELESS = new Set([
   'thanks',
 ])
 
+// The screens with questions on them. Each logs when it appears and when its
+// answers went in, on the browser's clock like every other event, so the time
+// spent on a page — and on a whole section — can be read off events.csv.
+const PAGE_KINDS = new Set(['questionnaire', 'diagnosis', 'case_outro'])
+
+interface PageDescriptor {
+  kind: string
+  title: string
+  section: string
+  questionnaire_id?: number | null
+  video_id?: number | null
+  page?: number
+  page_count?: number
+}
+
+function pageDescriptor(step: SessionStep): PageDescriptor | null {
+  switch (step.kind) {
+    case 'questionnaire':
+      return {
+        kind: step.kind,
+        title: step.title,
+        section: step.section,
+        questionnaire_id: step.questionnaire_id,
+        page: step.page,
+        page_count: step.page_count,
+      }
+    case 'diagnosis':
+      return { kind: step.kind, title: step.title, section: step.section, video_id: step.video_id }
+    case 'case_outro':
+      // A closing screen with no battery on it is not a page with questions.
+      if (step.questionnaire_id === null) return null
+      return {
+        kind: step.kind,
+        title: step.title,
+        section: step.section,
+        questionnaire_id: step.questionnaire_id,
+        video_id: step.video_id,
+      }
+    default:
+      return null
+  }
+}
+
+function logPage(eventType: string, page: PageDescriptor, extra: Record<string, unknown> = {}) {
+  enqueue('event', {
+    event_type: eventType,
+    video_id: page.video_id ?? undefined,
+    payload: { ...page, ...extra },
+    client_ts: Date.now(),
+  })
+}
+
 export default function SessionPage() {
   const { t } = useTranslation()
   const { logout } = useAuth()
@@ -40,6 +93,23 @@ export default function SessionPage() {
   const updateProgress = useUpdateProgress()
   const respond = useRespondQuestionnaire()
   const unsent = useOutbox(me.data?.id)
+
+  const stepNow = session.data?.steps[session.data.current_step_index]
+  const pageIndex =
+    stepNow && PAGE_KINDS.has(stepNow.kind) ? (session.data?.current_step_index ?? null) : null
+  // The outbox only accepts writes once it knows whose they are, and the two
+  // queries above land in either order; the entry is logged when both have.
+  const ready = Boolean(me.data?.id)
+  const stepRef = useRef(stepNow)
+  stepRef.current = stepNow
+  const enteredRef = useRef<number | null>(null)
+  useEffect(() => {
+    // Strict mode runs this twice in development; one page is still one entry.
+    if (!ready || pageIndex === null || enteredRef.current === pageIndex) return
+    enteredRef.current = pageIndex
+    const page = stepRef.current ? pageDescriptor(stepRef.current) : null
+    if (page) logPage('questionnaire_page_entered', page)
+  }, [ready, pageIndex])
 
   if (me.isLoading || session.isLoading) {
     return <div className="fullpage">{t('session.loading')}</div>
@@ -61,6 +131,7 @@ export default function SessionPage() {
     videoId: number | null,
     answers: Record<string, unknown>,
     timeSpentSeconds: number,
+    page: PageDescriptor | null,
   ) => {
     try {
       await respond.mutateAsync({
@@ -69,6 +140,8 @@ export default function SessionPage() {
         answers,
         time_spent_seconds: timeSpentSeconds,
       })
+      if (page)
+        logPage('questionnaire_page_submitted', page, { time_spent_seconds: timeSpentSeconds })
       advance()
     } catch {
       toast.show(t('session.error'), 'error')
@@ -120,7 +193,13 @@ export default function SessionPage() {
           questions={qStep.questions}
           submitting={respond.isPending}
           onSubmit={(answers, timeSpentSeconds) =>
-            submitAnswers(qStep.questionnaire_id, null, answers, timeSpentSeconds)
+            submitAnswers(
+              qStep.questionnaire_id,
+              null,
+              answers,
+              timeSpentSeconds,
+              pageDescriptor(qStep),
+            )
           }
         />
       )
@@ -138,16 +217,22 @@ export default function SessionPage() {
         />
       )
       break
-    case 'diagnosis':
+    case 'diagnosis': {
+      const page = pageDescriptor(step)
       content = (
         <DiagnosisScreen
           videoId={step.video_id}
           taskDescription={step.task_description}
           questions={step.questions}
-          onComplete={advance}
+          onComplete={() => {
+            // The seconds are on the diagnosis row itself; the event marks when.
+            if (page) logPage('questionnaire_page_submitted', page)
+            advance()
+          }}
         />
       )
       break
+    }
     case 'case_outro': {
       const outro = step
       content = (
@@ -158,7 +243,13 @@ export default function SessionPage() {
           onSubmit={(answers, timeSpentSeconds) =>
             outro.questionnaire_id === null
               ? advance()
-              : submitAnswers(outro.questionnaire_id, outro.video_id, answers, timeSpentSeconds)
+              : submitAnswers(
+                  outro.questionnaire_id,
+                  outro.video_id,
+                  answers,
+                  timeSpentSeconds,
+                  pageDescriptor(outro),
+                )
           }
         />
       )

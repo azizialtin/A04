@@ -7,6 +7,7 @@ import {
   useDeleteQuestionnaire,
   useQuestionnaires,
   useSeedQuestionnaires,
+  useUpdateQuestionnaire,
 } from '../../hooks/admin'
 
 const PLACEMENTS = [
@@ -30,6 +31,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
 
   const [placement, setPlacement] = useState('pre_test')
   const [title, setTitle] = useState('')
+  const [section, setSection] = useState('')
   const [order, setOrder] = useState('0')
   const [json, setJson] = useState(EXAMPLE)
   const [err, setErr] = useState('')
@@ -55,6 +57,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
       {
         placement,
         title: title.trim(),
+        section: section.trim(),
         order_index: Number(order) || 0,
         questions: questions as unknown[],
       },
@@ -129,6 +132,19 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
         <div className="form-row">
+          <label className="label">Abschnitt</label>
+          <input
+            className="input"
+            value={section}
+            placeholder="z. B. Demographics, CK-Pretest, MSK"
+            onChange={(e) => setSection(e.target.value)}
+          />
+          <p className="muted small">
+            Das Instrument, zu dem die Seite gehört. Die Bearbeitungszeit wird in der Statistik je
+            Abschnitt aufsummiert; ohne Angabe zählt die Seite für sich.
+          </p>
+        </div>
+        <div className="form-row">
           <label className="label">Reihenfolge</label>
           <input
             className="input"
@@ -168,6 +184,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             <th>ID</th>
             <th>Platzierung</th>
             <th>Titel</th>
+            <th>Abschnitt</th>
             <th>Fragen</th>
             <th />
           </tr>
@@ -178,6 +195,9 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
               <td>{q.id}</td>
               <td>{q.placement}</td>
               <td>{q.title}</td>
+              <td>
+                <SectionCell studyId={studyId} id={q.id} value={q.section} />
+              </td>
               <td>{q.questions.length}</td>
               <td>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => remove(q.id)}>
@@ -188,7 +208,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           ))}
           {qs.data?.length === 0 && (
             <tr>
-              <td colSpan={5} className="muted">
+              <td colSpan={6} className="muted">
                 Noch keine Fragebögen.
               </td>
             </tr>
@@ -196,5 +216,36 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
         </tbody>
       </table>
     </div>
+  )
+}
+
+/** The section, edited in place: saved when the field is left or Enter is
+ *  pressed, and only if it changed. */
+function SectionCell({ studyId, id, value }: { studyId: number; id: number; value: string }) {
+  const update = useUpdateQuestionnaire(studyId)
+  const [draft, setDraft] = useState(value)
+
+  const save = () => {
+    const next = draft.trim()
+    if (next === value) return
+    update.mutate({ id, section: next })
+  }
+
+  return (
+    <>
+      <input
+        className="input"
+        aria-label={`Abschnitt von Fragebogen ${id}`}
+        value={draft}
+        placeholder="—"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        }}
+        disabled={update.isPending}
+      />
+      {update.isError && <div className="error-text small">Nicht gespeichert.</div>}
+    </>
   )
 }

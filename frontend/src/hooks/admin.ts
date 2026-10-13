@@ -184,6 +184,18 @@ export function useCreateQuestionnaire(studyId: number) {
   })
 }
 
+export function useUpdateQuestionnaire(studyId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: { id: number } & Parameters<typeof adminApi.updateQuestionnaire>[1]) =>
+      adminApi.updateQuestionnaire(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['questionnaires', studyId] }),
+  })
+}
+
 export function useSeedQuestionnaires(studyId: number) {
   const qc = useQueryClient()
   return useMutation({

@@ -138,6 +138,7 @@ function stats(overrides: Partial<ParticipantStats> = {}): ParticipantStats {
       },
     ],
     questionnaires: [],
+    sections: [],
     calibrations: [],
     events_by_type: [],
     ...overrides,
@@ -193,4 +194,22 @@ test('a failed screen capture is called out, not left blank', () => {
   render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)
 
   expect(screen.getByText('fehlgeschlagen: capture device busy')).toBeInTheDocument()
+})
+
+test('adds the time up per section, and the pre-test as a whole', () => {
+  const timed = stats({
+    sections: [
+      { section: 'Demographics', pages: 1, seconds: 165, pre_test: true },
+      { section: 'CK-Pretest', pages: 2, seconds: 188, pre_test: true },
+      { section: 'Nach dem Fall', pages: 9, seconds: 240, pre_test: false },
+    ],
+  })
+  useParticipantStats.mockReturnValue({ data: timed, isLoading: false, isError: false })
+  render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)
+
+  expect(screen.getByText('2:45 min · 1 Seite')).toBeInTheDocument()
+  expect(screen.getByText('3:08 min · 2 Seiten')).toBeInTheDocument()
+  expect(screen.getByText('4:00 min · 9 Seiten')).toBeInTheDocument()
+  // 165 + 188, the per-case battery left out.
+  expect(screen.getByText('5:53 min')).toBeInTheDocument()
 })

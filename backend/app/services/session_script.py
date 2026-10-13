@@ -105,6 +105,9 @@ def _pre_test_step(q: Questionnaire, page: int, page_count: int) -> dict:
         "placement": q.placement.value,
         "title": q.title,
         "description": q.description,
+        # Logged with the page's entry and submit events, so the time on a
+        # section's pages can be added up from the event log alone.
+        "section": q.section,
         "questions": q.questions,
         # Answered once for the whole run, so there is no case to attach it to.
         "video_id": None,
@@ -147,6 +150,7 @@ def _diagnosis_step(
         "video_id": video.id,
         "title": video.title,
         "task_description": task_text(video, defaults),
+        "section": ratings.section if ratings else "",
         "questions": ratings.questions if ratings else [],
     }
 
@@ -160,6 +164,7 @@ def _case_outro_step(video: Video, phase: PhaseType, outro: Questionnaire | None
         # Not shown to the participant — the screen leads with the instruction —
         # but it is how the interaction log names this step.
         "title": outro.title if outro else "",
+        "section": outro.section if outro else "",
         "instruction": outro.description if outro else "",
         "questions": outro.questions if outro else [],
     }
@@ -170,6 +175,7 @@ def _case_outro_step(video: Video, phase: PhaseType, outro: Questionnaire | None
 _DESCRIBING_KEYS = (
     "title",
     "placement",
+    "section",
     "questionnaire_id",
     "video_id",
     "page",

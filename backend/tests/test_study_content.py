@@ -245,3 +245,44 @@ async def test_questions_before_a_case_are_no_longer_a_placement(client, seed_st
         headers=admin_headers,
     )
     assert r.status_code == 400
+
+
+def test_the_seeded_pages_carry_the_sections_the_researchers_named():
+    from app.services.study_content import DEFAULT_BATTERIES
+
+    sections = {b.title: b.section for b in DEFAULT_BATTERIES}
+    assert sections["Angaben zur Person"] == "Demographics"
+    assert sections["Fachdidaktisches Wissen"] == "PCK-Pretest"
+    assert sections["Fachwissen Programmierung"] == "CK-Pretest"
+    assert sections["Fachwissen Debugging"] == "CK-Pretest"
+    # The per-case batteries stand alone.
+    assert sections["Sicherheit der Diagnose"] == ""
+    assert sections["Nach dem Fall"] == ""
+
+
+def test_the_section_migration_agrees_with_the_seeded_content():
+    # The migration carries a frozen copy of the titles so it keeps working
+    # after the content moves on; this says the copy and the content agree now.
+    import importlib.util
+    from pathlib import Path
+
+    from app.models.enums import QuestionnairePlacement
+    from app.services.study_content import DEFAULT_BATTERIES
+
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "a7c2e9d4f1b8_questionnaire_sections.py"
+    )
+    spec = importlib.util.spec_from_file_location("section_migration", path)
+    assert spec and spec.loader
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    seeded = {
+        b.title: b.section
+        for b in DEFAULT_BATTERIES
+        if b.placement == QuestionnairePlacement.pre_test
+    }
+    assert seeded == migration.SECTION_BY_TITLE

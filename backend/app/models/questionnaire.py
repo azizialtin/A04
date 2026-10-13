@@ -29,6 +29,10 @@ class Questionnaire(Base):
     placement: Mapped[QuestionnairePlacement] = mapped_column(pg_enum(QuestionnairePlacement))
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
+    # Which instrument a page belongs to — "Demographics", "CK-Pretest" — so
+    # the time spent on its pages can be added up per section. Free text the
+    # researcher owns; empty means the page is a section of its own.
+    section: Mapped[str] = mapped_column(String(64), default="", server_default="")
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     # Free-form question list; the shape is the questionnaire engine's contract.
     questions: Mapped[list] = mapped_column(JSONB, default=list)

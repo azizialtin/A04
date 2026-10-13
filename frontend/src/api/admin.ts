@@ -97,6 +97,9 @@ export interface AdminQuestionnaire {
   placement: string
   title: string
   description: string
+  /** The instrument the page belongs to ("Demographics", "CK-Pretest"); the
+   *  time on a section's pages is added up under it. Empty: stands alone. */
+  section: string
   order_index: number
   questions: unknown[]
 }
@@ -309,6 +312,7 @@ export interface BatteryStats {
   id: number
   title: string
   placement: string
+  section: string
   questions: number
   responses: number
   participants: number
@@ -367,6 +371,7 @@ export interface StudyStats {
   }
   cases: CaseStats[]
   questionnaires: BatteryStats[]
+  sections: StudySectionTime[]
   calibration: {
     attempts: number
     participants: number
@@ -438,6 +443,25 @@ export interface ParticipantCaseStats {
   } | null
 }
 
+/** One person's time on one section: every page of it they answered, added up. */
+export interface ParticipantSectionTime {
+  section: string
+  pages: number
+  seconds: number | null
+  pre_test: boolean
+}
+
+/** A section across the study: totals per person first, then the average and
+ *  median over people — how long the pre-test takes someone. */
+export interface StudySectionTime {
+  section: string
+  pages: number
+  pre_test: boolean
+  participants: number
+  avg_seconds: number | null
+  median_seconds: number | null
+}
+
 export interface ParticipantStats {
   generated_at: string
   id: string
@@ -484,6 +508,7 @@ export interface ParticipantStats {
     response_id: number
     title: string
     placement: string
+    section: string
     video_id: number | null
     video_title: string | null
     questions: number
@@ -491,6 +516,7 @@ export interface ParticipantStats {
     seconds: number | null
     created_at: string | null
   }[]
+  sections: ParticipantSectionTime[]
   calibrations: {
     id: number
     status: string

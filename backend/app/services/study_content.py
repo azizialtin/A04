@@ -343,6 +343,9 @@ class Battery:
     title: str
     description: str
     questions: list[Question]
+    # The instrument the page belongs to, as the researchers name it; the time
+    # on a section's pages is added up under this. Empty: a section of its own.
+    section: str = ""
 
 
 # The pre-test pages come out in `order_index` order, one screen each. PCK is
@@ -356,6 +359,7 @@ DEFAULT_BATTERIES: list[Battery] = [
         "Angaben zur Person",
         "Bitte machen Sie einige Angaben zu sich und zu Ihrer Ausbildung.",
         DEMOGRAPHICS,
+        section="Demographics",
     ),
     Battery(
         QuestionnairePlacement.pre_test,
@@ -363,6 +367,7 @@ DEFAULT_BATTERIES: list[Battery] = [
         "Fachdidaktisches Wissen",
         "Bitte beantworten Sie die folgenden Fragen.",
         [],
+        section="PCK-Pretest",
     ),
     Battery(
         QuestionnairePlacement.pre_test,
@@ -370,6 +375,7 @@ DEFAULT_BATTERIES: list[Battery] = [
         "Fachwissen Programmierung",
         "Bitte wählen Sie zu jedem Konzept die Aussage, die am besten auf Sie zutrifft.",
         CK_PRE_TEST,
+        section="CK-Pretest",
     ),
     Battery(
         QuestionnairePlacement.pre_test,
@@ -377,6 +383,7 @@ DEFAULT_BATTERIES: list[Battery] = [
         CK_DEBUG_TITLE,
         CK_DEBUG_DESCRIPTION,
         CK_DEBUG_PRE_TEST,
+        section="CK-Pretest",
     ),
     Battery(
         QuestionnairePlacement.diagnosis,
@@ -427,6 +434,7 @@ async def seed_batteries(db: AsyncSession, study_id: int) -> list[Questionnaire]
             placement=battery.placement,
             title=battery.title,
             description=battery.description,
+            section=battery.section,
             order_index=battery.order_index,
             # A copy: two studies seeded in one process must not end up sharing
             # a question list that either of them can then edit.

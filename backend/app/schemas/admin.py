@@ -175,6 +175,9 @@ class QuestionnaireCreate(BaseModel):
     placement: str
     title: str = Field(min_length=1, max_length=255)
     description: str = ""
+    # The instrument the page belongs to; pages sharing one are added up
+    # together in the timing statistics.
+    section: str = Field(default="", max_length=64)
     order_index: int = 0
     questions: list[dict] = Field(default_factory=list)
 
@@ -183,6 +186,7 @@ class QuestionnaireUpdate(BaseModel):
     placement: str | None = None
     title: str | None = None
     description: str | None = None
+    section: str | None = Field(default=None, max_length=64)
     order_index: int | None = None
     questions: list[dict] | None = None
 
@@ -193,6 +197,7 @@ class QuestionnaireOut(BaseModel):
     placement: str
     title: str
     description: str
+    section: str
     order_index: int
     questions: list[dict]
 

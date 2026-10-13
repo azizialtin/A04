@@ -120,6 +120,7 @@ def _q_out(q: Questionnaire) -> QuestionnaireOut:
         placement=q.placement.value,
         title=q.title,
         description=q.description,
+        section=q.section,
         order_index=q.order_index,
         questions=q.questions,
     )

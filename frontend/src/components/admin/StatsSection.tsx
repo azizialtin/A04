@@ -35,7 +35,16 @@ export default function StatsSection({ studyId }: { studyId: number }) {
   if (stats.isLoading) return <p className="muted">Wird geladen…</p>
   if (stats.isError || !stats.data) return <p className="error-text">Statistik nicht verfügbar.</p>
 
-  const { participants: p, data, cases, questionnaires, calibration, roster, activity } = stats.data
+  const {
+    participants: p,
+    data,
+    cases,
+    questionnaires,
+    sections,
+    calibration,
+    roster,
+    activity,
+  } = stats.data
   const screens = data.screens_stored + data.screens_failed
 
   return (
@@ -173,6 +182,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
             <thead>
               <tr>
                 <th>Titel</th>
+                <th>Abschnitt</th>
                 <th>Platzierung</th>
                 <th className="num">Fragen</th>
                 <th className="num">Antworten</th>
@@ -185,6 +195,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
               {questionnaires.map((q) => (
                 <tr key={q.id}>
                   <td>{q.title}</td>
+                  <td className="muted">{q.section || '—'}</td>
                   <td>{placementLabel(q.placement)}</td>
                   <td className="num">{num(q.questions)}</td>
                   <td className="num">
@@ -200,7 +211,49 @@ export default function StatsSection({ studyId }: { studyId: number }) {
               ))}
               {!questionnaires.length && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={8} className="muted">
+                    Noch keine Fragebögen.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Zeit je Abschnitt</h3>
+        <p className="muted">
+          Je Person werden alle Seiten eines Abschnitts addiert; Durchschnitt und Median gelten dann
+          über die Personen. Der Abschnitt wird auf dem Tab „Fragebögen“ je Seite vergeben.
+        </p>
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Abschnitt</th>
+                <th className="num">Seiten</th>
+                <th className="num">Teilnehmer</th>
+                <th className="num">Ø Dauer</th>
+                <th className="num">Median</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sections.map((s) => (
+                <tr key={s.section}>
+                  <td>
+                    {s.section}
+                    {s.pre_test && <div className="muted small">Vortest</div>}
+                  </td>
+                  <td className="num">{num(s.pages)}</td>
+                  <td className="num">{num(s.participants)}</td>
+                  <td className="num">{duration(s.avg_seconds)}</td>
+                  <td className="num">{duration(s.median_seconds)}</td>
+                </tr>
+              ))}
+              {!sections.length && (
+                <tr>
+                  <td colSpan={5} className="muted">
                     Noch keine Fragebögen.
                   </td>
                 </tr>

@@ -81,6 +81,8 @@ export type SessionStep =
       placement: string
       title: string
       description: string
+      // The instrument the page belongs to; logged with the page's events.
+      section: string
       questions: Question[]
       video_id: null
       page: number
@@ -100,6 +102,7 @@ export type SessionStep =
       video_id: number
       title: string
       task_description: string
+      section: string
       // Rating questions shown under the write-up and submitted with it.
       questions: Question[]
     })
@@ -111,6 +114,7 @@ export type SessionStep =
       // The battery's name. Not rendered — the screen leads with the
       // instruction — but it is what the interaction log calls this step.
       title: string
+      section: string
       instruction: string
       questions: Question[]
     })
