@@ -1,4 +1,10 @@
-from app.services.questionnaires import missing_required_answers, visible_question_ids
+import pytest
+
+from app.services.questionnaires import (
+    missing_required_answers,
+    valid_line_numbers,
+    visible_question_ids,
+)
 
 
 def test_required_field_must_be_answered():
@@ -47,3 +53,34 @@ def test_show_if_resolves_transitively():
     assert "b" not in hidden and "c" not in hidden
     shown = visible_question_ids(qs, {"a": 1, "b": "yes"})
     assert shown == {"a", "b", "c"}
+
+
+LINES = {"id": "lines", "type": "line_numbers", "text": "Which lines?", "min": 3, "max": 10}
+
+
+def test_line_references_accept_arrays_and_legacy_scalar_answers():
+    assert missing_required_answers([LINES], {"lines": [3, 5, 10]}) == []
+    assert missing_required_answers([LINES], {"lines": 5}) == []
+    assert valid_line_numbers(LINES, [3, 3, 4, 5, 6, 7, 8])
+
+
+@pytest.mark.parametrize("value", [[], [None], [3, 0], [2], [11], [3.5], ["3"], [True], {}, ""])
+def test_invalid_line_references_are_rejected(value):
+    assert missing_required_answers([LINES], {"lines": value}) == ["lines"]
+
+
+def test_optional_line_references_may_be_omitted_but_supplied_values_must_be_valid():
+    optional = {**LINES, "required": False}
+    assert missing_required_answers([optional], {}) == []
+    assert missing_required_answers([optional], {"lines": []}) == []
+    for value in ([0], {}, ""):
+        assert missing_required_answers([optional], {"lines": value}) == ["lines"]
+
+
+def test_hidden_lines_do_not_block_and_positive_whole_numbers_are_the_default():
+    gated = {**LINES, "show_if": {"question": "other", "equals": 1}}
+    assert missing_required_answers([gated], {"lines": [0]}) == []
+    unbounded = {"id": "lines", "type": "line_numbers", "text": "Lines"}
+    assert valid_line_numbers(unbounded, [1, 1000])
+    assert not valid_line_numbers(unbounded, [-1, 0])
+    assert not valid_line_numbers(unbounded, [float("inf")])

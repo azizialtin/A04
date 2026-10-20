@@ -18,8 +18,17 @@ from app.models.text_entry import TextEntry
 from app.models.video import Video
 
 # Everything keyed by participant, which is every export but the video list.
-KINDS = ["participants", "notes", "diagnoses", "responses", "events", "gaze", "calibration"]
-ALL_KINDS = [*KINDS, "videos"]
+KINDS = [
+    "participants",
+    "notes",
+    "diagnoses",
+    "responses",
+    "sections",
+    "events",
+    "gaze_recordings",
+    "calibration",
+]
+ALL_KINDS = [*KINDS, "videos", "gaze"]
 
 
 def read(response) -> list[dict]:
@@ -118,6 +127,71 @@ async def test_the_columns_researchers_asked_for_are_there(client, data, admin_h
     )
     assert calibration[0]["status"] == "success"
     assert calibration[0]["mean_offset_degrees"] == "0.61"
+
+
+async def test_the_section_file_adds_up_a_persons_pages(client, db, data, admin_headers):
+    """The "Fragebögen" block of the participant panel as a file: one row per
+    person and section, every answered page of it added up, and the whole
+    pre-test beside it. The `data` fixture already holds one case battery
+    answered in 17 seconds, under a page with no section of its own."""
+    study_id = data["study"].id
+    pages = [
+        Questionnaire(
+            study_id=study_id, placement="pre_test", title="Angaben", section="Demographics"
+        ),
+        Questionnaire(
+            study_id=study_id, placement="pre_test", title="Programmierung", section="CK-Pretest"
+        ),
+        Questionnaire(
+            study_id=study_id, placement="pre_test", title="Debugging", section="CK-Pretest"
+        ),
+    ]
+    db.add_all(pages)
+    await db.flush()
+    db.add_all(
+        [
+            QuestionnaireResponse(
+                questionnaire_id=pages[0].id, participant_id="T-001", time_spent_seconds=48
+            ),
+            QuestionnaireResponse(
+                questionnaire_id=pages[1].id, participant_id="T-001", time_spent_seconds=140
+            ),
+            # A page whose time never arrived counts as a page but adds nothing.
+            QuestionnaireResponse(questionnaire_id=pages[2].id, participant_id="T-001"),
+        ]
+    )
+    await db.flush()
+
+    rows = read(
+        await client.get(f"/admin/studies/{study_id}/export/sections", headers=admin_headers)
+    )
+    assert [r["section"] for r in rows] == ["Nach dem Fall", "Demographics", "CK-Pretest"]
+    by_section = {r["section"]: r for r in rows}
+    assert by_section["CK-Pretest"] == {
+        "participant_id": "T-001",
+        "section": "CK-Pretest",
+        "pre_test": "true",
+        "pages_answered": "2",
+        "time_spent_seconds": "140",
+        "pre_test_total_seconds": "188",
+    }
+    assert by_section["Demographics"]["time_spent_seconds"] == "48"
+    # The case battery is not part of the pre-test, but the person's total is.
+    outro = by_section["Nach dem Fall"]
+    assert (outro["pre_test"], outro["pages_answered"], outro["time_spent_seconds"]) == (
+        "false",
+        "1",
+        "17",
+    )
+    assert outro["pre_test_total_seconds"] == "188"
+
+    counts = {
+        row["kind"]: row
+        for row in (
+            await client.get(f"/admin/studies/{study_id}/exports", headers=admin_headers)
+        ).json()
+    }
+    assert counts["sections"]["rows"] == 3
 
 
 async def test_an_unknown_kind_is_404(client, data, admin_headers):
@@ -253,7 +327,7 @@ async def test_the_catalogue_is_admin_only(client, data, participant_headers):
     assert r.status_code == 401
 
 
-PER_CASE_KINDS = ["notes", "diagnoses", "responses", "events", "gaze"]
+PER_CASE_KINDS = ["notes", "diagnoses", "responses", "events", "gaze_recordings"]
 
 
 async def test_every_per_case_file_says_which_case_the_row_belongs_to(

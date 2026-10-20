@@ -213,3 +213,40 @@ test('adds the time up per section, and the pre-test as a whole', () => {
   // 165 + 188, the per-case battery left out.
   expect(screen.getByText('5:53 min')).toBeInTheDocument()
 })
+
+test('reveals the first loaded result without stealing focus again on refresh', () => {
+  const onReady = vi.fn()
+  const onClose = vi.fn()
+  useParticipantStats.mockReturnValue({ isLoading: true, isError: false })
+  const { rerender } = render(
+    <ParticipantStatsPanel participantId="P02" onClose={onClose} onReady={onReady} />,
+  )
+  expect(onReady).not.toHaveBeenCalled()
+
+  useParticipantStats.mockReturnValue({ data: stats(), isLoading: false, isError: false })
+  rerender(<ParticipantStatsPanel participantId="P02" onClose={onClose} onReady={onReady} />)
+  expect(onReady).toHaveBeenCalledOnce()
+
+  useParticipantStats.mockReturnValue({ data: stats(), isLoading: false, isFetching: true })
+  rerender(<ParticipantStatsPanel participantId="P02" onClose={onClose} onReady={onReady} />)
+  useParticipantStats.mockReturnValue({ data: stats(), isLoading: false, isFetching: false })
+  rerender(<ParticipantStatsPanel participantId="P02" onClose={onClose} onReady={onReady} />)
+  expect(onReady).toHaveBeenCalledOnce()
+
+  useParticipantStats.mockReturnValue({ isLoading: true, isError: false })
+  rerender(<ParticipantStatsPanel participantId="P03" onClose={onClose} onReady={onReady} />)
+  useParticipantStats.mockReturnValue({
+    data: stats({ id: 'P03' }),
+    isLoading: false,
+    isError: false,
+  })
+  rerender(<ParticipantStatsPanel participantId="P03" onClose={onClose} onReady={onReady} />)
+  expect(onReady).toHaveBeenCalledTimes(2)
+})
+
+test('cached participant data needs no second reveal', () => {
+  const onReady = vi.fn()
+  useParticipantStats.mockReturnValue({ data: stats(), isLoading: false, isError: false })
+  render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} onReady={onReady} />)
+  expect(onReady).not.toHaveBeenCalled()
+})

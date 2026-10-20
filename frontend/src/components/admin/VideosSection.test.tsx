@@ -39,6 +39,10 @@ const STUDY: Study = {
     welcome_note: '',
     case_intro_title: '',
     case_intro_body: '',
+    case_outro_title: '',
+    case_outro_body: '',
+    think_aloud_title: '',
+    think_aloud_body: '',
   },
   video_defaults: {
     time_limit_seconds: 420,

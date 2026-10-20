@@ -22,3 +22,11 @@ test('renders nothing for an empty block', () => {
   const { container } = render(<CodeBlock code={['', '  ']} />)
   expect(container.innerHTML).toBe('')
 })
+
+test('an explicit first line continues a snippet without putting numbers in copied code', () => {
+  const { container } = render(<CodeBlock code={['return x;', '', '}']} startLine={12} />)
+  expect(
+    Array.from(container.querySelectorAll('.code__line')).map((l) => l.getAttribute('data-line')),
+  ).toEqual(['12', '13', '14'])
+  expect(container.querySelector('pre')?.textContent).toBe('return x;\n\n}\n')
+})

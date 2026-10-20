@@ -56,8 +56,27 @@ def missing_required_answers(questions: list[Question], answers: dict[str, Any])
     missing = []
     for q in questions:
         qid = q.get("id")
-        if not qid or qid not in visible or q.get("required", True) is False:
+        if not qid or qid not in visible:
             continue
-        if not _answered(answers.get(qid)):
+        value = answers.get(qid)
+        if q.get("type") == "line_numbers" and value is not None and value != []:
+            if not valid_line_numbers(q, value):
+                missing.append(qid)
+        elif not _answered(value) and q.get("required", True) is not False:
             missing.append(qid)
     return missing
+
+
+def valid_line_numbers(question: Question, value: Any) -> bool:
+    """One error may reference many lines; retain support for old scalar answers."""
+    lines = value if isinstance(value, list) else [value]
+    minimum = max(1, question.get("min", 1))
+    maximum = question.get("max")
+    return bool(lines) and all(
+        isinstance(line, (int, float))
+        and not isinstance(line, bool)
+        and line % 1 == 0
+        and minimum <= line <= 9_007_199_254_740_991
+        and (maximum is None or line <= maximum)
+        for line in lines
+    )

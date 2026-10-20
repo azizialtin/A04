@@ -1,7 +1,10 @@
 // Frontend half of the questionnaire contract; mirrors the backend engine in
 // app/services/questionnaires.py — keep the two in step.
 
-export type QuestionType = 'likert' | 'multiple_choice' | 'free_text' | 'slider' | 'number'
+import { codeLines } from './code'
+
+export type QuestionType =
+  'likert' | 'multiple_choice' | 'free_text' | 'slider' | 'number' | 'line_numbers'
 
 export interface QuestionOption {
   value: string | number
@@ -29,12 +32,30 @@ export interface Question {
   /**
    * Java shown above the answer field as a numbered code window — one entry
    * per line, or a string with newlines. For "which line is the bug in?", the
-   * question itself is then a `number`.
+   * question can be `line_numbers` when one error refers to several lines.
    */
   code?: string | string[]
+  /** Overrides the automatic continuation from earlier snippets on this page. */
+  code_start_line?: number
 }
 
 export type Answers = Record<string, unknown>
+
+/** Reserve hidden snippets' numbers so existing answers never change meaning. */
+export function numberCodeQuestions(questions: Question[], startLine = 1): Question[] {
+  let nextLine = Number.isSafeInteger(startLine) && startLine > 0 ? startLine : 1
+  return questions.map((question) => {
+    const matrix =
+      question.type === 'multiple_choice' && question.matrix && question.options?.length
+    const count = question.code && !matrix ? codeLines(question.code).length : 0
+    if (!count) return question
+    const explicit = question.code_start_line
+    const firstLine =
+      explicit !== undefined && Number.isSafeInteger(explicit) && explicit > 0 ? explicit : nextLine
+    nextLine = firstLine + count
+    return { ...question, code_start_line: firstLine }
+  })
+}
 
 function matches(answer: unknown, expected: unknown): boolean {
   if (Array.isArray(answer)) return answer.includes(expected)
@@ -71,8 +92,33 @@ function answered(v: unknown): boolean {
 export function missingRequired(questions: Question[], answers: Answers): string[] {
   const visible = visibleQuestionIds(questions, answers)
   return questions
-    .filter((q) => q.id && visible.has(q.id) && q.required !== false && !answered(answers[q.id]))
+    .filter((q) => {
+      if (!q.id || !visible.has(q.id)) return false
+      const value = answers[q.id]
+      if (q.type === 'line_numbers') {
+        const omitted = value == null || (Array.isArray(value) && value.length === 0)
+        return omitted ? q.required !== false : !validLineNumbers(q, value)
+      }
+      if (!answered(value)) return q.required !== false
+      return false
+    })
     .map((q) => q.id)
+}
+
+/** One error can refer to several code lines; older answers may hold just one. */
+export function validLineNumbers(question: Question, value: unknown): boolean {
+  const lines = Array.isArray(value) ? value : [value]
+  const min = Math.max(1, question.min ?? 1)
+  return (
+    lines.length > 0 &&
+    lines.every(
+      (line) =>
+        typeof line === 'number' &&
+        Number.isSafeInteger(line) &&
+        line >= min &&
+        (question.max === undefined || line <= question.max),
+    )
+  )
 }
 
 export function normaliseOption(opt: string | QuestionOption): QuestionOption {

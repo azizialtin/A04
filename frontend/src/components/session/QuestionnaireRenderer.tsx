@@ -1,13 +1,16 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
+import { studyCodeLineCount } from '../../lib/code'
 import CodeBlock from '../CodeBlock'
 import StudyText from '../StudyText'
 import {
   groupQuestions,
   missingRequired,
+  numberCodeQuestions,
   normaliseOption,
+  validLineNumbers,
   visibleQuestionIds,
   type Answers,
   type Question,
@@ -22,6 +25,8 @@ interface Props {
   instruction?: string
   questions: Question[]
   submitting?: boolean
+  /** What the page opens with: the stored answers, when the run was stepped back onto it. */
+  initialAnswers?: Answers
   onSubmit: (answers: Answers, timeSpentSeconds: number) => void
 }
 
@@ -31,22 +36,38 @@ export default function QuestionnaireRenderer({
   instruction,
   questions,
   submitting,
+  initialAnswers,
   onSubmit,
 }: Props) {
   const { t } = useTranslation()
-  const [answers, setAnswers] = useState<Answers>({})
+  const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {})
   const elapsed = useElapsedSeconds()
   const missing = useMemo(() => missingRequired(questions, answers), [questions, answers])
+  const instructionStart = 1 + studyCodeLineCount(description ?? '')
+  const questionsStart = instructionStart + studyCodeLineCount(instruction ?? '')
 
   return (
     <div className="panel panel--form">
       <header className="qhead">
-        <h2>{title}</h2>
-        {description ? <StudyText text={description} className="muted" /> : null}
-        {instruction ? <StudyText text={instruction} className="lead" /> : null}
+        <h2 data-aoi="page_title">{title}</h2>
+        {description ? (
+          <div data-aoi="page_description">
+            <StudyText text={description} className="muted" />
+          </div>
+        ) : null}
+        {instruction ? (
+          <div data-aoi="instructions">
+            <StudyText text={instruction} className="lead" startLine={instructionStart} />
+          </div>
+        ) : null}
       </header>
 
-      <QuestionnaireFields questions={questions} answers={answers} onChange={setAnswers} />
+      <QuestionnaireFields
+        questions={questions}
+        answers={answers}
+        onChange={setAnswers}
+        startLine={questionsStart}
+      />
 
       {/* How many are left, not only that something is: a table of seven rows
           gives no clue why the button will not light up. */}
@@ -60,6 +81,7 @@ export default function QuestionnaireRenderer({
         <button
           type="button"
           className="btn btn-primary"
+          data-aoi="continue"
           disabled={missing.length > 0 || submitting}
           onClick={() => onSubmit(answers, elapsed())}
         >
@@ -79,15 +101,18 @@ export function QuestionnaireFields({
   questions,
   answers,
   onChange,
+  startLine = 1,
 }: {
   questions: Question[]
   answers: Answers
   onChange: (next: Answers) => void
+  startLine?: number
 }) {
   const visible = useMemo(() => visibleQuestionIds(questions, answers), [questions, answers])
+  const numbered = useMemo(() => numberCodeQuestions(questions, startLine), [questions, startLine])
   const blocks = useMemo(
-    () => groupQuestions(questions.filter((q) => visible.has(q.id))),
-    [questions, visible],
+    () => groupQuestions(numbered.filter((q) => visible.has(q.id))),
+    [numbered, visible],
   )
   const setAnswer = (id: string, value: unknown) => onChange({ ...answers, [id]: value })
 
@@ -134,7 +159,7 @@ function Matrix({
   return (
     <div className="matrix">
       <p className="matrix__legend-title">{t('questionnaire.legend')}</p>
-      <ol className="matrix__legend">
+      <ol className="matrix__legend" data-aoi={`matrix.${block.key}.legend`}>
         {block.options.map((option, i) => (
           <li key={String(option.value)}>
             <span className="matrix__num" aria-hidden="true">
@@ -158,14 +183,23 @@ function Matrix({
           </thead>
           <tbody>
             {block.questions.map((q) => (
-              <tr key={q.id}>
-                <th scope="row" className="matrix__item">
+              <tr key={q.id} data-aoi={`question.${q.id}`}>
+                <th
+                  scope="row"
+                  className="matrix__item"
+                  data-aoi={`question.${q.id}.prompt`}
+                  data-aoi-priority="2"
+                  data-aoi-row-prompt=""
+                >
                   {q.text}
                   {q.required !== false ? <span className="req"> *</span> : null}
                 </th>
                 {block.options.map((option, i) => (
                   <td
                     key={String(option.value)}
+                    data-aoi={`question.${q.id}.answer`}
+                    data-aoi-priority="1"
+                    data-aoi-clip="after-row-prompt"
                     className={answers[q.id] === option.value ? 'is-chosen' : undefined}
                   >
                     <label className="matrix__cell" title={option.label}>
@@ -201,13 +235,23 @@ function Field({
 }) {
   const required = question.required !== false
   return (
-    <fieldset className="qfield">
-      <legend className="qfield__text">
+    <fieldset className="qfield" data-aoi={`question.${question.id}`}>
+      <legend
+        className="qfield__text"
+        data-aoi={`question.${question.id}.prompt`}
+        data-aoi-priority="1"
+      >
         {question.text}
         {required ? <span className="req"> *</span> : null}
       </legend>
-      {question.code ? <CodeBlock code={question.code} /> : null}
-      <Control question={question} value={value} onChange={onChange} />
+      {question.code ? (
+        <div data-aoi={`question.${question.id}.code`} data-aoi-priority="1">
+          <CodeBlock code={question.code} startLine={question.code_start_line} />
+        </div>
+      ) : null}
+      <div data-aoi={`question.${question.id}.answer`} data-aoi-priority="1">
+        <Control question={question} value={value} onChange={onChange} />
+      </div>
     </fieldset>
   )
 }
@@ -289,12 +333,124 @@ function Control({
           onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
         />
       )
+    case 'line_numbers':
+      return <LineNumbers question={question} value={value} onChange={onChange} />
     default:
       // The question JSON is written by hand in the admin, so a typo in `type`
       // lands here. Saying so beats a heading with nothing under it and a
       // submit button that can never enable.
       return <UnsupportedQuestion type={question.type} />
   }
+}
+
+function LineNumbers({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question
+  value: unknown
+  onChange: (next: unknown) => void
+}) {
+  const { t } = useTranslation()
+  const id = useId()
+  const root = useRef<HTMLDivElement>(null)
+  const focusNext = useRef<number | null>(null)
+  const nextId = useRef(0)
+  const [rows, setRows] = useState(() => {
+    const initial = Array.isArray(value) ? (value.length ? value : [undefined]) : [value]
+    return initial.map((line) => ({ id: nextId.current++, value: (line ?? undefined) as unknown }))
+  })
+  const min = Math.max(1, question.min ?? 1)
+  const omitted = value == null || (Array.isArray(value) && value.length === 0)
+  const invalid = !omitted && !validLineNumbers(question, value)
+  const errorId = `${id}-error`
+
+  useLayoutEffect(() => {
+    const index = focusNext.current
+    if (index === null) return
+    root.current?.querySelectorAll('input')[index]?.focus()
+    focusNext.current = null
+  }, [rows])
+
+  const update = (next: typeof rows) => {
+    setRows(next)
+    const values = next.map((row) => row.value)
+    onChange(values.every((line) => line === undefined) && next.length === 1 ? [] : values)
+  }
+
+  return (
+    <div className="line-numbers" ref={root}>
+      {rows.map((row, index) => (
+        <div className="line-numbers__row" key={row.id}>
+          <div className="line-numbers__field">
+            <label htmlFor={`${id}-${row.id}`}>
+              {t('questionnaire.line_number', { index: index + 1 })}
+            </label>
+            <input
+              id={`${id}-${row.id}`}
+              className="input"
+              type="number"
+              min={min}
+              max={question.max}
+              step={1}
+              value={row.value === undefined || row.value === null ? '' : String(row.value)}
+              aria-label={`${question.text}: ${t('questionnaire.line_number', { index: index + 1 })}`}
+              aria-invalid={invalid || undefined}
+              aria-describedby={invalid ? errorId : undefined}
+              onChange={(e) =>
+                update(
+                  rows.map((current) =>
+                    current.id === row.id
+                      ? {
+                          ...current,
+                          value: e.target.value === '' ? undefined : Number(e.target.value),
+                        }
+                      : current,
+                  ),
+                )
+              }
+            />
+          </div>
+          {rows.length > 1 && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              aria-label={t('questionnaire.remove_line', { index: index + 1 })}
+              onClick={() => {
+                focusNext.current = Math.min(index, rows.length - 2)
+                update(rows.filter((current) => current.id !== row.id))
+              }}
+            >
+              {t('questionnaire.remove_line', { index: index + 1 })}
+            </button>
+          )}
+          {index === rows.length - 1 && (
+            <button
+              type="button"
+              className="btn btn-secondary line-numbers__add"
+              onClick={() => {
+                focusNext.current = rows.length
+                update([...rows, { id: nextId.current++, value: undefined }])
+              }}
+            >
+              {t('questionnaire.add_line')}
+            </button>
+          )}
+        </div>
+      ))}
+      {invalid && (
+        <p className="error-text" id={errorId}>
+          {t(
+            question.max === undefined
+              ? 'questionnaire.line_numbers_invalid'
+              : 'questionnaire.line_numbers_range',
+            { min, max: question.max },
+          )}
+        </p>
+      )}
+    </div>
+  )
 }
 
 function UnsupportedQuestion({ type }: { type: string }) {

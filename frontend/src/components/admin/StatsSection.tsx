@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CaseStats, RosterRow } from '../../api/admin'
 import { useStudyStats } from '../../hooks/admin'
@@ -21,6 +21,11 @@ import { BarRow, Meter, Pill, Stat, StatGrid } from './stat'
 
 const WINDOWS = [7, 30, 90] as const
 
+function revealDetails(panel: HTMLElement | null) {
+  panel?.scrollIntoView({ behavior: 'auto', block: 'start' })
+  panel?.focus({ preventScroll: true })
+}
+
 /**
  * One study in depth. The order is the order a researcher checks things in:
  * are the participants getting through it, is each case being watched, are the
@@ -30,7 +35,26 @@ const WINDOWS = [7, 30, 90] as const
 export default function StatsSection({ studyId }: { studyId: number }) {
   const [days, setDays] = useState<number>(30)
   const [selected, setSelected] = useState<string | null>(null)
+  const details = useRef<HTMLElement>(null)
+  const trigger = useRef<HTMLButtonElement | null>(null)
+  const detailsId = `participant-stats-${studyId}`
   const stats = useStudyStats(studyId, days)
+  const revealPanel = useCallback(() => revealDetails(details.current), [])
+
+  useEffect(() => {
+    if (selected) revealPanel()
+  }, [selected, revealPanel])
+
+  const openDetails = (id: string, button: HTMLButtonElement) => {
+    trigger.current = button
+    if (selected === id) revealPanel()
+    else setSelected(id)
+  }
+
+  const closeDetails = () => {
+    setSelected(null)
+    trigger.current?.focus()
+  }
 
   if (stats.isLoading) return <p className="muted">Wird geladen…</p>
   if (stats.isError || !stats.data) return <p className="error-text">Statistik nicht verfügbar.</p>
@@ -333,7 +357,13 @@ export default function StatsSection({ studyId }: { studyId: number }) {
             </thead>
             <tbody>
               {roster.map((r) => (
-                <RosterLine key={r.id} row={r} onOpen={() => setSelected(r.id)} />
+                <RosterLine
+                  key={r.id}
+                  row={r}
+                  expanded={selected === r.id}
+                  detailsId={detailsId}
+                  onOpen={(button) => openDetails(r.id, button)}
+                />
               ))}
               {!roster.length && (
                 <tr>
@@ -348,7 +378,19 @@ export default function StatsSection({ studyId }: { studyId: number }) {
       </div>
 
       {selected && (
-        <ParticipantStatsPanel participantId={selected} onClose={() => setSelected(null)} />
+        <section
+          ref={details}
+          id={detailsId}
+          tabIndex={-1}
+          aria-label={`Details für ${selected}`}
+          style={{ scrollMarginTop: '1rem' }}
+        >
+          <ParticipantStatsPanel
+            participantId={selected}
+            onClose={closeDetails}
+            onReady={revealPanel}
+          />
+        </section>
       )}
 
       <p className="muted">Stand: {when(stats.data.generated_at)}</p>
@@ -405,7 +447,17 @@ function CaseRow({ row }: { row: CaseStats }) {
   )
 }
 
-function RosterLine({ row, onOpen }: { row: RosterRow; onOpen: () => void }) {
+function RosterLine({
+  row,
+  expanded,
+  detailsId,
+  onOpen,
+}: {
+  row: RosterRow
+  expanded: boolean
+  detailsId: string
+  onOpen: (button: HTMLButtonElement) => void
+}) {
   return (
     <tr>
       <td>
@@ -445,7 +497,13 @@ function RosterLine({ row, onOpen }: { row: RosterRow; onOpen: () => void }) {
       </td>
       <td>{day(row.last_event_at)}</td>
       <td>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onOpen}>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          onClick={(event) => onOpen(event.currentTarget)}
+        >
           Details
         </button>
       </td>

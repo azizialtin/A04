@@ -74,6 +74,13 @@ export function splitCodeBlocks(text: string): TextSegment[] {
   return out
 }
 
+export function studyCodeLineCount(text: string): number {
+  return splitCodeBlocks(text).reduce(
+    (count, segment) => count + (segment.kind === 'code' ? segment.lines.length : 0),
+    0,
+  )
+}
+
 /**
  * Code as lines. A question's `code` is written in the admin's JSON, where an
  * array with one entry per line is far easier to type than a string full of
@@ -83,7 +90,11 @@ export function codeLines(code: string | string[]): string[] {
   // The JSON is typed by hand, so the value may be anything; a number or an
   // object shows as its text rather than taking the page down.
   const lines = Array.isArray(code)
-    ? code.map((line) => String(line ?? '').replace(/\r/g, ''))
+    ? code.flatMap((line) =>
+        String(line ?? '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n'),
+      )
     : String(code ?? '')
         .replace(/\r\n?/g, '\n')
         .split('\n')

@@ -4,7 +4,10 @@ import pytest
 from sqlalchemy import select
 
 from app.models.enums import QuestionnairePlacement
-from app.models.questionnaire import Questionnaire
+from app.models.participant import Participant
+from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.session import Session
+from app.models.study import Study
 from app.services.log_data import MAIN_SCREEN_VARIABLES, variable_name
 from app.services.questionnaires import visible_question_ids
 from app.services.study_content import CK_DEBUG_PRE_TEST, CK_PRE_TEST, DEFAULT_BATTERIES
@@ -106,10 +109,8 @@ async def test_a_new_study_arrives_with_the_standard_batteries(client, db, admin
     assert sorted(placements) == [
         (QuestionnairePlacement.case_outro, 0),
         (QuestionnairePlacement.diagnosis, 0),
-        (QuestionnairePlacement.pre_test, 0),
-        (QuestionnairePlacement.pre_test, 1),
-        (QuestionnairePlacement.pre_test, 2),
-        (QuestionnairePlacement.pre_test, 3),
+        # Demographics, PCK, the two CK pages, then the seven MSK situations.
+        *((QuestionnairePlacement.pre_test, i) for i in range(11)),
     ]
 
 
@@ -163,7 +164,16 @@ async def test_reordering_a_page_does_not_earn_a_second_copy(client, db, admin_h
         (QuestionnairePlacement.pre_test, 0),
         (QuestionnairePlacement.pre_test, 1),
         (QuestionnairePlacement.pre_test, 3),
+        # The moved CK page now shares its index with an MSK page; ties keep
+        # creation order, which is what the participant sees.
+        (QuestionnairePlacement.pre_test, 4),
         (QuestionnairePlacement.pre_test, 5),
+        (QuestionnairePlacement.pre_test, 5),
+        (QuestionnairePlacement.pre_test, 6),
+        (QuestionnairePlacement.pre_test, 7),
+        (QuestionnairePlacement.pre_test, 8),
+        (QuestionnairePlacement.pre_test, 9),
+        (QuestionnairePlacement.pre_test, 10),
     ]
 
 
@@ -185,13 +195,7 @@ async def test_an_older_study_can_be_brought_up_to_date(client, db, seed_study, 
         f"/admin/studies/{seed_study.id}/questionnaires/seed", headers=admin_headers
     )
     assert seeded.status_code == 201
-    assert [q["placement"] for q in seeded.json()] == [
-        "pre_test",
-        "pre_test",
-        "pre_test",
-        "pre_test",
-        "diagnosis",
-    ]
+    assert [q["placement"] for q in seeded.json()] == ["pre_test"] * 11 + ["diagnosis"]
     # And the researcher's own outro battery is untouched.
     kept = await db.scalar(
         select(Questionnaire).where(
@@ -260,29 +264,178 @@ def test_the_seeded_pages_carry_the_sections_the_researchers_named():
     assert sections["Nach dem Fall"] == ""
 
 
-def test_the_section_migration_agrees_with_the_seeded_content():
-    # The migration carries a frozen copy of the titles so it keeps working
-    # after the content moves on; this says the copy and the content agree now.
+def _migration(filename: str):
+    """A migration module, loaded by file: the versions directory is not a package."""
     import importlib.util
     from pathlib import Path
 
-    from app.models.enums import QuestionnairePlacement
+    path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / filename
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_section_migration_agrees_with_the_seeded_content():
+    # The migration carries a frozen copy of the titles so it keeps working
+    # after the content moves on; this says the copy and the content agree now.
     from app.services.study_content import DEFAULT_BATTERIES
 
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "alembic"
-        / "versions"
-        / "a7c2e9d4f1b8_questionnaire_sections.py"
-    )
-    spec = importlib.util.spec_from_file_location("section_migration", path)
-    assert spec and spec.loader
-    migration = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(migration)
+    migration = _migration("a7c2e9d4f1b8_questionnaire_sections.py")
 
-    seeded = {
-        b.title: b.section
+    seeded = {b.title: b.section for b in DEFAULT_BATTERIES}
+    # Every page the migration knows is seeded with the section it assigns.
+    # Pages added later, the MSK ones, arrive with their section already set.
+    assert {t: seeded[t] for t in migration.SECTION_BY_TITLE} == migration.SECTION_BY_TITLE
+
+
+def test_the_msk_pages_are_one_table_each_with_the_instrument_s_variable_names():
+    from app.services.study_content import DEFAULT_BATTERIES, MSK_SCALE, MSK_TASKS
+
+    pages = [b for b in DEFAULT_BATTERIES if b.section == "MSK"]
+    assert [b.title for b in pages] == [f"MSK: Aufgabe {n}" for n in range(1, 8)]
+    assert [len(b.questions) for b in pages] == [len(options) for _, options in MSK_TASKS]
+    for number, page in enumerate(pages, start=1):
+        # One table per page: every row shares the key and the scale.
+        assert {q["matrix"] for q in page.questions} == {f"msk_pre_{number}"}
+        assert {tuple(o["value"] for o in q["options"]) for q in page.questions} == {
+            tuple(v for v, _ in MSK_SCALE)
+        }
+        assert [q["id"] for q in page.questions] == [
+            f"msk_pre_{number}{letter}" for letter in "abcdef"[: len(page.questions)]
+        ]
+    # The general instruction opens the first page only, its guidance and its
+    # scale as the bullet lists the instrument prints.
+    assert pages[0].description.startswith("Die folgenden Aufgaben")
+    blocks = pages[0].description.split("\n\n")
+    assert blocks[2].count("\n- ") == 2 and blocks[2].startswith("- ")
+    assert blocks[4].splitlines() == [f"- {v} = {label}" for v, label in MSK_SCALE]
+    assert all(b.description.startswith("Stellen Sie sich vor") for b in pages[1:])
+    assert all(
+        b.description.endswith("Wie beurteilen Sie die folgenden Vorgehensweisen?") for b in pages
+    )
+
+
+def test_the_msk_migration_carries_the_same_pages_as_the_seed():
+    from app.services.study_content import DEFAULT_BATTERIES
+
+    migration = _migration("b3d8f2a6c4e1_msk_pre_test_pages.py")
+    seeded = [
+        {"title": b.title, "description": b.description, "questions": b.questions}
         for b in DEFAULT_BATTERIES
-        if b.placement == QuestionnairePlacement.pre_test
-    }
-    assert seeded == migration.SECTION_BY_TITLE
+        if b.section == "MSK"
+    ]
+    assert seeded == migration.PAGES
+
+
+async def _pointers(db) -> dict[str, int]:
+    # Columns, not objects: the migration writes behind the identity map's back.
+    rows = await db.execute(select(Session.participant_id, Session.current_step_index))
+    return dict(rows.all())
+
+
+async def _pre_test_pages(db, study_id: int) -> list[Questionnaire]:
+    return list(
+        (
+            await db.execute(
+                select(Questionnaire)
+                .where(
+                    Questionnaire.study_id == study_id,
+                    Questionnaire.placement == QuestionnairePlacement.pre_test,
+                )
+                .order_by(Questionnaire.order_index, Questionnaire.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def test_the_msk_migration_appends_the_pages_and_keeps_every_run_on_its_screen(
+    db, seed_researcher
+):
+    from sqlalchemy import text
+
+    from app.services.study_content import seed_batteries
+
+    migration = _migration("b3d8f2a6c4e1_msk_pre_test_pages.py")
+
+    # A study from before the instrument: the standard block without the MSK
+    # pages, plus a page of the researcher's own at the end of the pre-test.
+    study = Study(name="Vor MSK", description="", created_by=seed_researcher.id)
+    db.add(study)
+    await db.flush()
+    seeded = await seed_batteries(db, study.id)
+    await db.flush()
+    for page in seeded:
+        if page.section == "MSK":
+            await db.delete(page)
+    own = {"id": "own_1", "type": "text", "text": "Eigene Frage"}
+    db.add(
+        Questionnaire(
+            study_id=study.id,
+            placement=QuestionnairePlacement.pre_test,
+            title="Eigene Seite",
+            order_index=4,
+            questions=[own],
+        )
+    )
+    # A study whose pre-test is entirely the researcher's own is left alone.
+    other = Study(name="Eigener Vortest", description="", created_by=seed_researcher.id)
+    db.add(other)
+    await db.flush()
+    db.add(
+        Questionnaire(
+            study_id=other.id,
+            placement=QuestionnairePlacement.pre_test,
+            title="Eigene Seite",
+            questions=[own],
+        )
+    )
+    # The pre-test a participant sees is four pages (the PCK page is seeded
+    # empty), so index 5 is the first screen after it. Runs at every stage:
+    # not started, inside the pre-test, just past it, deep in the cases.
+    before = {"P-0": 0, "P-2": 2, "P-5": 5, "P-30": 30}
+    for pid, index in before.items():
+        db.add(Participant(id=pid, study_id=study.id))
+        db.add(Session(participant_id=pid, current_step_index=index))
+    db.add(Participant(id="O-5", study_id=other.id))
+    db.add(Session(participant_id="O-5", current_step_index=5))
+    await db.flush()
+
+    touched = await db.run_sync(lambda s: migration.add_pages(s.connection()))
+
+    assert touched == [study.id]
+    pages = await _pre_test_pages(db, study.id)
+    assert [(p.title, p.order_index) for p in pages[4:]] == [
+        ("Eigene Seite", 4),
+        *((f"MSK: Aufgabe {n}", 4 + n) for n in range(1, 8)),
+    ]
+    assert [(p.section, p.questions) for p in pages[5:]] == [
+        ("MSK", page["questions"]) for page in migration.PAGES
+    ]
+    assert await _pointers(db) == {"P-0": 0, "P-2": 2, "P-5": 12, "P-30": 37, "O-5": 5}
+    assert [p.title for p in await _pre_test_pages(db, other.id)] == ["Eigene Seite"]
+
+    # Running it again adds nothing.
+    assert await db.run_sync(lambda s: migration.add_pages(s.connection())) == []
+    assert len(await _pre_test_pages(db, study.id)) == 12
+
+    # The way back: the pages go with their answers, a run that was on one of
+    # them resumes right after the pre-test, every other run keeps its screen.
+    db.add(QuestionnaireResponse(questionnaire_id=pages[6].id, participant_id="P-30", answers={}))
+    await db.flush()
+    await db.execute(
+        text("UPDATE sessions SET current_step_index = 8 WHERE participant_id = 'P-0'")
+    )
+    await db.run_sync(lambda s: migration.remove_pages(s.connection()))
+
+    assert [p.title for p in await _pre_test_pages(db, study.id)][-1] == "Eigene Seite"
+    assert (
+        await db.scalar(
+            select(QuestionnaireResponse).where(QuestionnaireResponse.participant_id == "P-30")
+        )
+        is None
+    )
+    assert await _pointers(db) == {"P-0": 5, "P-2": 2, "P-5": 5, "P-30": 30, "O-5": 5}

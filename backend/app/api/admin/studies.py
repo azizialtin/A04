@@ -163,5 +163,16 @@ async def delete_study(
     for filename in filenames:
         await run_in_threadpool(delete_video_file, filename, settings)
 
-    _audit(background_tasks, admin, "study_deleted", {"study_id": study_id})
+    # The row is gone, so the log is the only place the name survives.
+    _audit(
+        background_tasks,
+        admin,
+        "study_deleted",
+        {
+            "study_id": study_id,
+            "name": study.name,
+            "participants": len(participants),
+            "videos": len(filenames),
+        },
+    )
     return {"status": "ok"}

@@ -10,7 +10,7 @@ from app.core.database import Base
 
 
 class GazeRecording(Base):
-    """Header row for one clip's worth of Tobii samples. The samples themselves
+    """Header row for one screen's Tobii samples. The samples themselves
     live in chunk files (local disk or GCS); `storage_prefix` locates them."""
 
     __tablename__ = "gaze_recordings"
@@ -28,7 +28,16 @@ class GazeRecording(Base):
     participant_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("participants.id", ondelete="CASCADE")
     )
-    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    video_id: Mapped[int | None] = mapped_column(
+        ForeignKey("videos.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    step_kind: Mapped[str] = mapped_column(
+        String(32), default="case_video", server_default="case_video"
+    )
+    step_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    questionnaire_id: Mapped[int | None] = mapped_column(
+        ForeignKey("questionnaires.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     sampling_rate_hz: Mapped[int] = mapped_column(Integer, default=120)
     sample_count: Mapped[int] = mapped_column(Integer, default=0)
     storage_mode: Mapped[str] = mapped_column(String(16), default="local")

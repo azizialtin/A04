@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 
 import type { StudyStatRow } from '../../api/admin'
 import { BarRow, Meter, Pill, Stat, StatGrid } from '../../components/admin/stat'
+import ResearchersSection from '../../components/admin/ResearchersSection'
+import { useAuth } from '../../contexts/AuthContext'
 import { useOverviewStats } from '../../hooks/admin'
 import {
   average,
@@ -27,6 +29,16 @@ const WINDOWS = [7, 30, 90] as const
  * calibration.
  */
 export default function AdminOverviewPage() {
+  const { user, login } = useAuth()
+  return (
+    <div>
+      <OverviewStats />
+      <ResearchersSection me={user?.id ?? null} onNewToken={login} />
+    </div>
+  )
+}
+
+function OverviewStats() {
   const [days, setDays] = useState<number>(30)
   const stats = useOverviewStats(days)
 

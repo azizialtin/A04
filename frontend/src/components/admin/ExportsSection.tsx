@@ -11,8 +11,15 @@ const DESCRIPTIONS: Record<ExportKind, string> = {
   notes: 'Jeder Notiz-Stand mit Playhead-Position (Sekunden und als Zeitangabe).',
   diagnoses: 'Die geschriebene Diagnose je Fall mit der dafür benötigten Zeit.',
   responses: 'Alle Fragebogen-Antworten: Vortest-Seiten, Sicherheitsrating, Fragen nach dem Fall.',
+  sections:
+    'Zeit je Abschnitt und Person — die Tabelle „Fragebögen“ im Teilnehmer-Panel: alle Seiten ' +
+    'eines Abschnitts addiert, dazu der Vortest gesamt.',
   events: 'Der Interaktions-Log des Fallbildschirms: Play, Pause, Seeks, Notizen, Seitenwechsel.',
-  gaze: 'Je Aufzeichnung: Abtastrate und Anzahl der Blickproben.',
+  gaze:
+    'Jede rohe Blickprobe mit Zeitstempel, Gültigkeit, Bildschirm, Fragebogen und AOI. ' +
+    'Die Zeilenzahl entspricht den gespeicherten Probenzählern; der Download prüft die Dateien.',
+  gaze_recordings:
+    'Je Aufzeichnung: Bildschirm, Fragebogen, Abtastrate und Anzahl der Blickproben.',
   calibration: 'Ergebnis der Eye-Tracker-Kalibrierung, sofern sie in der App stattgefunden hat.',
 }
 
@@ -37,6 +44,8 @@ export default function ExportsSection({ studyId, preselected = null }: Props) {
   const [excluded, setExcluded] = useState<Set<string>>(() => new Set())
   const [appliedFor, setAppliedFor] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [downloadError, setDownloadError] = useState('')
+  const [downloading, setDownloading] = useState<ExportKind | null>(null)
 
   useEffect(() => {
     if (!preselected || preselected === appliedFor || !ids.includes(preselected)) return
@@ -63,9 +72,29 @@ export default function ExportsSection({ studyId, preselected = null }: Props) {
   const needle = search.trim().toLowerCase()
   const shown = needle ? ids.filter((id) => id.toLowerCase().includes(needle)) : ids
 
+  const download = async (kind: ExportKind) => {
+    setDownloadError('')
+    setDownloading(kind)
+    try {
+      await adminApi.downloadExport(studyId, kind, filter)
+    } catch {
+      setDownloadError(
+        'Download fehlgeschlagen. Bitte erneut versuchen. Wenn der Fehler bleibt, ' +
+          'muss das Studienteam die gespeicherten Aufzeichnungen prüfen.',
+      )
+    } finally {
+      setDownloading(null)
+    }
+  }
+
   return (
     <div className="card">
       <h2>Exporte (CSV)</h2>
+      {downloadError && (
+        <p className="error-text" role="alert">
+          {downloadError}
+        </p>
+      )}
       <p className="muted">
         Alle Rohdaten der Studie als CSV (UTF-8 mit BOM, öffnet direkt in Excel). Jede Zeile mit
         Fallbezug trägt neben der video_id auch case_number (Position des Falls im Durchlauf dieser
@@ -159,10 +188,10 @@ export default function ExportsSection({ studyId, preselected = null }: Props) {
                     className="btn btn-secondary btn-sm"
                     // Downloadable even when empty: the header alone documents
                     // the columns, and a researcher may want it for a template.
-                    disabled={nobody}
-                    onClick={() => void adminApi.downloadExport(studyId, kind, filter)}
+                    disabled={nobody || downloading !== null}
+                    onClick={() => void download(kind)}
                   >
-                    Herunterladen
+                    {downloading === kind ? 'Wird vorbereitet…' : 'Herunterladen'}
                   </button>
                 </td>
               </tr>

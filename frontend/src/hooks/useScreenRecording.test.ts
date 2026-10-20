@@ -22,9 +22,13 @@ const startBrowserRecording = vi.fn<(videoId: number, stream: unknown) => typeof
   () => browserRecording,
 )
 let held: object | null = null
-const noteBridgeCaptureFailed = vi.fn()
+let bridgeFailed = false
+const noteBridgeCaptureFailed = vi.fn(() => {
+  bridgeFailed = true
+})
 vi.mock('../lib/screenCapture', () => ({
   heldStream: () => held,
+  hasBridgeCaptureFailed: () => bridgeFailed,
   noteBridgeCaptureFailed: () => noteBridgeCaptureFailed(),
   startBrowserRecording: (videoId: number, stream: unknown) =>
     startBrowserRecording(videoId, stream),
@@ -67,6 +71,8 @@ class FakeSocket {
 beforeEach(() => {
   FakeSocket.last = null
   held = null
+  bridgeFailed = false
+  noteBridgeCaptureFailed.mockClear()
   startBrowserRecording.mockClear()
   browserRecording.stop.mockClear()
   vi.stubGlobal('WebSocket', FakeSocket)
@@ -159,6 +165,33 @@ test('marks the recording failed when the bridge will not start', async () => {
   // Remembered, so the next case intro secures the display instead of losing
   // the whole session to the same fault.
   expect(noteBridgeCaptureFailed).toHaveBeenCalled()
+})
+
+test('uses the granted browser display on the next case after a bridge capture failure', async () => {
+  const { rerender, unmount } = renderHook(({ videoId }) => useScreenRecording(videoId), {
+    initialProps: { videoId: 42 },
+  })
+  FakeSocket.last!.say({ type: 'status', screen_recording: true })
+  await waitFor(() => expect(FakeSocket.last!.sent).toHaveLength(1))
+  FakeSocket.last!.say({
+    type: 'screen_recording_started',
+    ok: false,
+    error: 'screen capture permission refused',
+  })
+
+  // The next intro has obtained the fallback display, but ffmpeg is still
+  // installed, so the bridge continues to advertise screen_recording: true.
+  held = { fake: 'granted display' }
+  rerender({ videoId: 43 })
+  FakeSocket.last!.say({ type: 'status', screen_recording: true })
+
+  expect(startBrowserRecording).toHaveBeenCalledWith(43, held)
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(start).toHaveBeenCalledWith(42, 'bridge')
+  expect(FakeSocket.last!.sent).toEqual([])
+
+  unmount()
+  expect(browserRecording.stop).toHaveBeenCalledOnce()
 })
 
 test('closes out a recording opened after the case already ended', async () => {

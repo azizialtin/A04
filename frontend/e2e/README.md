@@ -45,3 +45,22 @@ failure that looks like a broken login.
   more; the case screen is exercised, the decoder is not.
 - **The admin UI.** The seeding goes through the admin *API*, so those
   endpoints are exercised, but nobody clicks through the admin screens.
+
+## Feedback browser checks
+
+`npm run test:browser` runs a separate Chromium suite on port 5185 with synthetic
+API responses and tracker messages. It needs no database or admin account.
+The fixture `fixtures/stimulus.webm` is a two-second 320×180 test pattern, so the
+video element also has real decoded dimensions.
+
+These checks cover case and questionnaire AOI rectangles at different viewport
+sizes, scroll and popup visibility, seven line-number inputs, continuous code
+line numbers, participant Details below a long roster, and real MediaRecorder
+encoding/upload alongside gaze collection. The display stream is a synthetic
+canvas: this does not test the OS screen-share picker or permissions.
+
+AOI tests temporarily paint recorded rectangles red, save screenshots to
+`test-results/`, remove the overlays, and save clean screenshots. No red tint is
+added to the application. DOM alignment does not establish physical Tobii
+accuracy: validate gaze-to-display mapping, browser zoom, screen selection,
+calibration, and replay timing on the actual lab hardware.

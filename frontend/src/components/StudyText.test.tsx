@@ -30,3 +30,46 @@ test('preserve mode keeps line breaks inside the prose, as the popups always hav
   expect(prose.textContent).toBe('Zeile 1\nZeile 2')
   expect(code.tagName).toBe('PRE')
 })
+
+test('a paragraph of "- " lines is a bulleted list, as an instrument prints its guidance', () => {
+  const { container } = render(
+    <StudyText text={'Beachten Sie:\n\n- Erstens.\n- Zweitens.\n\n- 1 = gut\n- 2 = schlecht'} />,
+  )
+  const children = Array.from(container.children)
+  expect(children.map((c) => c.tagName)).toEqual(['P', 'UL', 'UL'])
+  expect(Array.from(children[1].querySelectorAll('li')).map((li) => li.textContent)).toEqual([
+    'Erstens.',
+    'Zweitens.',
+  ])
+  expect(children[2].textContent).toBe('1 = gut2 = schlecht')
+})
+
+test('a dash inside ordinary prose does not make a list', () => {
+  const { container } = render(<StudyText text={'Erst dies - dann das.\n- Und eine Zeile'} />)
+  expect(container.firstElementChild?.tagName).toBe('P')
+})
+
+test('code segments in one exercise continue numbering across prose and internal blank lines', () => {
+  const text = '```java\nint a;\n\nint b;\n```\n\nWeiter:\n\n```java\nreturn a + b;\n```'
+  const { container } = render(<StudyText text={text} />)
+  expect(
+    Array.from(container.querySelectorAll('.code__line')).map((line) =>
+      line.getAttribute('data-line'),
+    ),
+  ).toEqual(['1', '2', '3', '4'])
+})
+
+test('an explicit starting line applies to the exercise and a separate exercise starts fresh', () => {
+  const text = '```java\nint a;\n```\n\n```java\nreturn a;\n```'
+  const { container } = render(
+    <>
+      <StudyText text={text} startLine={8} />
+      <StudyText text={text} />
+    </>,
+  )
+  expect(
+    Array.from(container.querySelectorAll('.code__line')).map((line) =>
+      line.getAttribute('data-line'),
+    ),
+  ).toEqual(['8', '9', '1', '2'])
+})

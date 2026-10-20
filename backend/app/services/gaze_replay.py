@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.models.interaction_log import InteractionLog
+from app.services.gaze_analysis import averaged_gaze
 
 PLAYBACK_EVENTS = (
     "video_started",
@@ -171,7 +172,10 @@ def to_video_frame(x: float, y: float, geo: dict[str, Any]) -> tuple[float, floa
     chrome is assumed to sit above the viewport with symmetric side borders.
     That is exact in fullscreen, where outer and inner are the same.
     """
-    screen, win, box, frame = geo["screen"], geo["window"], geo["video"], geo["frame"]
+    if not geo.get("video"):
+        return None
+    screen, win, box = geo["screen"], geo["window"], geo["video"]
+    frame = geo.get("frame") or {"w": 0, "h": 0}
     if not (screen["w"] and screen["h"] and box["w"] and box["h"]):
         return None
 
@@ -261,11 +265,9 @@ def build_points(
 
 def _averaged(sample: dict[str, Any]) -> tuple[float, float] | None:
     """The binocular mean, or None on a blink / track-loss."""
-    xs = [v for v in (sample.get("lx"), sample.get("rx")) if isinstance(v, (int, float))]
-    ys = [v for v in (sample.get("ly"), sample.get("ry")) if isinstance(v, (int, float))]
-    if not xs or not ys:
-        return None
-    return sum(xs) / len(xs), sum(ys) / len(ys)
+    # Older recordings did not carry validity flags; keep their replay usable.
+    # Research exports require explicitly valid eyes instead.
+    return averaged_gaze(sample, allow_unknown=True)
 
 
 def build_screen_points(
@@ -329,7 +331,7 @@ async def load_samples(recording, settings) -> list[dict[str, Any]]:
     Reading and parsing every chunk is blocking file (or network) work, and this
     runs on the screen a participant is sitting in front of.
     """
-    if settings.GAZE_STORAGE_MODE == "gcs" and settings.GCP_BUCKET_NAME:
+    if recording.storage_mode == "gcs" and settings.GCP_BUCKET_NAME:
         return await run_in_threadpool(
             read_gcs_samples,
             recording.storage_prefix or f"gaze/{recording.participant_id}/{recording.id}/",

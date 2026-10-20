@@ -66,6 +66,16 @@ h3 {
   color: #38434b;
 }
 
+/* A list written into a study text; spaced like the paragraphs around it. */
+.prose-list {
+  margin: 0 0 1em;
+  padding-left: 1.4em;
+}
+
+.prose-list li + li {
+  margin-top: 0.35em;
+}
+
 /* --- layout ------------------------------------------------------------- */
 
 .fullpage {
@@ -158,6 +168,15 @@ h3 {
   transition: width 0.35s ease;
 }
 
+/* The same bar over a chromeless screen: pinned to the top, above the padding. */
+.shell__progress--overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+}
+
 .shell__main {
   flex: 1;
   display: flex;
@@ -218,6 +237,15 @@ h3 {
 .btn-secondary {
   background: var(--brand-tint);
   color: var(--brand-dark);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(0.9);
 }
 
 .btn-ghost {
@@ -987,6 +1015,45 @@ h3 {
   font-size: 1.1rem;
 }
 
+/* The admin's rendering of a page as the participant gets it. */
+.preview {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 4px 20px 12px;
+  background: var(--bg);
+}
+
+/* A password shown the one time it is: after it was set, to be written down. */
+.handover {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-tint);
+  border-radius: var(--radius-sm);
+}
+
+.handover code {
+  font-size: 1.05rem;
+  user-select: all;
+}
+
+.row-gap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.row-gap .input {
+  flex: 1;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
 .modal__body {
   padding: 20px;
 }
@@ -1221,6 +1288,10 @@ h3 {
   border-radius: var(--radius);
   padding: 20px;
   margin-bottom: 20px;
+}
+
+.card--danger {
+  border: 1px solid var(--danger);
 }
 
 .card h2 {
@@ -1696,4 +1767,35 @@ h3 {
   place-items: center;
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+}
+.line-numbers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.line-numbers__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  max-width: 100%;
+}
+
+.line-numbers__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.line-numbers__field .input {
+  width: 140px;
+  max-width: 100%;
+}
+
+.line-numbers__add {
+  white-space: normal;
+  text-align: left;
 }

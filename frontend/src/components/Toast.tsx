@@ -29,7 +29,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="toast-stack" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast toast--${t.kind}`}>
+          <div
+            key={t.id}
+            className={`toast toast--${t.kind}`}
+            data-aoi="notification"
+            data-aoi-overlay="true"
+            data-aoi-priority="100"
+          >
             {t.message}
           </div>
         ))}

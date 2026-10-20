@@ -87,6 +87,8 @@ export type SessionStep =
       video_id: null
       page: number
       page_count: number
+      // What is stored already, when the run was stepped back onto this page.
+      previous_answers?: Record<string, unknown> | null
     })
   | (StepBase & {
       kind: 'case_video'
@@ -105,6 +107,8 @@ export type SessionStep =
       section: string
       // Rating questions shown under the write-up and submitted with it.
       questions: Question[]
+      previous_text?: string | null
+      previous_answers?: Record<string, unknown> | null
     })
   | (StepBase & {
       kind: 'case_outro'
@@ -117,6 +121,10 @@ export type SessionStep =
       section: string
       instruction: string
       questions: Question[]
+      previous_answers?: Record<string, unknown> | null
+      // The study's own heading and text; empty means the app's default.
+      heading?: string
+      body?: string
     })
   | (StepBase & {
       kind: 'think_aloud'
@@ -130,6 +138,8 @@ export type SessionStep =
       case_total: number
       batch_position: number
       batch_size: number
+      heading?: string
+      body?: string
     })
   | (StepBase & { kind: 'thanks' })
 
@@ -167,6 +177,9 @@ export const participantApi = {
         current_step_index: currentStepIndex,
       })
       .then((r) => r.data),
+  /** The supervisor's one screen back; the server logs it. */
+  stepBack: () =>
+    apiClient.post<ProgressResult>('/participant/session/step-back').then((r) => r.data),
   getVideoUrl: (videoId: number) =>
     apiClient.get<{ signed_url: string }>(`/participant/videos/${videoId}/url`).then((r) => r.data),
   getVideoNotes: (videoId: number) =>

@@ -5,7 +5,9 @@ import {
   _reset,
   bridgeCanRecord,
   ensureDisplayStream,
+  hasBridgeCaptureFailed,
   heldStream,
+  noteBridgeCaptureFailed,
   prepareCapture,
   startBrowserRecording,
   uploadSettled,
@@ -163,6 +165,22 @@ test('preparing a capture takes the display when there is no bridge', async () =
   FakeSocket.last!.onerror?.()
   await prepared
   expect(getDisplayMedia).toHaveBeenCalledTimes(1)
+})
+
+test('a bridge capture failure secures the browser display for following cases', async () => {
+  const prepared = prepareCapture()
+  FakeSocket.last!.say({ type: 'status', screen_recording: true })
+  await prepared
+  expect(getDisplayMedia).not.toHaveBeenCalled()
+
+  noteBridgeCaptureFailed()
+  const stream = new FakeStream()
+  getDisplayMedia.mockResolvedValue(stream)
+  await prepareCapture()
+
+  expect(hasBridgeCaptureFailed()).toBe(true)
+  expect(getDisplayMedia).toHaveBeenCalledOnce()
+  expect(heldStream()).toBe(stream)
 })
 
 test('a browser recording is opened as such and delivered when stopped', async () => {

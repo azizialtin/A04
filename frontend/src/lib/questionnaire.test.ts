@@ -1,5 +1,10 @@
 import type { Question } from './questionnaire'
-import { groupQuestions, missingRequired, visibleQuestionIds } from './questionnaire'
+import {
+  groupQuestions,
+  missingRequired,
+  validLineNumbers,
+  visibleQuestionIds,
+} from './questionnaire'
 
 test('required field must be answered', () => {
   const qs: Question[] = [{ id: 'a', type: 'free_text', text: 'why' }]
@@ -54,4 +59,38 @@ test('a run of matrix questions with the same options is one block; anything els
     ['e'], // the free-text question broke the run
     'f', // no key: an ordinary question, even with the same options
   ])
+})
+
+const lines: Question = { id: 'lines', type: 'line_numbers', text: 'Which lines?', min: 3, max: 10 }
+
+test('line references accept several lines and restore an older scalar answer', () => {
+  expect(missingRequired([lines], { lines: [3, 5, 10] })).toEqual([])
+  expect(missingRequired([lines], { lines: 5 })).toEqual([])
+  expect(validLineNumbers(lines, [3, 3, 4, 5, 6, 7, 8])).toBe(true)
+})
+
+test.each(
+  [[], [undefined], [null], [3, 0], [2], [11], [3.5], ['3'], [true], {}, ''].map((value) => ({
+    value,
+  })),
+)('rejects incomplete or invalid line references: %j', ({ value }) => {
+  expect(missingRequired([lines], { lines: value })).toEqual(['lines'])
+})
+
+test('optional line references may be omitted but supplied references must be valid', () => {
+  const optional = { ...lines, required: false }
+  expect(missingRequired([optional], {})).toEqual([])
+  expect(missingRequired([optional], { lines: [] })).toEqual([])
+  expect(missingRequired([optional], { lines: [0] })).toEqual(['lines'])
+  expect(missingRequired([optional], { lines: {} })).toEqual(['lines'])
+  expect(missingRequired([optional], { lines: '' })).toEqual(['lines'])
+})
+
+test('hidden line references do not block a page and positive whole numbers are the default', () => {
+  const gated = { ...lines, show_if: { question: 'other', equals: 1 } }
+  expect(missingRequired([gated], { lines: [0] })).toEqual([])
+  const unbounded: Question = { id: 'lines', type: 'line_numbers', text: 'Lines' }
+  expect(validLineNumbers(unbounded, [1, 1_000])).toBe(true)
+  expect(validLineNumbers(unbounded, [-1, 0])).toBe(false)
+  expect(validLineNumbers(unbounded, [Number.POSITIVE_INFINITY])).toBe(false)
 })

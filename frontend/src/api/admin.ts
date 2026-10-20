@@ -9,6 +9,10 @@ export interface StudyTexts {
   welcome_note: string
   case_intro_title: string
   case_intro_body: string
+  case_outro_title: string
+  case_outro_body: string
+  think_aloud_title: string
+  think_aloud_body: string
 }
 
 /** What a new video starts from; the texts can be followed rather than copied. */
@@ -123,8 +127,13 @@ export interface ReplayRef {
 export interface GazeRow {
   replay: ReplayRef
   participant_id: string
-  video_id: number
+  video_id: number | null
   video_title: string
+  step_kind?: string
+  step_index?: number | null
+  questionnaire_id?: number | null
+  questionnaire_title?: string | null
+  replay_available?: boolean
   sample_count: number
   sampling_rate_hz: number
   started_at: string
@@ -540,8 +549,10 @@ export const EXPORT_KINDS = [
   'notes',
   'diagnoses',
   'responses',
+  'sections',
   'events',
   'gaze',
+  'gaze_recordings',
   'calibration',
 ] as const
 export type ExportKind = (typeof EXPORT_KINDS)[number]
@@ -604,6 +615,19 @@ function putToBucket(
   })
 }
 
+export interface Researcher {
+  id: number
+  email: string
+  name: string
+  created_at: string | null
+}
+
+export interface ResearcherCreate {
+  email: string
+  name: string
+  password: string
+}
+
 export const adminApi = {
   listStudies: () => apiClient.get<Study[]>('/admin/studies').then((r) => r.data),
   createStudy: (body: Partial<Study>) =>
@@ -613,6 +637,24 @@ export const adminApi = {
     apiClient.patch<Study>(`/admin/studies/${id}`, body).then((r) => r.data),
   deleteStudy: (id: number, force = false) =>
     apiClient.delete(`/admin/studies/${id}?force=${force}`).then((r) => r.data),
+
+  listResearchers: () => apiClient.get<Researcher[]>('/admin/researchers').then((r) => r.data),
+  createResearcher: (body: ResearcherCreate) =>
+    apiClient.post<Researcher>('/admin/researchers', body).then((r) => r.data),
+  resetResearcherPassword: (id: number, password: string) =>
+    apiClient
+      .post<Researcher>(`/admin/researchers/${id}/password`, { password })
+      .then((r) => r.data),
+  revokeResearcherSessions: (id: number) =>
+    apiClient.post<Researcher>(`/admin/researchers/${id}/revoke`).then((r) => r.data),
+  /** Resolves to the token of the new session; the old one just ended. */
+  changeMyPassword: (currentPassword: string, newPassword: string) =>
+    apiClient
+      .post<{ access_token: string }>('/admin/me/password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      })
+      .then((r) => r.data.access_token),
 
   listVideos: (studyId: number) =>
     apiClient.get<AdminVideo[]>(`/admin/studies/${studyId}/videos`).then((r) => r.data),
@@ -757,6 +799,7 @@ export const adminApi = {
     const res = await apiClient.get(`/admin/studies/${studyId}/export/${kind}`, {
       params: exportParams(participantIds),
       responseType: 'blob',
+      timeout: kind === 'gaze' ? 600_000 : 30_000,
     })
     const url = URL.createObjectURL(res.data as Blob)
     const a = document.createElement('a')

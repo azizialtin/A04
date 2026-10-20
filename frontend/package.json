@@ -14,7 +14,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json,md}\"",
     "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui"
+    "e2e:ui": "playwright test --ui",
+    "test:browser": "playwright test --config playwright.feedback.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.10",

@@ -101,6 +101,10 @@ export function noteBridgeCaptureFailed(): void {
   bridgeFailedOnce = true
 }
 
+export function hasBridgeCaptureFailed(): boolean {
+  return bridgeFailedOnce
+}
+
 /** The display stream the page already holds, if it is still live. */
 export function heldStream(): MediaStream | null {
   if (held && held.getVideoTracks().some((t) => t.readyState === 'live')) return held

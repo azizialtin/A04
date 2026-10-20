@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import type { Study, StudyTexts } from '../../api/admin'
+import DeleteStudySection from '../../components/admin/DeleteStudySection'
 import ExportsSection from '../../components/admin/ExportsSection'
 import ParticipantsSection from '../../components/admin/ParticipantsSection'
 import QuestionnairesSection from '../../components/admin/QuestionnairesSection'
@@ -66,6 +67,7 @@ export default function AdminStudyDetailPage() {
           <DetailsSection study={study.data} />
           <ThinkAloudSection study={study.data} />
           <TextsSection study={study.data} />
+          <DeleteStudySection study={study.data} />
         </>
       )}
     </div>
@@ -138,6 +140,11 @@ const TEXT_DEFAULTS = {
   case_intro_title: 'Neuer Fall',
   case_intro_body:
     'Gleich sehen Sie ein neues Video. Beobachten Sie aufmerksam und machen Sie sich während des Ansehens Notizen.',
+  case_outro_title: 'Fall abgeschlossen',
+  case_outro_body: 'Danke. Bitte beantworten Sie noch einige kurze Fragen zu diesem Fall.',
+  think_aloud_title: 'Lautes Denken',
+  think_aloud_body:
+    'Sehen Sie sich die Aufzeichnung an und erläutern Sie der Studienleitung, worauf Sie geachtet haben und warum Sie Ihre Notizen zu diesem Zeitpunkt gemacht haben.',
 }
 
 /**
@@ -173,6 +180,10 @@ function TextsSection({ study }: { study: Study }) {
       welcome_note: '',
       case_intro_title: '',
       case_intro_body: '',
+      case_outro_title: '',
+      case_outro_body: '',
+      think_aloud_title: '',
+      think_aloud_body: '',
     })
     setSteps('')
   }
@@ -260,6 +271,65 @@ function TextsSection({ study }: { study: Study }) {
           value={texts.case_intro_body}
           placeholder={TEXT_DEFAULTS.case_intro_body}
           onChange={set('case_intro_body')}
+        />
+      </div>
+
+      <h3>Nach jedem Fall</h3>
+      <p className="muted small">
+        Die Seite „Fall abgeschlossen“ mit den kurzen Fragen zum Fall; die Fragen selbst stehen
+        unter „Fragebögen“.
+      </p>
+      <div className="form-row">
+        <label className="label" htmlFor="case-outro-title">
+          Überschrift
+        </label>
+        <input
+          id="case-outro-title"
+          className="input"
+          value={texts.case_outro_title}
+          placeholder={TEXT_DEFAULTS.case_outro_title}
+          onChange={set('case_outro_title')}
+        />
+      </div>
+      <div className="form-row">
+        <label className="label" htmlFor="case-outro-body">
+          Text (Absätze durch eine Leerzeile trennen)
+        </label>
+        <textarea
+          id="case-outro-body"
+          className="textarea"
+          value={texts.case_outro_body}
+          placeholder={TEXT_DEFAULTS.case_outro_body}
+          onChange={set('case_outro_body')}
+        />
+      </div>
+
+      <h3>Lautes Denken</h3>
+      <p className="muted small">
+        Die Überschrift wird in einem Block aus mehreren Aufzeichnungen um „1 von 3“ ergänzt.
+      </p>
+      <div className="form-row">
+        <label className="label" htmlFor="think-aloud-title">
+          Überschrift
+        </label>
+        <input
+          id="think-aloud-title"
+          className="input"
+          value={texts.think_aloud_title}
+          placeholder={TEXT_DEFAULTS.think_aloud_title}
+          onChange={set('think_aloud_title')}
+        />
+      </div>
+      <div className="form-row">
+        <label className="label" htmlFor="think-aloud-body">
+          Hinweis (Absätze durch eine Leerzeile trennen)
+        </label>
+        <textarea
+          id="think-aloud-body"
+          className="textarea"
+          value={texts.think_aloud_body}
+          placeholder={TEXT_DEFAULTS.think_aloud_body}
+          onChange={set('think_aloud_body')}
         />
       </div>
 

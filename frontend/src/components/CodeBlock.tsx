@@ -12,19 +12,22 @@ import { codeLines, tokenise } from '../lib/code'
 export default function CodeBlock({
   code,
   lang = 'java',
+  startLine = 1,
 }: {
   code: string | string[]
   lang?: string
+  startLine?: number
 }) {
   const lines = codeLines(code)
   if (!lines.length) return null
   const rows = tokenise(lines, lang)
+  const firstLine = Number.isSafeInteger(startLine) && startLine > 0 ? startLine : 1
 
   return (
     <pre className="code" tabIndex={0}>
       <code>
         {rows.map((tokens, i) => (
-          <span key={i} className="code__line" data-line={i + 1}>
+          <span key={i} className="code__line" data-line={firstLine + i}>
             {tokens.map((token, j) =>
               token.type === 'plain' ? (
                 <Fragment key={j}>{token.text}</Fragment>

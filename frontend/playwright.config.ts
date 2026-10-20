@@ -7,6 +7,7 @@ const APP_URL = process.env.E2E_APP_URL ?? 'http://localhost:4175'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'feedback-*.spec.ts',
   fullyParallel: false, // one participant at a time, as in the lab
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

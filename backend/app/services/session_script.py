@@ -34,8 +34,9 @@ from app.core.config import get_settings
 from app.models.enums import PhaseType, QuestionnairePlacement
 from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
-from app.models.questionnaire import Questionnaire
+from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.study import Study
+from app.models.text_entry import TextEntry
 from app.models.video import Video
 from app.schemas.admin import StudyTexts, StudyVideoDefaults
 
@@ -98,7 +99,9 @@ def count_steps(pre_test_pages: int, phases: Sequence[PhaseType], calibration: b
     )
 
 
-def _pre_test_step(q: Questionnaire, page: int, page_count: int) -> dict:
+def _pre_test_step(
+    q: Questionnaire, page: int, page_count: int, previous: dict | None = None
+) -> dict:
     return {
         "kind": "questionnaire",
         "questionnaire_id": q.id,
@@ -113,6 +116,8 @@ def _pre_test_step(q: Questionnaire, page: int, page_count: int) -> dict:
         "video_id": None,
         "page": page,
         "page_count": page_count,
+        # What is already stored, when the supervisor steps the run back here.
+        "previous_answers": previous,
     }
 
 
@@ -141,7 +146,11 @@ def _case_video_step(video: Video, defaults: StudyVideoDefaults) -> dict:
 
 
 def _diagnosis_step(
-    video: Video, ratings: Questionnaire | None, defaults: StudyVideoDefaults
+    video: Video,
+    ratings: Questionnaire | None,
+    defaults: StudyVideoDefaults,
+    previous_text: str | None = None,
+    previous_answers: dict | None = None,
 ) -> dict:
     # The rating questions ride along with the write-up: they are one screen and
     # one submission, so a diagnosis can never be stored without its confidence.
@@ -152,10 +161,18 @@ def _diagnosis_step(
         "task_description": task_text(video, defaults),
         "section": ratings.section if ratings else "",
         "questions": ratings.questions if ratings else [],
+        "previous_text": previous_text,
+        "previous_answers": previous_answers,
     }
 
 
-def _case_outro_step(video: Video, phase: PhaseType, outro: Questionnaire | None) -> dict:
+def _case_outro_step(
+    video: Video,
+    phase: PhaseType,
+    outro: Questionnaire | None,
+    texts: StudyTexts,
+    previous: dict | None = None,
+) -> dict:
     return {
         "kind": "case_outro",
         "video_id": video.id,
@@ -167,6 +184,10 @@ def _case_outro_step(video: Video, phase: PhaseType, outro: Questionnaire | None
         "section": outro.section if outro else "",
         "instruction": outro.description if outro else "",
         "questions": outro.questions if outro else [],
+        "previous_answers": previous,
+        # The study's own heading and text, or empty for the app's default.
+        "heading": texts.case_outro_title,
+        "body": texts.case_outro_body,
     }
 
 
@@ -198,6 +219,34 @@ def describe_step(step: Mapping[str, Any], index: int) -> dict[str, Any]:
         {key: step[key] for key in _DESCRIBING_KEYS if step.get(key) not in (None, "")}
     )
     return described
+
+
+async def _answered(
+    db: AsyncSession, participant: Participant
+) -> dict[tuple[int, int | None], dict]:
+    """Every answer this participant has stored, by page and case. A screen the
+    supervisor steps the run back to opens with it, instead of blank."""
+    rows = (
+        await db.execute(
+            select(
+                QuestionnaireResponse.questionnaire_id,
+                QuestionnaireResponse.video_id,
+                QuestionnaireResponse.answers,
+            ).where(QuestionnaireResponse.participant_id == participant.id)
+        )
+    ).all()
+    return {(qid, vid): answers for qid, vid, answers in rows}
+
+
+async def _diagnoses(db: AsyncSession, participant: Participant) -> dict[int, str]:
+    rows = (
+        await db.execute(
+            select(TextEntry.video_id, TextEntry.text)
+            .where(TextEntry.participant_id == participant.id, TextEntry.kind == "diagnosis")
+            .order_by(TextEntry.id)
+        )
+    ).all()
+    return {entry.video_id: entry.text for entry in rows}
 
 
 async def _cases(db: AsyncSession, participant: Participant) -> list[tuple[PhaseType, Video]]:
@@ -286,6 +335,8 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
 
     cases = await _cases(db, participant)
     batch_size = think_aloud_batch_size(participant, study)
+    answered = await _answered(db, participant)
+    written = await _diagnoses(db, participant)
 
     # The welcome and the case intros carry the study's own wording, where the
     # researcher has written any; the screens fall back to their built-in text
@@ -293,7 +344,10 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
     texts = StudyTexts.model_validate((study.texts if study else None) or {})
     defaults = StudyVideoDefaults.model_validate((study.video_defaults if study else None) or {})
     steps: list[dict] = [{"kind": "welcome", "texts": texts.model_dump()}]
-    steps.extend(_pre_test_step(q, i + 1, len(pre_test)) for i, q in enumerate(pre_test))
+    steps.extend(
+        _pre_test_step(q, i + 1, len(pre_test), answered.get((q.id, None)))
+        for i, q in enumerate(pre_test)
+    )
     steps.append(
         _sosci_step("pretest", study.sosci_pretest_url if study else "", id_param, participant.id)
     )
@@ -334,8 +388,24 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
                 }
             )
             steps.append(_case_video_step(video, defaults))
-            steps.append(_diagnosis_step(video, ratings, defaults))
-            steps.append(_case_outro_step(video, phase, outro))
+            steps.append(
+                _diagnosis_step(
+                    video,
+                    ratings,
+                    defaults,
+                    written.get(video.id),
+                    answered.get((ratings.id, video.id)) if ratings else None,
+                )
+            )
+            steps.append(
+                _case_outro_step(
+                    video,
+                    phase,
+                    outro,
+                    texts,
+                    answered.get((outro.id, video.id)) if outro else None,
+                )
+            )
 
         # Then the group's think-alouds, in the order the cases were worked on.
         for position, i in enumerate(group, start=1):
@@ -353,6 +423,8 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
                     # outside the training phase.
                     "batch_position": position,
                     "batch_size": len(group),
+                    "heading": texts.think_aloud_title,
+                    "body": texts.think_aloud_body,
                 }
             )
 

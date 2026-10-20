@@ -17,12 +17,13 @@ from sqlalchemy import and_, case, exists, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
-from starlette.responses import StreamingResponse
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
+from starlette.responses import Response, StreamingResponse
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_admin
-from app.models.enums import PhaseType
+from app.models.enums import PhaseType, QuestionnairePlacement
 from app.models.gaze_calibration import GazeCalibration
 from app.models.gaze_recording import GazeRecording
 from app.models.interaction_log import InteractionLog
@@ -35,6 +36,7 @@ from app.models.text_entry import TextEntry
 from app.models.video import Video
 from app.models.video_set import VideoSet
 from app.schemas.admin import ExportInfo
+from app.services.gaze_export import GAZE_COLUMNS, GazeStorageError, check_storage, csv_batches
 from app.services.log_data import (
     completed_step_label,
     playhead_seconds,
@@ -190,6 +192,23 @@ async def list_exports(
                 collected=in_app_calibration if kind == "calibration" else True,
             )
         )
+    samples = await db.scalar(
+        _only(
+            select(func.sum(GazeRecording.sample_count))
+            .join(Participant, Participant.id == GazeRecording.participant_id)
+            .where(Participant.study_id == study_id),
+            GazeRecording.participant_id,
+            chosen,
+        )
+    )
+    infos.append(
+        ExportInfo(
+            kind="gaze",
+            filename=_filename("gaze", "gaze.csv", chosen),
+            rows=samples or 0,
+            collected=True,
+        )
+    )
     return infos
 
 
@@ -200,17 +219,69 @@ async def export_csv(
     participant_ids: ParticipantIds = None,
     admin: Researcher = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
+) -> Response:
     await _study_or_404(db, study_id)
 
     export = _EXPORTS.get(kind)
-    if export is None:
+    if export is None and kind != "gaze":
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Unknown export: {kind!r}")
 
     chosen = await _chosen_participants(db, study_id, participant_ids)
+    if kind == "gaze":
+        return await _raw_gaze_export(db, study_id, chosen)
+    assert export is not None
     filename, header, build, shape = export
     return _csv_stream(
         db, _filename(kind, filename, chosen), header, build(study_id, chosen), shape
+    )
+
+
+async def _raw_gaze_export(
+    db: AsyncSession, study_id: int, chosen: list[str] | None
+) -> StreamingResponse:
+    stmt = _only(
+        select(GazeRecording)
+        .join(Participant, Participant.id == GazeRecording.participant_id)
+        .where(Participant.study_id == study_id)
+        .order_by(GazeRecording.participant_id, GazeRecording.started_at, GazeRecording.id),
+        GazeRecording.participant_id,
+        chosen,
+    )
+    stmt = _with_case(stmt, GazeRecording.participant_id, GazeRecording.video_id, study_id)
+    # Geometry can be substantial: hold only one recording at a time. Checking
+    # file presence first catches common failures before HTTP headers are sent.
+    result = await db.stream(stmt.execution_options(yield_per=1))
+    try:
+        async for row in result:
+            await run_in_threadpool(check_storage, row[0], get_settings())
+    except GazeStorageError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    finally:
+        await result.close()
+
+    async def rows():
+        header = io.StringIO()
+        csv.writer(header).writerow(GAZE_COLUMNS)
+        yield b"\xef\xbb\xbf" + header.getvalue().encode("utf-8")
+        result = await db.stream(stmt.execution_options(yield_per=1))
+        try:
+            async for row in result:
+                # Errors abort the stream; the browser must never save an
+                # apparently successful CSV with missing or corrupt samples.
+                batches = csv_batches(row[0], get_settings(), _case_cells(row), _defuse)
+                try:
+                    async for chunk in iterate_in_threadpool(batches):
+                        yield chunk
+                finally:
+                    await run_in_threadpool(batches.close)
+        finally:
+            await result.close()
+
+    filename = _filename("gaze", "gaze.csv", chosen)
+    return StreamingResponse(
+        rows(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -373,6 +444,42 @@ def _responses_query(study_id: int, participant_ids: list[str] | None = None):
     )
 
 
+def _sections_query(study_id: int, participant_ids: list[str] | None = None):
+    """The "Fragebögen" block of the participant panel as a file: one row per
+    person and section.
+
+    A section is the instrument a page belongs to; a page with no section is a
+    section of its own, as the panel counts it. Every page of the section this
+    person answered is added up, so a per-case battery answered nine times adds
+    all nine. `pre_test_total_seconds` is the whole pre-test for that person,
+    the figure the researchers asked for first, repeated on each of their rows
+    so a row stands on its own. Rows come in the order the sections were met.
+    """
+    section = func.coalesce(func.nullif(Questionnaire.section, ""), Questionnaire.title)
+    is_pre_test = Questionnaire.placement == QuestionnairePlacement.pre_test
+    seconds = QuestionnaireResponse.time_spent_seconds
+    stmt = (
+        select(
+            QuestionnaireResponse.participant_id,
+            section.label("section"),
+            func.bool_and(is_pre_test).label("pre_test"),
+            func.count().label("pages_answered"),
+            func.sum(seconds).label("time_spent_seconds"),
+            # A window over the grouped rows: the person's pre-test pages, summed
+            # once and written on every row of theirs.
+            func.sum(func.sum(seconds).filter(is_pre_test))
+            .over(partition_by=QuestionnaireResponse.participant_id)
+            .label("pre_test_total_seconds"),
+        )
+        .join(Participant, Participant.id == QuestionnaireResponse.participant_id)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireResponse.questionnaire_id)
+        .where(Participant.study_id == study_id)
+        .group_by(QuestionnaireResponse.participant_id, section)
+        .order_by(QuestionnaireResponse.participant_id, func.min(QuestionnaireResponse.id))
+    )
+    return _only(stmt, QuestionnaireResponse.participant_id, participant_ids)
+
+
 def _events_query(study_id: int, participant_ids: list[str] | None = None):
     stmt = (
         select(
@@ -418,6 +525,10 @@ def _gaze_query(study_id: int, participant_ids: list[str] | None = None):
             GazeRecording.sample_count,
             GazeRecording.started_at,
             GazeRecording.completed_at,
+            GazeRecording.id,
+            GazeRecording.step_kind,
+            GazeRecording.step_index,
+            GazeRecording.questionnaire_id,
         )
         .join(Participant, Participant.id == GazeRecording.participant_id)
         .where(Participant.study_id == study_id)
@@ -531,6 +642,19 @@ _EXPORTS = {
             _iso(r[8]),
         ],
     ),
+    "sections": (
+        "sections.csv",
+        [
+            "participant_id",
+            "section",
+            "pre_test",
+            "pages_answered",
+            "time_spent_seconds",
+            "pre_test_total_seconds",
+        ],
+        _sections_query,
+        lambda r: [r[0], r[1], "true" if r[2] else "false", r[3], r[4], r[5]],
+    ),
     "events": (
         "events.csv",
         [
@@ -564,8 +688,8 @@ _EXPORTS = {
             _iso(r[5]),
         ],
     ),
-    "gaze": (
-        "gaze.csv",
+    "gaze_recordings": (
+        "gaze_recordings.csv",
         [
             "participant_id",
             "video_id",
@@ -574,9 +698,13 @@ _EXPORTS = {
             "sample_count",
             "started_at",
             "completed_at",
+            "recording_id",
+            "step_kind",
+            "step_index",
+            "questionnaire_id",
         ],
         _gaze_query,
-        lambda r: [r[0], r[1], *_case_cells(r), r[2], r[3], _iso(r[4]), _iso(r[5])],
+        lambda r: [r[0], r[1], *_case_cells(r), r[2], r[3], _iso(r[4]), _iso(r[5]), *r[6:10]],
     ),
     "calibration": (
         "calibration.csv",

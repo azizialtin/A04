@@ -271,6 +271,183 @@ CK_DEBUG_DESCRIPTION = (
 )
 
 
+# --- MSK (file "MSK_items.docx", 2026-10-09) --------------------------------
+# A situational judgement test: seven learning situations, each with five or
+# six ways of handling it, every one rated on its own from 1 (very suitable)
+# to 6 (very unsuitable). One page per situation, shown as a table with the
+# scale listed once above it; the general instruction opens the first page.
+# Wording is the instrument's own, typos included — it is not ours to edit.
+# The data dictionary has no MSK sheet yet; the variable names follow its
+# `ck_pre_…` pattern, `msk_pre_<task><letter>`, until the researchers say.
+
+MSK_SECTION = "MSK"
+
+MSK_SCALE: list[tuple[int, str]] = [
+    (1, "sehr geeignete Handlungsmöglichkeit für diese Situation"),
+    (2, "geeignete Handlungsmöglichkeit für diese Situation"),
+    (3, "eher geeignete Handlungsmöglichkeit für diese Situation"),
+    (4, "eher ungeeignete Handlungsmöglichkeit für diese Situation"),
+    (5, "ungeeignete Handlungsmöglichkeit für diese Situation"),
+    (6, "sehr ungeeignete Handlungsmöglichkeit für diese Situation"),
+]
+
+MSK_INSTRUCTION = "\n\n".join(
+    [
+        "Die folgenden Aufgaben beschreiben verschiedene Lernsituationen. Für jede Situation "
+        "werden Ihnen mehrere Handlungsmöglichkeiten vorgestellt, die eine Person in dieser "
+        "Situation anwenden könnte. Nachdem Sie die Beschreibung gelesen und sich mit dieser "
+        "vertraut gemacht haben, bewerten Sie bitte jede dieser Handlungsmöglichkeiten für sich "
+        "alleinstehend danach, wie gut sie für den Umgang mit dieser konkreten Situation "
+        "geeignet ist.",
+        "Bitte beachten Sie bei der Bewertung der Handlungsmöglichkeiten Folgendes:",
+        # The instrument's bullet points; the screen draws a "- " line as one.
+        "- Bewerten Sie jede Handlungsmöglichkeit danach, wie gut sie für das Erreichen des "
+        "Ziels in dieser konkreten Situation geeignet ist, und nicht danach, wie Sie persönlich "
+        "normalerweise in der alltäglichen Praxis handeln würden.\n"
+        "- Jede Handlungsmöglichkeit steht für sich allein. Gehen Sie bei der Bewertung einer "
+        "Handlungsmöglichkeit davon aus, dass diese in keinem Zusammenhang mit einer anderen "
+        "aufgeführten Handlungsmöglichkeit steht, nicht mit ihr kombiniert wird und nicht von "
+        "ihr abhängt.\n"
+        "- Sie können dieselbe Bewertung innerhalb einer Aufgabe mehrmals vergeben. Es ist nicht "
+        "erforderlich, jede Zahl (1–6) nur einmal zu verwenden. Wenn Sie der Meinung sind, dass "  # noqa: RUF001
+        "mehrere Handlungsmöglichkeiten gleichermaßen geeignet sind, können Sie ihnen dieselbe "
+        "Bewertung geben.",
+        "Verwenden Sie für Ihre Bewertungen die folgende Skala:",
+        "\n".join(f"- {value} = {label}" for value, label in MSK_SCALE),
+    ]
+)
+
+MSK_QUESTION = "Wie beurteilen Sie die folgenden Vorgehensweisen?"
+
+# (situation, the ways of handling it in the order the instrument lists them)
+MSK_TASKS: list[tuple[str, list[str]]] = [
+    (
+        "Stellen Sie sich vor, Sie und Ihre Kommilitoninnen und Kommilitonen müssen einzeln an "
+        "Programmieraufgaben arbeiten. Computer stehen dafür zur Verfügung. Die Lösung wird am "
+        "Ende jeder Aufgabe angezeigt. Auch diese Lösung muss verstanden werden.",
+        [
+            "Die Aufgaben gemeinsam mit Kommilitoninnen und Kommilitonen betrachten.",
+            "Die Aufgaben allein lösen und anschließend die Lösungen und Ergebnisse überprüfen.",
+            "Während der Bearbeitung der Aufgaben wichtige Aspekte notieren, die später für die "
+            "Prüfung wichtig sind.",
+            "Die Musterlösungen und Ergebnisse vor der Bearbeitung der Aufgaben lesen.",
+            "Kürzlich besprochene Programmierkonzepte anhand der eigenen Notizen wiederholen, um "
+            "Zusammenhänge zu erkennen, und anschließend die Aufgaben selbstständig bearbeiten.",
+        ],
+    ),
+    (
+        "Stellen Sie sich vor, Sie erhalten die Möglichkeit, sich selbstständig mit einem neuen "
+        "Thema zu beschäftigen und im Unterricht zu präsentieren. Dafür müssen sie selbstständig "
+        "Informationen zum Thema recherchieren. Die Lehrkraft schlägt ihnen dafür verschiedene "
+        "Websites vor.",
+        [
+            "Vor Beginn der Recherche überlegen, welche Informationen für die Präsentation "
+            "benötigt werden.",
+            "Die empfohlenen Websites überfliegen und sortieren, um einen Überblick zu erhalten.",
+            "Alle Informationen gründlich lesen und sich die Begriffe sofort einprägen.",
+            "Die gefundenen Informationen mit dem eigenen Vorwissen vergleichen.",
+            "Gemeinsam mit Kommilitoninnen und Kommilitonen die schriftlichen Notizen aus anderen "
+            "Schulfächern durchgehen.",
+        ],
+    ),
+    (
+        "Stellen Sie sich vor, in zwei Wochen steht eine schwierige Prüfung mit "
+        "Programmieraufgabe an. Zur Vorbereitung erhalten Sie von der Lehrkraft einen Link, über "
+        "den Sie online Programmieraufgaben aus alten Prüfungen bearbeiten können.",
+        [
+            "Alle Prüfungsaufgaben mehrmals durchlesen, ohne sie zu lösen.",
+            "Nach den Lösungen der Aufgaben suchen und diese auswendig lernen.",
+            "Die verschiedenen Aufgabentypen sortieren.",
+            "Während der Bearbeitung der Prüfungsaufgaben immer wieder überprüfen, ob alles "
+            "verstanden wurde.",
+            "Sich mehr Zeit nehmen, wenn die Prüfungsaufgaben schwieriger werden.",
+        ],
+    ),
+    (
+        "Stellen Sie sich vor, Sie belegen einen E-Learning-Kurs, in dem die Inhalte eines "
+        "Seminars in Informatik aufbereitet und mit Hyperlinks verknüpft sind. Sie müssen sich nun "
+        "auf die anstehende Klausur vorbereiten und einige zentrale Konzepte lernen.",
+        [
+            "Der vorgegebenen Gliederung möglichst genau folgen.",
+            "Sich die Lernziele zunächst bewusst machen – auch wenn dies etwas Zeit in Anspruch "  # noqa: RUF001
+            "nimmt – und sich dann nur auf die zentralen Inhalte konzentrieren.",  # noqa: RUF001
+            "Die wichtigsten Konzepte für jeden Abschnitt aufschreiben und prüfen, ob alles "
+            "verstanden wurde.",
+            "Zuerst alle Überschriften der Abschnitte durchlesen, bevor man die Lektion gründlich "
+            "bearbeitet.",
+            "Gleich dem Hyperlink zum Glossar folgen, wenn ein Begriff nicht verstanden wird.",
+            "Möglichst alle Inhalte und Beispiele während der Bearbeitung der Lektion notieren.",
+        ],
+    ),
+    (
+        "Stellen Sie sich vor, Sie sollen eine Präsentation zu einem Thema halten. Dazu "
+        "recherchieren Sie im Internet.",
+        [
+            "Die Aufgabe strukturieren und Teilziele formulieren.",
+            "Nach Seiten suchen, die einen Überblick über das Thema geben.",
+            "Allen empfohlenen Links folgen und sich umfassend informieren.",
+            "Zusammengehörige Informationen gruppieren und sie in Beziehung setzen.",
+            "Versuchen, sich an Informationen zu erinnern, denen Sie beim Durchklicken begegnet "
+            "sind.",
+            "Zuerst einen sehr genauen Überblick darüber verschaffen, wie die einzelnen Inhalte "
+            "miteinander verknüpft sind.",
+        ],
+    ),
+    (
+        "Stellen Sie sich vor, Sie sollen eine Präsentation zu einer Modellierungsart "
+        "vorbereiten. Ihr Kursleiter gibt Ihnen als Quelle eine Lernsoftware, welche nicht "
+        "linear, sondern individuell durchgearbeitet werden kann.",
+        [
+            "Sich auf die Texte der Lernsoftware konzentrieren, die besonders gut verständlich "
+            "sind.",
+            "Die Texte, die Sie für besonders relevant halten, genau durchlesen und sich "
+            "stichpunktartig die wichtigsten Aussagen aufschreiben.",
+            "Die Gliederung nach bereits bekannten Inhalten absuchen und anschließend dort "
+            "aufgeführte Texte lesen, um sich an das gesuchte Modell heranzuarbeiten.",
+            "Die Texte ausdrucken und genau durchlesen.",
+            "Sich einen Überblick über die Struktur der Lernsoftware verschaffen und die Texte "
+            "aufarbeiten, welche Sie für relevant erachten.",
+            "Sich einige markante Seiten, die mit vielen anderen Inhalten verknüpft sind, "
+            "einprägen, um sich schnell orientieren zu können.",
+        ],
+    ),
+    (
+        "Stellen Sie sich vor, Sie sollen an einer Programmieraufgabe arbeiten und stoßen auf "
+        "ein Problem. Sie entscheiden sich, im Internet, z. B. bei Stack Overflow oder GitHub, "
+        "nach Lösungen zu suchen.",
+        [
+            "Nach relevanten Seiten suchen und diese nach ihrer Vertrauenswürdigkeit bewerten.",
+            "Möglichst viele Informationen sammeln und diese überfliegen.",
+            "Den Informationen folgen, die auf den Seiten besonders ins Auge fallen.",
+            "Sich auf Inhalte konzentrieren, für die Sie sich besonders interessieren.",
+            "Sich zunächst grob mit dem Thema vertraut machen und dann Details erarbeiten.",
+            "Den Inhalt mit einigen Schlüsselwörtern beschreiben und gezielt nach diesen suchen.",
+        ],
+    ),
+]
+
+
+def msk_questions(number: int, options: list[str]) -> list[Question]:
+    """One situation's ratings: a row per way of handling it, all sharing the
+    scale, so the page shows one table. Variable names are `msk_pre_<task><letter>`,
+    the letters as the instrument labels them."""
+    return [
+        {
+            "id": f"msk_pre_{number}{'abcdef'[i]}",
+            "type": "multiple_choice",
+            "text": text,
+            "options": [{"value": value, "label": label} for value, label in MSK_SCALE],
+            "matrix": f"msk_pre_{number}",
+        }
+        for i, text in enumerate(options)
+    ]
+
+
+def msk_description(number: int, scenario: str) -> str:
+    lead = f"{scenario}\n\n{MSK_QUESTION}"
+    return f"{MSK_INSTRUCTION}\n\n{lead}" if number == 1 else lead
+
+
 # --- Written diagnosis (sheet "Final Diagnosis on Written Diag") ----------
 # The free text itself is the diagnosis screen's own field; this is what sits
 # under it.
@@ -384,6 +561,17 @@ DEFAULT_BATTERIES: list[Battery] = [
         CK_DEBUG_DESCRIPTION,
         CK_DEBUG_PRE_TEST,
         section="CK-Pretest",
+    ),
+    *(
+        Battery(
+            QuestionnairePlacement.pre_test,
+            3 + number,
+            f"MSK: Aufgabe {number}",
+            msk_description(number, scenario),
+            msk_questions(number, options),
+            section=MSK_SECTION,
+        )
+        for number, (scenario, options) in enumerate(MSK_TASKS, start=1)
     ),
     Battery(
         QuestionnairePlacement.diagnosis,

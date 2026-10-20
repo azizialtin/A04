@@ -131,6 +131,51 @@ async def update_progress(
     )
 
 
+@router.post("/session/step-back", response_model=ProgressResult)
+async def step_back(
+    background_tasks: BackgroundTasks,
+    participant: Participant = Depends(get_current_participant),
+    db: AsyncSession = Depends(get_db),
+) -> ProgressResult:
+    """One screen back, for the person supervising the run.
+
+    The script is forward-only for the participant; this is the exception the
+    researchers asked for, behind a key combination and a confirmation on the
+    screen. The pointer moves one step and nothing is deleted: a page answered
+    again overwrites its answers, a case played again records again. The move
+    is logged so the data shows where a run doubled back.
+    """
+    session = await db.scalar(select(Session).where(Session.participant_id == participant.id))
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No active run.")
+    was_at = session.current_step_index
+    if was_at <= 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Already at the first step.")
+
+    raw = await build_steps(db, participant)
+    # A pointer past the end — a finished run — comes back onto the last screen.
+    target = min(was_at, len(raw)) - 1
+    session.current_step_index = target
+    await db.commit()
+    background_tasks.add_task(
+        log_event,
+        participant_id=participant.id,
+        event_type="admin_step_back",
+        payload={
+            "current_step_index": target,
+            "total_steps": len(raw),
+            "left_step": describe_step(raw[was_at], was_at) if was_at < len(raw) else None,
+            "current_step": describe_step(raw[target], target),
+        },
+    )
+    return ProgressResult(
+        status=participant.status.value,
+        current_step_index=target,
+        total_steps=len(raw),
+        complete=False,
+    )
+
+
 def _progress_payload(steps: list[dict], was_at: int, now_at: int, complete: bool) -> dict:
     """What one advance through the script records.
 
@@ -385,7 +430,8 @@ async def respond_questionnaire(
         participant,
         body.video_id,
         body.answers,
-        replace=False,
+        # The latest answer is the answer: the supervisor can step a run back onto a page.
+        replace=True,
         time_spent_seconds=body.time_spent_seconds,
     )
     try:

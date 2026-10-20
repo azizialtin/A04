@@ -59,6 +59,34 @@ test('says how many rows each export holds', async () => {
   await waitFor(() => expect(within(rowFor('notes')).getByText('12')).toBeInTheDocument())
 })
 
+test('offers the per-section times as a file of their own', async () => {
+  view()
+  const row = await waitFor(() => rowFor('sections'))
+  expect(within(row).getByText(/Zeit je Abschnitt und Person/)).toBeInTheDocument()
+
+  fireEvent.click(within(row).getByRole('button', { name: 'Herunterladen' }))
+  expect(downloadExport).toHaveBeenCalledWith(9, 'sections', undefined)
+  await waitFor(() => expect(within(row).getByRole('button')).toBeEnabled())
+})
+
+test('offers actual gaze samples separately from recording metadata', async () => {
+  view()
+  await waitFor(() => expect(rowFor('gaze')).toBeInTheDocument())
+  expect(within(rowFor('gaze')).getByText(/Jede rohe Blickprobe/)).toBeInTheDocument()
+  expect(within(rowFor('gaze_recordings')).getByText(/Je Aufzeichnung/)).toBeInTheDocument()
+  fireEvent.click(within(rowFor('gaze')).getByRole('button', { name: 'Herunterladen' }))
+  expect(downloadExport).toHaveBeenCalledWith(9, 'gaze', undefined)
+  await waitFor(() => expect(within(rowFor('gaze')).getByRole('button')).toBeEnabled())
+})
+
+test('shows a failed gaze download instead of silently saving an incomplete file', async () => {
+  downloadExport.mockRejectedValueOnce(new Error('storage unavailable'))
+  view()
+  await waitFor(() => expect(rowFor('gaze')).toBeInTheDocument())
+  fireEvent.click(within(rowFor('gaze')).getByRole('button', { name: 'Herunterladen' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Download fehlgeschlagen')
+})
+
 test('explains the empty calibration file rather than leaving it a mystery', async () => {
   view()
 
@@ -77,6 +105,7 @@ test('downloads the file that was asked for', async () => {
   fireEvent.click(within(rowFor('events')).getByRole('button', { name: 'Herunterladen' }))
   // Everyone is chosen, so no filter travels with the request.
   expect(downloadExport).toHaveBeenCalledWith(9, 'events', undefined)
+  await waitFor(() => expect(within(rowFor('events')).getByRole('button')).toBeEnabled())
 })
 
 const checkbox = (id: string) => screen.getByLabelText(id) as HTMLInputElement
@@ -95,6 +124,7 @@ test('starts with everyone chosen and narrows the counts and the download togeth
 
   fireEvent.click(within(rowFor('notes')).getByRole('button', { name: 'Herunterladen' }))
   expect(downloadExport).toHaveBeenCalledWith(9, 'notes', ['TN-003'])
+  await waitFor(() => expect(within(rowFor('notes')).getByRole('button')).toBeEnabled())
 })
 
 test('a preselected participant arrives as the only one chosen', async () => {

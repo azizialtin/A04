@@ -4,7 +4,7 @@
 
 export interface GazeGeometry {
   ts: number
-  screen: { w: number; h: number }
+  screen: { w: number; h: number; is_extended?: boolean }
   window: {
     x: number
     y: number
@@ -16,6 +16,24 @@ export interface GazeGeometry {
   video: { x: number; y: number; w: number; h: number }
   frame: { w: number; h: number }
   dpr: number
+  visual_viewport?: { scale: number; x: number; y: number; w: number; h: number }
+}
+
+export interface GazeAoi {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  priority: number
+}
+
+export type GazeLayout = Omit<GazeGeometry, 'video' | 'frame'> & {
+  video?: GazeGeometry['video']
+  frame?: GazeGeometry['frame']
+  aois?: GazeAoi[]
+  active_modal?: string | null
+  visible?: boolean
 }
 
 /**
@@ -46,7 +64,7 @@ export function captureGeometry(el: HTMLVideoElement | null): GazeGeometry | nul
 }
 
 /** Same layout, ignoring when it was measured. */
-export function sameLayout(a: GazeGeometry | null, b: GazeGeometry | null): boolean {
+export function sameLayout(a: GazeLayout | null, b: GazeLayout | null): boolean {
   if (!a || !b) return false
   return JSON.stringify({ ...a, ts: 0 }) === JSON.stringify({ ...b, ts: 0 })
 }

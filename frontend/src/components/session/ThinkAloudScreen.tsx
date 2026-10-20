@@ -8,6 +8,7 @@ import { frameToElement } from '../../lib/gazeGeometry'
 import { settleDuration } from '../../lib/media'
 import { gazeAt, notesOnClip, notesOnRecording, textAt } from '../../lib/replay'
 import { uploadSettled } from '../../lib/screenCapture'
+import StudyText from '../StudyText'
 
 /** Which case this recording is of, and where it sits in a block of them. */
 export interface ThinkAloudPosition {
@@ -21,6 +22,9 @@ export interface ThinkAloudPosition {
 interface Props {
   videoId: number
   position?: ThinkAloudPosition
+  /** The study's own heading and text, when it wrote any. */
+  heading?: string
+  body?: string
   onComplete: () => void
 }
 
@@ -42,7 +46,7 @@ const UPLOAD_WAIT_MS = 60_000
  * three recordings of cases worked through a while ago. It therefore says
  * which case is playing rather than leaving the participant to recognise it.
  */
-export default function ThinkAloudScreen({ videoId, position, onComplete }: Props) {
+export default function ThinkAloudScreen({ videoId, position, heading, body, onComplete }: Props) {
   const { t } = useTranslation()
   // A capture the page recorded itself may still be on its way up; asking for
   // the replay before it lands would get the clip instead.
@@ -96,13 +100,18 @@ export default function ThinkAloudScreen({ videoId, position, onComplete }: Prop
         ) : null}
         <h2>
           {batched
-            ? t('think_aloud.title_numbered', {
+            ? t('think_aloud.numbered', {
+                title: heading || t('think_aloud.title'),
                 current: position?.batchPosition,
                 total: position?.batchSize,
               })
-            : t('think_aloud.title')}
+            : heading || t('think_aloud.title')}
         </h2>
-        <p className="muted">{t('think_aloud.hint')}</p>
+        {body ? (
+          <StudyText text={body} className="muted" />
+        ) : (
+          <p className="muted">{t('think_aloud.hint')}</p>
+        )}
         {/* Said once, at the top of a block: several recordings in a row is
             not what the earlier cases led them to expect. */}
         {batched && position?.batchPosition === 1 ? (

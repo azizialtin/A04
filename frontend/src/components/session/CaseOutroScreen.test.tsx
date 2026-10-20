@@ -36,3 +36,18 @@ test('a study with no outro battery still gets a way onwards', () => {
   fireEvent.click(screen.getByRole('button'))
   expect(onSubmit).toHaveBeenCalledWith({}, expect.any(Number))
 })
+
+test('a study can rename the closing screen and rewrite its text', () => {
+  render(
+    <CaseOutroScreen
+      instruction=""
+      questions={[]}
+      heading="Geschafft"
+      body={'Kurz durchatmen.\n\nGleich geht es weiter.'}
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(screen.getByRole('heading', { name: 'Geschafft' })).toBeInTheDocument()
+  expect(screen.getByText('Gleich geht es weiter.')).toBeInTheDocument()
+  expect(screen.queryByText('Fall abgeschlossen')).toBeNull()
+})

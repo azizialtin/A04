@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_admin
 from app.models.gaze_recording import GazeRecording
 from app.models.participant import Participant
+from app.models.questionnaire import Questionnaire
 from app.models.researcher import Researcher
 from app.models.screen_recording import ScreenRecording
 from app.models.video import Video
@@ -35,8 +36,9 @@ async def list_gaze_recordings(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, list[dict]]:
     q = (
-        select(GazeRecording, Video.title)
-        .join(Video, Video.id == GazeRecording.video_id)
+        select(GazeRecording, Video.title, Questionnaire.title)
+        .outerjoin(Video, Video.id == GazeRecording.video_id)
+        .outerjoin(Questionnaire, Questionnaire.id == GazeRecording.questionnaire_id)
         .join(Participant, Participant.id == GazeRecording.participant_id)
         .order_by(GazeRecording.started_at.desc())
         .limit(limit)
@@ -46,7 +48,12 @@ async def list_gaze_recordings(
     if participant_id:
         q = q.where(func.lower(GazeRecording.participant_id) == participant_id.strip().lower())
     rows = (await db.execute(q)).all()
-    screens = await _screens_for(db, [(r.participant_id, r.video_id) for r, _ in rows])
+    case_keys = [
+        (r.participant_id, r.video_id)
+        for r, _, _ in rows
+        if r.step_kind == "case_video" and r.video_id is not None
+    ]
+    screens = await _screens_for(db, case_keys)
     items = [
         {
             # What to ask for the replay: the gaze recording where there is
@@ -54,22 +61,25 @@ async def list_gaze_recordings(
             "replay": {"kind": "gaze", "id": r.id},
             "participant_id": r.participant_id,
             "video_id": r.video_id,
-            "video_title": title,
+            "video_title": title or "",
+            "step_kind": r.step_kind,
+            "step_index": r.step_index,
+            "questionnaire_id": r.questionnaire_id,
+            "questionnaire_title": questionnaire_title,
+            "replay_available": r.step_kind == "case_video",
             "sample_count": r.sample_count,
             "sampling_rate_hz": r.sampling_rate_hz,
             "started_at": r.started_at.isoformat(),
             "completed_at": r.completed_at.isoformat() if r.completed_at else None,
             # Whether the replay for this case has a screen capture behind
             # it, so a failed one is visible rather than just quietly absent.
-            "screen": screens.get((r.participant_id, r.video_id)),
+            "screen": screens.get((r.participant_id, r.video_id))
+            if r.step_kind == "case_video"
+            else None,
         }
-        for r, title in rows
+        for r, title, questionnaire_title in rows
     ]
-    items.extend(
-        await _screen_only_rows(
-            db, study_id, participant_id, {(r.participant_id, r.video_id) for r, _ in rows}, limit
-        )
-    )
+    items.extend(await _screen_only_rows(db, study_id, participant_id, set(case_keys), limit))
     items.sort(key=lambda row: row["started_at"], reverse=True)
     return {"items": items[:limit]}
 
@@ -231,6 +241,10 @@ async def admin_gaze_replay(
     rec = await db.get(GazeRecording, recording_id)
     if rec is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found.")
+    if rec.step_kind != "case_video" or rec.video_id is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "This screen has gaze data but no case replay."
+        )
     video = await db.get(Video, rec.video_id)
     settings = get_settings()
 

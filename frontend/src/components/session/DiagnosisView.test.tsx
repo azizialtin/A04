@@ -5,6 +5,23 @@ import DiagnosisView from './DiagnosisView'
 
 afterEach(() => window.localStorage.clear())
 
+test('question snippets continue the code in the diagnosis task', () => {
+  const { container } = render(
+    <DiagnosisView
+      taskDescription={'```java\nint a;\nint b;\n```'}
+      draftKey="code-numbering"
+      notes={[]}
+      questions={[{ id: 'reason', type: 'free_text', text: 'Warum?', code: ['int c;'] }]}
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(
+    Array.from(container.querySelectorAll('.code__line')).map((line) =>
+      line.getAttribute('data-line'),
+    ),
+  ).toEqual(['1', '2', '3'])
+})
+
 test('shows the last note and gates submit on the diagnosis text', () => {
   const onSubmit = vi.fn()
   render(
@@ -86,4 +103,34 @@ test('the confidence rating is part of the diagnosis, not a separate page', () =
 
   fireEvent.click(submit)
   expect(onSubmit).toHaveBeenCalledWith('off by one', expect.any(Number), { confidence: 4 })
+})
+
+test('a stored diagnosis fills an empty screen, but a draft in progress wins', () => {
+  const { unmount } = render(
+    <DiagnosisView
+      taskDescription=""
+      notes={[]}
+      draftKey="test.3"
+      initialText="Erster Versuch"
+      initialAnswers={{ confidence: 4 }}
+      questions={[{ id: 'confidence', type: 'number', text: 'Wie sicher?' }]}
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(screen.getByRole('textbox')).toHaveValue('Erster Versuch')
+  expect(screen.getByRole('spinbutton')).toHaveValue(4)
+  // Typing updates the draft; a later visit opens with the draft, not the store.
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Zweiter Anlauf' } })
+  unmount()
+
+  render(
+    <DiagnosisView
+      taskDescription=""
+      notes={[]}
+      draftKey="test.3"
+      initialText="Erster Versuch"
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(screen.getByRole('textbox')).toHaveValue('Zweiter Anlauf')
 })

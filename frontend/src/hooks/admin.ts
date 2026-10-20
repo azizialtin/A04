@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   adminApi,
   type ReplayRef,
+  type ResearcherCreate,
   type SequenceItemInput,
   type Study,
   type VideoUploadInput,
@@ -252,4 +253,34 @@ export function useParticipantStats(id: string | null) {
 
 export function useAudit() {
   return useQuery({ queryKey: ['audit'], queryFn: adminApi.listAudit })
+}
+
+export function useResearchers() {
+  return useQuery({ queryKey: ['researchers'], queryFn: adminApi.listResearchers })
+}
+
+export function useCreateResearcher() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ResearcherCreate) => adminApi.createResearcher(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['researchers'] }),
+  })
+}
+
+export function useResetResearcherPassword() {
+  return useMutation({
+    mutationFn: ({ id, password }: { id: number; password: string }) =>
+      adminApi.resetResearcherPassword(id, password),
+  })
+}
+
+export function useRevokeResearcherSessions() {
+  return useMutation({ mutationFn: (id: number) => adminApi.revokeResearcherSessions(id) })
+}
+
+export function useChangeMyPassword() {
+  return useMutation({
+    mutationFn: ({ current, next }: { current: string; next: string }) =>
+      adminApi.changeMyPassword(current, next),
+  })
 }

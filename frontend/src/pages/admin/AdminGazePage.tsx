@@ -36,7 +36,7 @@ export default function AdminGazePage() {
           <thead>
             <tr>
               <th>Teilnehmer</th>
-              <th>Video</th>
+              <th>Bildschirm / Video</th>
               <th>Samples</th>
               <th>Hz</th>
               <th>Bildschirm</th>
@@ -56,7 +56,18 @@ export default function AdminGazePage() {
                     {r.participant_id}
                   </button>
                 </td>
-                <td>{r.video_title}</td>
+                <td>
+                  {r.questionnaire_title || r.video_title || 'Fragebogen'}
+                  {r.step_kind && r.step_kind !== 'case_video' && (
+                    <div className="muted small">
+                      {r.step_kind === 'diagnosis'
+                        ? 'Diagnose'
+                        : r.step_kind === 'case_outro'
+                          ? 'Nach dem Fall'
+                          : 'Fragebogen'}
+                    </div>
+                  )}
+                </td>
                 <td>{r.replay.kind === 'gaze' ? r.sample_count : '—'}</td>
                 <td>{r.sampling_rate_hz || '—'}</td>
                 <td title={r.screen?.error ?? undefined}>{screenLabel(r.screen)}</td>
@@ -66,7 +77,10 @@ export default function AdminGazePage() {
                     type="button"
                     className="btn btn-secondary btn-sm"
                     // A stored capture is worth watching even with no gaze on it.
-                    disabled={r.sample_count === 0 && r.screen?.status !== 'stored'}
+                    disabled={
+                      r.replay_available === false ||
+                      (r.sample_count === 0 && r.screen?.status !== 'stored')
+                    }
                     onClick={() => setSelected(r.replay)}
                   >
                     Replay

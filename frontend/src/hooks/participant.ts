@@ -33,6 +33,14 @@ export function useUpdateProgress() {
   })
 }
 
+export function useStepBack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => participantApi.stepBack(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
+  })
+}
+
 // Both writes below are idempotent server-side — one response and one
 // diagnosis per case — so a retry cannot duplicate a row, and a blip during
 // submit does not put the participant's answer at risk.

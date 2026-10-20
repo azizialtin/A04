@@ -99,6 +99,10 @@ async def test_the_welcome_wording_can_be_written_per_study(
         "welcome_note": "",
         "case_intro_title": "",
         "case_intro_body": "",
+        "case_outro_title": "",
+        "case_outro_body": "",
+        "think_aloud_title": "",
+        "think_aloud_body": "",
     }
 
     # And the participant's script opens with exactly that wording.
@@ -110,6 +114,36 @@ async def test_the_welcome_wording_can_be_written_per_study(
     assert welcome["kind"] == "welcome"
     assert welcome["texts"]["welcome_title"] == "Herzlich willkommen"
     assert welcome["texts"]["welcome_steps"] == ["Fragen", "Neun Fälle"]
+
+
+async def test_the_outro_and_think_aloud_wording_reach_their_screens(
+    client, study, videos, seed_participant, admin_headers
+):
+    r = await client.patch(
+        f"/admin/studies/{study.id}",
+        json={
+            "texts": {
+                "case_outro_title": "Geschafft",
+                "case_outro_body": "Kurz noch zwei Fragen.",
+                "think_aloud_title": "Erzählen Sie",
+                "think_aloud_body": "Was haben Sie gesehen?\n\nUnd warum?",
+            }
+        },
+        headers=admin_headers,
+    )
+    assert r.status_code == 200, r.text
+    login = await client.post(
+        "/auth/participant/login", json={"participant_id": seed_participant.id}
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    steps = (await client.get("/participant/session", headers=headers)).json()["steps"]
+    outros = [s for s in steps if s["kind"] == "case_outro"]
+    narrations = [s for s in steps if s["kind"] == "think_aloud"]
+    assert outros and narrations
+    assert {(s["heading"], s["body"]) for s in outros} == {("Geschafft", "Kurz noch zwei Fragen.")}
+    assert {(s["heading"], s["body"]) for s in narrations} == {
+        ("Erzählen Sie", "Was haben Sie gesehen?\n\nUnd warum?")
+    }
 
 
 async def test_the_case_intro_wording_reaches_every_case(
@@ -271,6 +305,10 @@ async def test_a_study_without_its_own_wording_says_so(client, study, admin_head
         "welcome_note": "",
         "case_intro_title": "",
         "case_intro_body": "",
+        "case_outro_title": "",
+        "case_outro_body": "",
+        "think_aloud_title": "",
+        "think_aloud_body": "",
     }
     assert r.json()["video_defaults"] == {
         "time_limit_seconds": None,

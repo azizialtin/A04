@@ -59,6 +59,15 @@ test('code lines come from a list or from a string, trimmed of blank edges', () 
   expect(codeLines('\nint a;\r\n  int b;\n')).toEqual(['int a;', '  int b;'])
 })
 
+test('a multiline array entry still gives each physical code line its own number', () => {
+  expect(codeLines(['int a;\r\nint b;', '', 'return a + b;'])).toEqual([
+    'int a;',
+    'int b;',
+    '',
+    'return a + b;',
+  ])
+})
+
 test('a code value of the wrong type, as hand-typed JSON can produce, does not throw', () => {
   expect(codeLines(42 as unknown as string)).toEqual(['42'])
   expect(codeLines(null as unknown as string)).toEqual([])

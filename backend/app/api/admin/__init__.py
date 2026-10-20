@@ -14,6 +14,7 @@ from . import (
     gaze,
     participants,
     questionnaires,
+    researchers,
     stats,
     studies,
     video_sets,
@@ -32,5 +33,6 @@ for module in (
     gaze,
     stats,
     audit,
+    researchers,
 ):
     router.include_router(module.router)

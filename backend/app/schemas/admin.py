@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, Field
@@ -20,6 +21,11 @@ class StudyTexts(BaseModel):
     welcome_note: str = Field(default="", max_length=1000)
     case_intro_title: str = Field(default="", max_length=200)
     case_intro_body: str = Field(default="", max_length=4000)
+    # The screen that closes a case, and the think-aloud: heading and text.
+    case_outro_title: str = Field(default="", max_length=200)
+    case_outro_body: str = Field(default="", max_length=4000)
+    think_aloud_title: str = Field(default="", max_length=200)
+    think_aloud_body: str = Field(default="", max_length=4000)
 
 
 class StudyVideoDefaults(BaseModel):
@@ -216,3 +222,26 @@ class ExportInfo(BaseModel):
     # in-app eye-tracker calibration is off, so only runs recorded before it was
     # switched off have calibration rows.
     collected: bool
+
+
+class ResearcherOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    created_at: datetime | None
+
+
+class ResearcherCreate(BaseModel):
+    email: str = Field(max_length=255)
+    name: str = Field(default="", max_length=255)
+    # The length rule lives in the service, with the CLI; this only bounds the body.
+    password: str = Field(max_length=200)
+
+
+class PasswordSet(BaseModel):
+    password: str = Field(max_length=200)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(max_length=200)

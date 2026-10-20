@@ -111,7 +111,7 @@
     "next": "Continue",
     "saving": "Saving the screen recording…",
     "browser_capture": "recorded by the browser",
-    "title_numbered": "Think-aloud {{current}} of {{total}}",
+    "numbered": "{{title}} {{current}} of {{total}}",
     "batch_hint": "You will now go through the recordings of the last {{total}} cases, one after another."
   },
   "questionnaire": {
@@ -119,7 +119,12 @@
     "unanswered": "Not answered yet",
     "legend": "Answer options",
     "still_open": "{{count}} of {{total}} questions still open",
-    "unsupported": "Question type “{{type}}” is not supported — please tell the study manager."
+    "unsupported": "Question type “{{type}}” is not supported — please tell the study manager.",
+    "line_number": "Line number {{index}}",
+    "add_line": "+ This error also involves another line",
+    "remove_line": "Remove line number {{index}}",
+    "line_numbers_invalid": "Enter a whole number of at least {{min}} for every line.",
+    "line_numbers_range": "Enter a whole number between {{min}} and {{max}} for every line."
   },
   "thanks": {
     "title": "Thank you!",
@@ -139,5 +144,26 @@
     },
     "unsent": "{{count}} entry not saved yet — retrying.",
     "unsent_plural": "{{count}} entries not saved yet — retrying."
+  },
+  "step_back": {
+    "title": "One step back (study supervisor)",
+    "body": "From “{{from}}” back to “{{to}}”.",
+    "note": "Stored answers are kept and overwritten when submitted again; a video is recorded again.",
+    "at_start": "This is the first step — there is nothing before it.",
+    "confirm": "Go back",
+    "cancel": "Cancel",
+    "kinds": {
+      "welcome": "Welcome",
+      "questionnaire": "Questionnaire",
+      "sosci": "SoSci survey",
+      "calibration": "Calibration",
+      "phase_transition": "Phase transition",
+      "case_intro": "New case",
+      "case_video": "Video",
+      "diagnosis": "Diagnosis",
+      "case_outro": "Case completed",
+      "think_aloud": "Think-aloud",
+      "thanks": "End"
+    }
   }
 }

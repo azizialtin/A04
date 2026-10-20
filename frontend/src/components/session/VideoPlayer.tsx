@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 
 import apiClient from '../../api/client'
 import { participantApi } from '../../api/participant'
-import { useGazeCapture } from '../../hooks/useGazeCapture'
 import { useScreenRecording } from '../../hooks/useScreenRecording'
 import { enqueue } from '../../lib/outbox'
 
@@ -41,11 +40,7 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   const [playing, setPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
 
-  // Stream eye tracking for as long as the clip is on screen (no-op without the
-  // lab bridge). It reads the element to record where the clip sits on screen.
-  useGazeCapture(videoId, videoRef)
-  // And record the screen for the same stretch, which is what the think-aloud
-  // plays back. Also a no-op without the bridge.
+  // The case's display capture is the background for its think-aloud replay.
   useScreenRecording(videoId)
 
   const started = useRef(false)
@@ -157,6 +152,8 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
     <div className="case-video">
       <video
         ref={videoRef}
+        data-gaze-video
+        data-aoi="video"
         src={url}
         className="case-video__el"
         // No `controls`: the two below are the whole surface.
@@ -184,10 +181,12 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
         aria-label={t('case.video_label')}
       />
 
-      <div className="case-video__controls">
+      <div className="case-video__controls" data-aoi="video_controls">
         <button
           type="button"
           className="case-video__play"
+          data-aoi="video_play_pause"
+          data-aoi-priority="1"
           onClick={toggle}
           aria-label={t(playing ? 'case.pause' : 'case.play')}
           title={t(playing ? 'case.pause' : 'case.play')}
@@ -204,6 +203,8 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
           ref={scrubRef}
           type="range"
           className="case-video__scrub"
+          data-aoi="video_seek"
+          data-aoi-priority="1"
           min={0}
           max={duration || 0}
           step="any"

@@ -8,6 +8,7 @@ import { enqueue } from '../lib/outbox'
 import SessionPage from './SessionPage'
 
 const respond = vi.fn().mockResolvedValue({})
+const stepBack = vi.fn()
 let currentStepIndex = 0
 let me: { id: string; study_name: string; status: string } | undefined
 
@@ -64,6 +65,17 @@ const STEPS: SessionStep[] = [
     instruction: '',
     questions: [],
   },
+  {
+    index: 4,
+    completed: false,
+    kind: 'case_video',
+    video_id: 7,
+    title: 'Fall 1',
+    task_description: '',
+    info_text: '',
+    student_task_text: '',
+    time_limit_seconds: null,
+  },
 ]
 
 vi.mock('../hooks/participant', () => ({
@@ -78,9 +90,15 @@ vi.mock('../hooks/participant', () => ({
   }),
   useUpdateProgress: () => ({ mutate: (index: number) => (currentStepIndex = index) }),
   useRespondQuestionnaire: () => ({ mutateAsync: respond, isPending: false }),
+  useStepBack: () => ({ mutate: stepBack, isPending: false }),
 }))
 
 vi.mock('../hooks/useOutbox', () => ({ useOutbox: () => 0 }))
+// The case screen brings the player, the tracker and the recorder with it;
+// here it only has to be the screen the bar is drawn over.
+vi.mock('../components/session/CaseVideoScreen', () => ({
+  default: () => <div>Fallvideo</div>,
+}))
 vi.mock('../lib/outbox', () => ({ enqueue: vi.fn() }))
 const logged = vi.mocked(enqueue)
 
@@ -88,6 +106,7 @@ beforeEach(() => {
   currentStepIndex = 0
   me = { id: 'T-1', study_name: 'S', status: 'active' }
   respond.mockClear()
+  stepBack.mockClear()
   logged.mockClear()
 })
 
@@ -189,4 +208,61 @@ test('a closing screen with no questions on it logs no page events', () => {
   currentStepIndex = 3
   view()
   expect(logged).not.toHaveBeenCalled()
+})
+
+const chord = { code: 'KeyB', ctrlKey: true, altKey: true, shiftKey: true }
+
+test('the supervisor chord asks first, naming both screens, then steps back', () => {
+  currentStepIndex = 1
+  view()
+  expect(screen.queryByRole('dialog')).toBeNull()
+
+  fireEvent.keyDown(window, chord)
+  const dialog = screen.getByRole('dialog')
+  expect(dialog).toHaveTextContent('Von „Fragebogen – Fachwissen Programmierung“')
+  expect(dialog).toHaveTextContent('zurück zu „Fragebogen – Angaben zur Person“')
+  expect(stepBack).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+  expect(stepBack).toHaveBeenCalledTimes(1)
+})
+
+test('cancelling, a lesser chord, and the first screen all leave the run alone', () => {
+  view()
+  fireEvent.keyDown(window, { code: 'KeyB', ctrlKey: true, shiftKey: true })
+  expect(screen.queryByRole('dialog')).toBeNull()
+
+  fireEvent.keyDown(window, chord)
+  expect(screen.getByText('Dies ist der erste Schritt – davor gibt es nichts.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Zurück' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(stepBack).not.toHaveBeenCalled()
+})
+
+test('a page the run was stepped back onto opens with its stored answers', () => {
+  currentStepIndex = 0
+  STEPS[0] = { ...STEPS[0], previous_answers: { age: 30 } } as SessionStep
+  try {
+    view()
+    expect((screen.getByRole('spinbutton') as HTMLInputElement).value).toBe('30')
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+  } finally {
+    STEPS[0] = { ...STEPS[0], previous_answers: undefined } as SessionStep
+  }
+})
+
+test('the case screen keeps the progress bar, laid over its top edge', () => {
+  currentStepIndex = 4
+  const { container } = view()
+  expect(screen.getByText('Fallvideo')).toBeInTheDocument()
+  const bar = container.querySelector('.shell__progress--overlay > div') as HTMLElement
+  expect(bar).not.toBeNull()
+  expect(bar.style.width).toBe('80%')
+})
+
+test('a questionnaire page has the bar in its header, not laid over it', () => {
+  const { container } = view()
+  expect(container.querySelector('.shell__progress')).not.toBeNull()
+  expect(container.querySelector('.shell__progress--overlay')).toBeNull()
 })

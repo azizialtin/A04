@@ -111,7 +111,7 @@
     "next": "Weiter",
     "saving": "Die Bildschirmaufzeichnung wird gespeichert…",
     "browser_capture": "vom Browser aufgezeichnet",
-    "title_numbered": "Lautes Denken {{current}} von {{total}}",
+    "numbered": "{{title}} {{current}} von {{total}}",
     "batch_hint": "Sie sehen nun nacheinander die Aufzeichnungen der letzten {{total}} Fälle."
   },
   "questionnaire": {
@@ -119,7 +119,12 @@
     "unanswered": "Noch keine Angabe",
     "legend": "Antwortmöglichkeiten",
     "still_open": "Noch {{count}} von {{total}} Fragen offen",
-    "unsupported": "Fragetyp „{{type}}“ wird nicht unterstützt – bitte die Studienleitung ansprechen."
+    "unsupported": "Fragetyp „{{type}}“ wird nicht unterstützt – bitte die Studienleitung ansprechen.",
+    "line_number": "Zeilennummer {{index}}",
+    "add_line": "+ Fehler bezieht sich noch auf eine weitere Zeile",
+    "remove_line": "Zeilennummer {{index}} entfernen",
+    "line_numbers_invalid": "Bitte geben Sie für jede Zeile eine ganze Zahl ab {{min}} ein.",
+    "line_numbers_range": "Bitte geben Sie für jede Zeile eine ganze Zahl zwischen {{min}} und {{max}} ein."
   },
   "thanks": {
     "title": "Vielen Dank!",
@@ -139,5 +144,26 @@
     },
     "unsent": "{{count}} Eingabe noch nicht gespeichert – Verbindung wird erneut versucht.",
     "unsent_plural": "{{count}} Eingaben noch nicht gespeichert – Verbindung wird erneut versucht."
+  },
+  "step_back": {
+    "title": "Einen Schritt zurück (Studienleitung)",
+    "body": "Von „{{from}}“ zurück zu „{{to}}“.",
+    "note": "Gespeicherte Eingaben bleiben erhalten und werden beim erneuten Absenden überschrieben; ein Video wird erneut aufgezeichnet.",
+    "at_start": "Dies ist der erste Schritt – davor gibt es nichts.",
+    "confirm": "Zurück",
+    "cancel": "Abbrechen",
+    "kinds": {
+      "welcome": "Willkommen",
+      "questionnaire": "Fragebogen",
+      "sosci": "SoSci-Fragebogen",
+      "calibration": "Kalibrierung",
+      "phase_transition": "Phasenübergang",
+      "case_intro": "Neuer Fall",
+      "case_video": "Video",
+      "diagnosis": "Diagnose",
+      "case_outro": "Fall abgeschlossen",
+      "think_aloud": "Lautes Denken",
+      "thanks": "Abschluss"
+    }
   }
 }

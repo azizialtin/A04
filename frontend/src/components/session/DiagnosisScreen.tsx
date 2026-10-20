@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCreateDiagnosis, useVideoNotes } from '../../hooks/participant'
 import { clearDraft } from '../../hooks/useLocalDraft'
-import type { Question } from '../../lib/questionnaire'
+import type { Answers, Question } from '../../lib/questionnaire'
 import { useToast } from '../Toast'
 import DiagnosisView from './DiagnosisView'
 
@@ -11,6 +11,8 @@ interface Props {
   videoId: number
   taskDescription: string
   questions: Question[]
+  initialText?: string | null
+  initialAnswers?: Answers | null
   onComplete: () => void
 }
 
@@ -18,6 +20,8 @@ export default function DiagnosisScreen({
   videoId,
   taskDescription,
   questions,
+  initialText,
+  initialAnswers,
   onComplete,
 }: Props) {
   const { t } = useTranslation()
@@ -38,6 +42,8 @@ export default function DiagnosisScreen({
       notes={notes.data ?? []}
       draftKey={draftKey}
       questions={questions}
+      initialText={initialText ?? undefined}
+      initialAnswers={initialAnswers ?? undefined}
       submitting={createDiagnosis.isPending}
       onSubmit={async (text, timeSpentSeconds, answers) => {
         try {

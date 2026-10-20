@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import type { Question } from '../../lib/questionnaire'
@@ -193,4 +193,169 @@ test('a question can show code above its answer field, numbered line by line', (
   fireEvent.change(field, { target: { value: '2' } })
   fireEvent.click(screen.getByRole('button'))
   expect(onSubmit).toHaveBeenCalledWith({ debug_exe_1: 2 }, expect.any(Number))
+})
+
+const multiLine: Question[] = [
+  { id: 'lines', type: 'line_numbers', text: 'Welche Zeilen?', min: 1, max: 20 },
+  { id: 'reason', type: 'free_text', text: 'Was ist der Fehler?' },
+]
+
+test('one error may reference more than five lines while keeping a single explanation', () => {
+  const onSubmit = vi.fn()
+  render(<QuestionnaireRenderer title="Debugging" questions={multiLine} onSubmit={onSubmit} />)
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Indexfehler' } })
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1' } })
+  for (let line = 2; line <= 7; line++) {
+    fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+    const input = screen.getByRole('spinbutton', { name: `Welche Zeilen?: Zeilennummer ${line}` })
+    expect(input).toHaveFocus()
+    fireEvent.change(input, { target: { value: String(line) } })
+  }
+  expect(screen.getAllByRole('spinbutton')).toHaveLength(7)
+  expect(screen.getAllByRole('textbox')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: /Zeilennummer 2 entfernen/ }))
+  expect(screen.getByRole('spinbutton', { name: /Zeilennummer 2$/ })).toHaveFocus()
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(onSubmit).toHaveBeenCalledWith(
+    { lines: [1, 3, 4, 5, 6, 7], reason: 'Indexfehler' },
+    expect.any(Number),
+  )
+})
+
+test('line references enforce whole numbers and configured bounds, including added blank rows', () => {
+  render(<QuestionnaireRenderer title="Debugging" questions={[multiLine[0]]} onSubmit={vi.fn()} />)
+  const submit = screen.getByRole('button', { name: 'Weiter' })
+  const input = screen.getByRole('spinbutton')
+  expect(submit).toBeDisabled()
+  for (const value of ['0', '1.5', '21']) {
+    fireEvent.change(input, { target: { value } })
+    expect(submit).toBeDisabled()
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText(/ganze Zahl zwischen 1 und 20/)).toBeInTheDocument()
+  }
+  fireEvent.change(input, { target: { value: '4' } })
+  expect(submit).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+  expect(submit).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Zeilennummer 2 entfernen' }))
+  expect(submit).toBeEnabled()
+})
+
+test('a legacy scalar line answer restores and becomes an array when another line is added', () => {
+  const onSubmit = vi.fn()
+  render(
+    <QuestionnaireRenderer
+      title="Debugging"
+      questions={[multiLine[0]]}
+      initialAnswers={{ lines: 4 }}
+      onSubmit={onSubmit}
+    />,
+  )
+  expect(screen.getByRole('spinbutton')).toHaveValue(4)
+  fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+  fireEvent.change(screen.getByRole('spinbutton', { name: /Zeilennummer 2$/ }), {
+    target: { value: '5' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(onSubmit).toHaveBeenCalledWith({ lines: [4, 5] }, expect.any(Number))
+})
+
+test('separate question snippets continue from an explicit starting line', () => {
+  const { container } = render(
+    <QuestionnaireRenderer
+      title="Code"
+      questions={[
+        { id: 'a', type: 'number', text: 'A', code: ['int a;'], code_start_line: 9 },
+        { id: 'b', type: 'number', text: 'B', code: ['int b;'] },
+      ]}
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(
+    Array.from(container.querySelectorAll('.code__line')).map((l) => l.getAttribute('data-line')),
+  ).toEqual(['9', '10'])
+})
+
+test('description, instructions and separate question snippets share one line sequence', () => {
+  const { container } = render(
+    <QuestionnaireRenderer
+      title="Code"
+      description={'```java\n\nint a;\nint b;\n\n```'}
+      instruction={'Fortsetzung:\n```java\nint c;\n```'}
+      questions={[
+        { id: 'empty', type: 'free_text', text: 'Leer', code: [' ', ''], code_start_line: 90 },
+        { id: 'a', type: 'free_text', text: 'A', code: ['int d;\n\nint e;'] },
+        { id: 'reason', type: 'free_text', text: 'Begründung' },
+        { id: 'b', type: 'free_text', text: 'B', code: 'int f;' },
+      ]}
+      onSubmit={vi.fn()}
+    />,
+  )
+  const numbering = () =>
+    Array.from(container.querySelectorAll('.code__line')).map((line) =>
+      line.getAttribute('data-line'),
+    )
+  expect(numbering()).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+  fireEvent.change(within(screen.getByRole('group', { name: 'A *' })).getByRole('textbox'), {
+    target: { value: 'Ein Test' },
+  })
+  expect(numbering()).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+})
+
+test('conditional code reserves its lines so showing it does not renumber later answers', () => {
+  const { container } = render(
+    <QuestionnaireRenderer
+      title="Code"
+      questions={[
+        { id: 'show', type: 'multiple_choice', text: 'Zusatzcode?', options: ['Ja', 'Nein'] },
+        {
+          id: 'extra',
+          type: 'free_text',
+          text: 'Zusatz',
+          code: ['int a;', 'int b;'],
+          show_if: { question: 'show', equals: 'Ja' },
+        },
+        { id: 'lines', type: 'line_numbers', text: 'Fehler', code: ['int c;'], min: 3, max: 3 },
+      ]}
+      initialAnswers={{ lines: [3] }}
+      onSubmit={vi.fn()}
+    />,
+  )
+  const later = () => container.querySelector('[data-aoi="question.lines.code"] .code__line')
+  expect(later()).toHaveAttribute('data-line', '3')
+  fireEvent.click(screen.getByRole('radio', { name: 'Ja' }))
+  expect(container.querySelectorAll('.code__line')).toHaveLength(3)
+  expect(later()).toHaveAttribute('data-line', '3')
+  fireEvent.click(screen.getByRole('radio', { name: 'Nein' }))
+  expect(container.querySelectorAll('.code__line')).toHaveLength(1)
+  expect(later()).toHaveAttribute('data-line', '3')
+  expect(screen.getByRole('spinbutton')).toHaveValue(3)
+})
+
+test('continued line references restore and submit the displayed numbers with authored bounds', () => {
+  const onSubmit = vi.fn()
+  const snippets: Question[] = [
+    { id: 'a', type: 'free_text', text: 'A', required: false, code: ['int a;', 'int b;'] },
+    { id: 'b', type: 'line_numbers', text: 'B', code: ['int c;', 'int d;'], min: 3, max: 4 },
+  ]
+  render(
+    <QuestionnaireRenderer
+      title="Code"
+      questions={snippets}
+      initialAnswers={{ b: [3] }}
+      onSubmit={onSubmit}
+    />,
+  )
+  const input = screen.getByRole('spinbutton')
+  const submit = screen.getByRole('button', { name: 'Weiter' })
+  expect(input).toHaveValue(3)
+  expect(input).toHaveAttribute('min', '3')
+  expect(input).toHaveAttribute('max', '4')
+  fireEvent.change(input, { target: { value: '4' } })
+  fireEvent.click(submit)
+  expect(onSubmit).toHaveBeenCalledWith({ b: [4] }, expect.any(Number))
+  fireEvent.change(input, { target: { value: '5' } })
+  expect(submit).toBeDisabled()
+  expect(snippets[1].code_start_line).toBeUndefined()
+  expect(snippets[1]).toMatchObject({ min: 3, max: 4 })
 })

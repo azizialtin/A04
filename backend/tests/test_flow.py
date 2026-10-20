@@ -327,26 +327,32 @@ async def test_questionnaire_missing_required_422(client, run, participant_heade
     assert "d" in r.json()["detail"]["missing"]
 
 
-async def test_questionnaire_duplicate_is_noop(client, db, run, participant_headers):
+async def test_answering_a_page_again_is_the_final_answer(client, db, run, participant_headers):
+    # One row per page and case, holding the latest answers: a supervisor can
+    # step the run back onto a page, and a retry of the same request is harmless.
     q = run["questionnaires"]["outro"]
     vid = run["videos"]["pre"].id
     await client.post(
         f"/participant/questionnaires/{q.id}/respond",
-        json={"video_id": vid, "answers": {"d": 4}},
+        json={"video_id": vid, "answers": {"d": 4}, "time_spent_seconds": 10},
         headers=participant_headers,
     )
     r2 = await client.post(
         f"/participant/questionnaires/{q.id}/respond",
-        json={"video_id": vid, "answers": {"d": 5}},
+        json={"video_id": vid, "answers": {"d": 5}, "time_spent_seconds": 7},
         headers=participant_headers,
     )
     assert r2.status_code in (200, 201)
-    count = await db.scalar(
-        select(func.count())
-        .select_from(QuestionnaireResponse)
-        .where(QuestionnaireResponse.questionnaire_id == q.id)
+    rows = (
+        (
+            await db.execute(
+                select(QuestionnaireResponse).where(QuestionnaireResponse.questionnaire_id == q.id)
+            )
+        )
+        .scalars()
+        .all()
     )
-    assert count == 1
+    assert [(r.answers, r.time_spent_seconds) for r in rows] == [({"d": 5}, 7)]
 
 
 async def test_resubmitting_a_diagnosis_replaces_it(client, db, run, participant_headers):
@@ -622,3 +628,96 @@ async def test_a_case_advance_names_its_video(client, run, participant_headers, 
     completed = logged[-1]["payload"]["completed_step"]
     assert completed["kind"] == "case_video"
     assert (completed["title"], completed["video_id"]) == ("pre", run["videos"]["pre"].id)
+
+
+async def _session(client, headers) -> dict:
+    return (await client.get("/participant/session", headers=headers)).json()
+
+
+async def _move_to(client, headers, index: int) -> None:
+    r = await client.patch(
+        "/participant/session/progress", json={"current_step_index": index}, headers=headers
+    )
+    assert r.status_code == 200
+
+
+async def test_the_supervisor_can_step_a_run_back_one_screen(client, run, participant_headers):
+    await _move_to(client, participant_headers, 5)
+
+    r = await client.post("/participant/session/step-back", headers=participant_headers)
+    assert r.status_code == 200
+    assert r.json()["current_step_index"] == 4
+    assert r.json()["complete"] is False
+    assert (await _session(client, participant_headers))["current_step_index"] == 4
+
+    # Forward again works as before, and a second step back as well.
+    await _move_to(client, participant_headers, 5)
+    assert (await _session(client, participant_headers))["current_step_index"] == 5
+    await client.post("/participant/session/step-back", headers=participant_headers)
+    await client.post("/participant/session/step-back", headers=participant_headers)
+    assert (await _session(client, participant_headers))["current_step_index"] == 3
+
+
+async def test_the_first_screen_has_nothing_behind_it(client, run, participant_headers):
+    r = await client.post("/participant/session/step-back", headers=participant_headers)
+    assert r.status_code == 400
+    assert (await _session(client, participant_headers))["current_step_index"] == 0
+
+
+async def test_a_finished_run_steps_back_onto_its_last_screen(client, run, participant_headers):
+    total = (await _session(client, participant_headers))["total_steps"]
+    await _move_to(client, participant_headers, total - 1)
+
+    r = await client.post("/participant/session/step-back", headers=participant_headers)
+    assert r.json()["current_step_index"] == total - 2
+    assert r.json()["complete"] is False
+
+
+async def test_a_page_stepped_back_to_opens_with_its_answers(client, run, participant_headers):
+    pre_test = run["questionnaires"]["pre_test"]
+
+    def page(script: dict) -> dict:
+        return next(s for s in script["steps"] if s["kind"] == "questionnaire")
+
+    assert page(await _session(client, participant_headers))["previous_answers"] is None
+
+    await client.post(
+        f"/participant/questionnaires/{pre_test.id}/respond",
+        json={"answers": {"age": 34}},
+        headers=participant_headers,
+    )
+    assert page(await _session(client, participant_headers))["previous_answers"] == {"age": 34}
+
+    # Answered again after a step back: the page then opens with the new answer.
+    await client.post(
+        f"/participant/questionnaires/{pre_test.id}/respond",
+        json={"answers": {"age": 35}},
+        headers=participant_headers,
+    )
+    assert page(await _session(client, participant_headers))["previous_answers"] == {"age": 35}
+
+
+async def test_a_diagnosis_stepped_back_to_opens_with_its_text_and_ratings(
+    client, run, participant_headers
+):
+    vid = run["videos"]["pre"].id
+    script = await _session(client, participant_headers)
+    diagnosis = next(
+        s for s in script["steps"] if s["kind"] == "diagnosis" and s["video_id"] == vid
+    )
+    assert diagnosis["previous_text"] is None
+    assert diagnosis["previous_answers"] is None
+
+    await client.post(
+        "/participant/diagnosis",
+        json={"video_id": vid, "text": "first attempt", "answers": {"confidence": 4}},
+        headers=participant_headers,
+    )
+    script = await _session(client, participant_headers)
+    diagnosis = next(
+        s for s in script["steps"] if s["kind"] == "diagnosis" and s["video_id"] == vid
+    )
+    assert diagnosis["previous_text"] == "first attempt"
+    assert diagnosis["previous_answers"] == {"confidence": 4}
+    outro = next(s for s in script["steps"] if s["kind"] == "case_outro" and s["video_id"] == vid)
+    assert outro["previous_answers"] is None

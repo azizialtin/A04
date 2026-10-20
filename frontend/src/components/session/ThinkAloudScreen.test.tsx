@@ -77,3 +77,18 @@ test('a block of recordings is numbered, and announced once at its start', async
   expect(screen.getByText('Training · Fall 6 von 7')).toBeInTheDocument()
   expect(screen.queryByText(/nacheinander die Aufzeichnungen/)).not.toBeInTheDocument()
 })
+
+test('a study can rename the screen and rewrite its hint, numbering included', async () => {
+  render(
+    <ThinkAloudScreen
+      videoId={1}
+      position={position({ batchPosition: 2, batchSize: 3 })}
+      heading="Erzählen Sie"
+      body={'Was haben Sie gesehen?\n\nUnd warum?'}
+      onComplete={vi.fn()}
+    />,
+  )
+  expect(await screen.findByRole('heading', { name: 'Erzählen Sie 2 von 3' })).toBeInTheDocument()
+  expect(screen.getByText('Und warum?')).toBeInTheDocument()
+  expect(screen.queryByText(/Sehen Sie sich die Aufzeichnung an/)).toBeNull()
+})

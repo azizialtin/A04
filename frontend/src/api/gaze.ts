@@ -1,7 +1,14 @@
 import apiClient from './client'
-import type { GazeGeometry } from '../lib/gazeGeometry'
+import type { GazeLayout } from '../lib/gazeGeometry'
 
-// Canonical wire format, shared with the Tobii bridge and the backend. Coords
+export interface GazeContext {
+  video_id: number | null
+  step_kind: 'case_video' | 'questionnaire' | 'diagnosis' | 'case_outro'
+  step_index: number
+  questionnaire_id?: number | null
+}
+
+// Bridge samples with the browser's observed geometry reference. Coordinates
 // are null on blink / track-loss.
 export interface GazeSample {
   ts: number
@@ -14,6 +21,8 @@ export interface GazeSample {
   lpd?: number | null
   rpd?: number | null
   device_ts?: number | null
+  // The observed layout for this sample; null means no unambiguous layout was available.
+  geometry_ts?: number | null
 }
 
 export interface StartRecordingResponse {
@@ -35,14 +44,18 @@ export interface CalibrationRecord {
 }
 
 export const gazeApi = {
-  startRecording: (data: {
-    video_id: number
-    sampling_rate_hz: number
-    geometry?: GazeGeometry | null
-  }) => apiClient.post<StartRecordingResponse>('/gaze/recordings', data).then((r) => r.data),
-  uploadSamples: (recordingId: number, samples: GazeSample[]) =>
-    apiClient.post(`/gaze/recordings/${recordingId}/samples`, { samples }),
-  addGeometry: (recordingId: number, geometry: GazeGeometry) =>
+  startRecording: (
+    data: GazeContext & {
+      sampling_rate_hz: number
+      geometry?: GazeLayout | null
+    },
+  ) => apiClient.post<StartRecordingResponse>('/gaze/recordings', data).then((r) => r.data),
+  uploadSamples: (recordingId: number, samples: GazeSample[], offset?: number) =>
+    apiClient.post(`/gaze/recordings/${recordingId}/samples`, {
+      samples,
+      ...(offset === undefined ? {} : { offset }),
+    }),
+  addGeometry: (recordingId: number, geometry: GazeLayout) =>
     apiClient.post(`/gaze/recordings/${recordingId}/geometry`, geometry),
   saveCalibration: (data: CalibrationRecord) => apiClient.post('/gaze/calibration', data),
   completeRecording: (recordingId: number, data: { sample_count: number }) =>

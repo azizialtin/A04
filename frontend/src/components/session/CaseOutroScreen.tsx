@@ -3,11 +3,16 @@ import { useTranslation } from 'react-i18next'
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
 import type { Answers, Question } from '../../lib/questionnaire'
 import QuestionnaireRenderer from './QuestionnaireRenderer'
+import StudyText from '../StudyText'
 
 interface Props {
   instruction: string
   questions: Question[]
   submitting?: boolean
+  initialAnswers?: Answers
+  /** The study's own heading and text, when it wrote any. */
+  heading?: string
+  body?: string
   onSubmit: (answers: Answers, timeSpentSeconds: number) => void
 }
 
@@ -16,15 +21,27 @@ interface Props {
  * and authenticity. One screen and one submission — the questions belong to the
  * case just ended, not to a page of their own.
  */
-export default function CaseOutroScreen({ instruction, questions, submitting, onSubmit }: Props) {
+export default function CaseOutroScreen({
+  instruction,
+  questions,
+  submitting,
+  initialAnswers,
+  heading,
+  body,
+  onSubmit,
+}: Props) {
   const { t } = useTranslation()
   const elapsed = useElapsedSeconds()
 
   if (questions.length === 0) {
     return (
       <div className="panel">
-        <h2>{t('case_outro.title')}</h2>
-        <p className="lead">{t('case_outro.body_plain')}</p>
+        <h2>{heading || t('case_outro.title')}</h2>
+        {body ? (
+          <StudyText text={body} className="lead" />
+        ) : (
+          <p className="lead">{t('case_outro.body_plain')}</p>
+        )}
         <div className="panel__actions">
           <button
             type="button"
@@ -41,11 +58,12 @@ export default function CaseOutroScreen({ instruction, questions, submitting, on
 
   return (
     <QuestionnaireRenderer
-      title={t('case_outro.title')}
-      description={t('case_outro.body')}
+      title={heading || t('case_outro.title')}
+      description={body || t('case_outro.body')}
       instruction={instruction}
       questions={questions}
       submitting={submitting}
+      initialAnswers={initialAnswers}
       onSubmit={onSubmit}
     />
   )

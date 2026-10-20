@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import type { ParticipantCaseStats, ParticipantSectionTime } from '../../api/admin'
 import { useParticipantStats } from '../../hooks/admin'
 import {
@@ -26,11 +28,26 @@ import { Facts, Meter, Pill, Stat, StatGrid } from './stat'
 export default function ParticipantStatsPanel({
   participantId,
   onClose,
+  onReady,
 }: {
   participantId: string
   onClose: () => void
+  onReady?: () => void
 }) {
   const stats = useParticipantStats(participantId)
+  const initialLoad = useRef({ participantId, waiting: stats.isLoading })
+
+  useEffect(() => {
+    if (initialLoad.current.participantId !== participantId) {
+      initialLoad.current = { participantId, waiting: stats.isLoading }
+    }
+    if (!stats.isLoading && initialLoad.current.waiting) {
+      initialLoad.current.waiting = false
+      // The growing loading card can push its heading out of view. Reveal
+      // the first result once; later refreshes must leave the reader in place.
+      onReady?.()
+    }
+  }, [participantId, stats.isLoading, onReady])
 
   return (
     <div className="card participant-stats">

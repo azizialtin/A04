@@ -26,7 +26,7 @@ def _check_password(password: str) -> None:
         raise ProvisioningError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
 
 
-async def _find(db: AsyncSession, email: str) -> Researcher | None:
+async def find_researcher(db: AsyncSession, email: str) -> Researcher | None:
     return await db.scalar(
         select(Researcher).where(func.lower(Researcher.email) == normalise_email(email))
     )
@@ -39,7 +39,7 @@ async def create_researcher(
     if "@" not in address:
         raise ProvisioningError(f"{email!r} is not an email address.")
     _check_password(password)
-    if await _find(db, address) is not None:
+    if await find_researcher(db, address) is not None:
         raise ProvisioningError(
             f"{address} already exists. Use `reset-password` to change its password."
         )
@@ -53,7 +53,7 @@ async def create_researcher(
 
 async def set_researcher_password(db: AsyncSession, email: str, password: str) -> Researcher:
     _check_password(password)
-    researcher = await _find(db, email)
+    researcher = await find_researcher(db, email)
     if researcher is None:
         raise ProvisioningError(f"No researcher with the email {normalise_email(email)}.")
 
@@ -66,7 +66,7 @@ async def set_researcher_password(db: AsyncSession, email: str, password: str) -
 
 async def revoke_researcher_sessions(db: AsyncSession, email: str) -> Researcher:
     """Sign this account out everywhere — for a lost laptop, or a leaver."""
-    researcher = await _find(db, email)
+    researcher = await find_researcher(db, email)
     if researcher is None:
         raise ProvisioningError(f"No researcher with the email {normalise_email(email)}.")
 

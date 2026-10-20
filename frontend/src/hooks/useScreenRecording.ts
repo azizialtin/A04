@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 
 import { screenApi } from '../api/screen'
 import {
+  hasBridgeCaptureFailed,
   heldStream,
   noteBridgeCaptureFailed,
   startBrowserRecording,
@@ -114,6 +115,12 @@ export function useScreenRecording(videoId: number) {
       if (msg.type === 'status') {
         if (msg.screen_recording) {
           if (mode === null) {
+            // ffmpeg can remain installed after its device or permission
+            // failed. Use the fallback display secured by the next intro.
+            if (hasBridgeCaptureFailed() && heldStream()) {
+              fallback()
+              return
+            }
             mode = 'bridge'
             void begin()
           }

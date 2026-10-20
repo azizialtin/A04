@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { SessionStep } from '../api/participant'
@@ -11,15 +11,24 @@ import DiagnosisScreen from '../components/session/DiagnosisScreen'
 import PhaseTransitionScreen from '../components/session/PhaseTransitionScreen'
 import QuestionnaireRenderer from '../components/session/QuestionnaireRenderer'
 import SosciScreen from '../components/session/SosciScreen'
+import SessionGazeCapture from '../components/session/SessionGazeCapture'
+import StepBackDialog from '../components/session/StepBackDialog'
 import ThanksScreen from '../components/session/ThanksScreen'
 import ThinkAloudScreen from '../components/session/ThinkAloudScreen'
 import WelcomeScreen from '../components/session/WelcomeScreen'
 import { useToast } from '../components/Toast'
 import { useAuth } from '../contexts/AuthContext'
-import { useMe, useRespondQuestionnaire, useSession, useUpdateProgress } from '../hooks/participant'
+import {
+  useMe,
+  useRespondQuestionnaire,
+  useSession,
+  useStepBack,
+  useUpdateProgress,
+} from '../hooks/participant'
 import { useOutbox } from '../hooks/useOutbox'
 import { enqueue } from '../lib/outbox'
 import { caseAt } from '../lib/sessionProgress'
+import { isStepBackChord } from '../lib/stepBack'
 
 // Steps that own the full viewport; everything else renders inside the shell.
 const CHROMELESS = new Set([
@@ -36,6 +45,11 @@ const CHROMELESS = new Set([
 // answers went in, on the browser's clock like every other event, so the time
 // spent on a page — and on a whole section — can be read off events.csv.
 const PAGE_KINDS = new Set(['questionnaire', 'diagnosis', 'case_outro'])
+
+// The two chromeless screens a participant actually works on. They get the
+// shell's progress bar laid over their top edge, so the sense of where one is
+// in the study does not vanish for the longest stretches of it.
+const OVERLAY_PROGRESS = new Set(['case_video', 'think_aloud'])
 
 interface PageDescriptor {
   kind: string
@@ -92,7 +106,21 @@ export default function SessionPage() {
   const session = useSession()
   const updateProgress = useUpdateProgress()
   const respond = useRespondQuestionnaire()
+  const stepBack = useStepBack()
   const unsent = useOutbox(me.data?.id)
+
+  // The supervisor's way back. There is no button: the chord opens a
+  // confirmation that names both screens, and the server moves the pointer.
+  const [askingBack, setAskingBack] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isStepBackChord(e)) return
+      e.preventDefault()
+      setAskingBack(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const stepNow = session.data?.steps[session.data.current_step_index]
   const pageIndex =
@@ -120,7 +148,31 @@ export default function SessionPage() {
 
   const { steps, current_step_index, total_steps } = session.data
   const step = steps[current_step_index]
-  if (!step || current_step_index >= total_steps) return <ThanksScreen pendingWrites={unsent} />
+
+  const backDialog = askingBack ? (
+    <StepBackDialog
+      from={step}
+      to={current_step_index > 0 ? steps[current_step_index - 1] : undefined}
+      atStart={current_step_index <= 0}
+      busy={stepBack.isPending}
+      onCancel={() => setAskingBack(false)}
+      onConfirm={() =>
+        stepBack.mutate(undefined, {
+          onSuccess: () => setAskingBack(false),
+          onError: () => toast.show(t('session.error'), 'error'),
+        })
+      }
+    />
+  ) : null
+
+  if (!step || current_step_index >= total_steps) {
+    return (
+      <>
+        <ThanksScreen pendingWrites={unsent} />
+        {backDialog}
+      </>
+    )
+  }
 
   const advance = () => updateProgress.mutate(current_step_index + 1)
 
@@ -192,6 +244,7 @@ export default function SessionPage() {
           instruction={qStep.description}
           questions={qStep.questions}
           submitting={respond.isPending}
+          initialAnswers={qStep.previous_answers ?? undefined}
           onSubmit={(answers, timeSpentSeconds) =>
             submitAnswers(
               qStep.questionnaire_id,
@@ -224,6 +277,8 @@ export default function SessionPage() {
           videoId={step.video_id}
           taskDescription={step.task_description}
           questions={step.questions}
+          initialText={step.previous_text}
+          initialAnswers={step.previous_answers}
           onComplete={() => {
             // The seconds are on the diagnosis row itself; the event marks when.
             if (page) logPage('questionnaire_page_submitted', page)
@@ -240,6 +295,9 @@ export default function SessionPage() {
           instruction={outro.instruction}
           questions={outro.questions}
           submitting={respond.isPending}
+          initialAnswers={outro.previous_answers ?? undefined}
+          heading={outro.heading}
+          body={outro.body}
           onSubmit={(answers, timeSpentSeconds) =>
             outro.questionnaire_id === null
               ? advance()
@@ -267,6 +325,8 @@ export default function SessionPage() {
             batchPosition: narration.batch_position,
             batchSize: narration.batch_size,
           }}
+          heading={narration.heading}
+          body={narration.body}
           onComplete={advance}
         />
       )
@@ -284,27 +344,43 @@ export default function SessionPage() {
   // Keyed by step, so React never carries one screen's state into the next. The
   // pre-test pages are adjacent steps of the same kind: without this the second
   // page opens holding the first page's answers and submits them again.
-  const screen = <Fragment key={current_step_index}>{content}</Fragment>
+  const screen = (
+    <Fragment key={current_step_index}>
+      {content}
+      <SessionGazeCapture step={step} />
+    </Fragment>
+  )
 
   // Sits outside the shell: the case screen has no chrome, and that is exactly
   // where notes are written.
   const unsentBanner =
     unsent > 0 ? (
-      <div className="unsent" role="status">
+      <div
+        className="unsent"
+        role="status"
+        data-aoi="unsent_notice"
+        data-aoi-overlay="true"
+        data-aoi-priority="100"
+      >
         {t('session.unsent', { count: unsent })}
       </div>
     ) : null
 
+  const progress = Math.round((current_step_index / total_steps) * 100)
   if (CHROMELESS.has(step.kind)) {
     return (
       <>
+        {OVERLAY_PROGRESS.has(step.kind) && (
+          <div className="shell__progress shell__progress--overlay" aria-hidden="true">
+            <div style={{ width: `${progress}%` }} />
+          </div>
+        )}
         {screen}
         {unsentBanner}
+        {backDialog}
       </>
     )
   }
-
-  const progress = Math.round((current_step_index / total_steps) * 100)
   // Where they are in the study, in the terms they were briefed in — the phase
   // and the case — rather than a step number out of a script only we can see.
   const position = caseAt(steps, current_step_index)
@@ -335,6 +411,7 @@ export default function SessionPage() {
         <div style={{ width: `${progress}%` }} />
       </div>
       <main className="shell__main">{screen}</main>
+      {backDialog}
     </div>
   )
 }
