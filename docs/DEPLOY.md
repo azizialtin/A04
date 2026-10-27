@@ -58,7 +58,10 @@ cd backend && python -m app.cli create-admin --email you@uni.example --name "You
 ```
 
 It prompts for the password (twice, hidden). `reset-password`, `list-admins`
-and `revoke-sessions` are there too.
+and `revoke-sessions` are there too. From then on the admin overview's
+"Zugänge" section does the same without a shell: colleagues are added there,
+passwords reset and sessions ended, and a new password is shown once, to be
+handed over in person.
 
 Admin tokens carry the account's `token_version`. `revoke-sessions` bumps it,
 which signs that account out everywhere — use it for a lost laptop or someone

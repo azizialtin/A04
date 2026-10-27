@@ -185,6 +185,29 @@ Incremental, each phase runnable and tested before the next.
   out and clears its cache — it waits while the outbox still holds writes,
   since logging out parks them under an id nobody will sign in as again.
 
+- [x] **Raw gaze and screen AOIs.** `gaze.csv` now exports native samples with
+  validity, timestamps, screen/questionnaire context and timestamped AOI hits;
+  the old metadata file is `gaze_recordings.csv`. Gaze capture covers the case
+  screen and all in-app questionnaire screens. Missing or ambiguous layout
+  references stay unmapped, including historical samples. Case replay still
+  selects only case-screen recordings. Migration `c8e2f4a6b9d1` preserves old
+  recordings; rollout still requires applying it to the target database.
+
+- [x] **October pre-test feedback.** Five-entry debugging answers, ranking, multiple-answer checkboxes,
+  exact multi-file code, editable section/pre-test-video introductions, a
+  persisted seven-minute CK timer and supervisor finish are implemented.
+  Page visits, partial answers and review snapshots extend the existing CSV
+  exports. Admins can edit existing questionnaire pages; structural changes
+  require an unstarted study. Migration `d9f1a3b5c7e2` adds the timing records.
+  New studies receive the thirteen CK tasks with the supplied introduction and
+  the shared PCK example. The approved CK mapping retains source order and maps
+  later duplicate rows 25/26 to `ck_pre_08`/`ck_pre_10`. A guarded dry-run CK
+  import remains available for explicitly selected unstarted studies.
+- [x] **Admin media downloads.** Stimulus clips and each available raw screen
+  recording can be downloaded through native browser attachments. Unavailable
+  files are reported explicitly. A gaze-overlay rendering and recording CSV
+  manifest remain separate, unimplemented features.
+
 ## Still open
 
 Ordered roughly by cost of getting it wrong. See the production-readiness review
@@ -210,27 +233,40 @@ for the detail.
   the display the tracker is calibrated against and nothing else, which is the
   intended setup but is not enforced anywhere.
 
-- **The PCK pre-test has no items yet.** The spreadsheet says "to be discussed,
-  10–15 questions". The page is seeded empty and skipped until someone writes
-  them in the admin, so nothing is blocked — but the block is not measured
-  either. Same for the MSK pre-test, which has no page at all yet.
-- **The debugging pre-test task is not built.** `debug_exe_[1-10]` wants five to
-  ten pages, each a screenshot of buggy code with a line-number field, a
-  free-text reason, and page-entry/save timestamps. The screenshots do not
-  exist yet; the CK self-assessment covers the block in the meantime.
-- **No raw gaze-sample export.** Samples are captured and stored, and the replay
-  reads them, but the CSV exports carry recording metadata only. The analysis
-  plan asks for one chronological table per participant of the 100 ms samples
-  and the main-screen log together.
+- **PCK author notes and additional items.** The supplied shared example,
+  including its ranking question, is included verbatim in new studies. Its
+  source notes flag a missing pupil explanation and closing class brace for
+  author review without blocking use of the supplied content. Further PCK items
+  have not been supplied; researchers can add them to an unstarted study in the
+  admin. The MSK pre-test is in (seven pages from `MSK_items.docx`, section
+  "MSK"); its variable names `msk_pre_<task><letter>` are ours until the data
+  dictionary gets an MSK sheet.
+- **Existing-study rollout.** The CK IDs are resolved and new-study defaults
+  contain the October instrument. Existing studies are not automatically
+  upgraded, and the standard-battery seed action does not replace an existing
+  pre-test block. Use a new study or the guarded CK import for a selected
+  unstarted study with populated PCK after self-assessment. Existing
+  self-assessment variable names, historical answers and saved pointers remain
+  unchanged. Applying migrations and verifying the intended deployment are
+  separate from local implementation.
+- **Actual lab viewport and hosting rehearsal.** The supplied CK/PCK pages and
+  seeded pre-test batteries have browser checks at 1920×1080. Confirm the
+  actual monitor, scaling and zoom, validate hardware capture/gaze, and select
+  and rehearse the intended host and backup storage before a live study.
+- **Combined analysis timeline.** Raw gaze samples and the main-screen log now
+  export separately with the shared wall clock. A combined chronological table
+  with a specified 100 ms resampling rule is not built; the raw export preserves
+  every captured sample.
 - **The data dictionary has a typo we now copy.** Sheet "Log Data Collection on
   Main Screen" spells the winding variable `set_video_playhad_to`. The export
   reproduces it exactly, because that string is the key an analysis joins on —
   but if the sheet is corrected, `app/services/log_data.py` has to be corrected
   with it.
-- **No AOI hit-testing.** The stimulus geometry is recorded with every
-  recording, which is what makes it possible later, but nothing computes dwell
-  time, fixations or time-to-first-fixation per AOI yet. The spreadsheet marks
-  these as "nice to have" for 2026.
+- **AOI analysis and lab validation.** New samples have AOI hit labels; no dwell
+  time, fixations or time-to-first-fixation are computed. The viewport mapping
+  is a browser-window estimate. The DOM debug overlay verifies rectangles, not
+  tracker calibration or physical precision; validate on the intended lab
+  display/browser setup before interpreting small AOIs.
 
 ## Open questions carried forward
 

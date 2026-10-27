@@ -3,7 +3,8 @@
 Web platform for a personalised-learning study with programming teachers.
 A run opens with a short in-tool pre-test (background, pedagogical content
 knowledge, content knowledge), hands off to a SoSciSurvey questionnaire, and
-calibrates the eye tracker. Participants then work through nine debugging cases
+optionally calibrates the eye tracker in-app. Calibration defaults off when
+the lab calibrates externally. Participants then work through nine debugging cases
 (one pre-test, seven training, one post-test): for each they watch a short clip
 of students struggling with code, take timed notes, write a diagnosis with a
 confidence rating, answer a short battery about the case, and talk a study
@@ -29,9 +30,9 @@ docs/            plan and notes
 
 - Docker (for Postgres)
 - Python 3.11+ and Node 20+
-- ffmpeg, if you want the screen recording from the bridge (the bridge says so
-  and carries on without it; a browser with no bridge at all records its own
-  display instead, after asking once)
+- ffmpeg, if you want the screen recording from the bridge (the bridge carries
+  on without it; when bridge capture is unavailable, the browser can record
+  the display after the participant grants screen sharing)
 
 ## Run it locally
 
@@ -65,8 +66,10 @@ Or bring the whole stack up with `docker compose up`.
 
 ## Admin
 
-There is no self sign-up, so the first account is made from the command line
-(with `DATABASE_URL` set, from `backend/`):
+There is no self sign-up. The first account is made from the command line
+(with `DATABASE_URL` set, from `backend/`); every further one can be added
+under "Zugänge" at the bottom of the admin overview, where passwords are reset,
+sessions ended and the own password changed as well:
 
 ```bash
 python -m app.cli create-admin --email you@uni.example --name "Your Name"
@@ -82,10 +85,19 @@ fixed orders participants are dealt half and half at their first login), add
 participants — and, where one person needs something else, hand-pick their
 sequence or their set — edit the question batteries and the welcome page's
 wording, and export the raw data as CSV. A new study arrives with the standard
-batteries from
-`A04_DataCollection.xlsx` already on it (pre-test pages, the diagnosis
-confidence rating, the questions after each case); the "Fragebögen" tab is where
-they are edited, and where an older study can be given the ones it is missing.
+batteries from `A04_DataCollection.xlsx` and the MSK instrument from
+`MSK_items.docx` already on it (pre-test pages, the diagnosis confidence rating,
+the questions after each case); the "Fragebögen" tab is where they are edited,
+and where an older study can be given the ones it is missing.
+
+The gaze exports are separate: `gaze.csv` contains every stored sample at the
+captured rate, with original eye coordinates, validity, timestamps, screen
+context and AOI assignment; `gaze_recordings.csv` contains one metadata row per
+recording. Gaze capture covers the case screen and the in-app pre-test,
+diagnosis and post-case questionnaire screens. Older recordings remain
+exportable, but AOIs are not invented for samples without their captured layout.
+See [the gaze operations notes](docs/OPERATIONS.md#gaze-data-and-analysis) for
+mapping limits, failed downloads and migration requirements.
 
 ## Tests
 
@@ -95,8 +107,14 @@ cd backend  && ruff check . && ruff format --check . && mypy
 cd frontend && npm run test           # vitest
 cd frontend && npm run typecheck      # tsc --noEmit
 cd frontend && npm run lint           # eslint
+cd frontend && npm run test:browser   # Chromium, synthetic API/tracker, no database
 cd frontend && npm run e2e            # playwright — see frontend/e2e/README.md
 ```
+
+`test:browser` uses `playwright.feedback.config.ts`. Its capture check runs the
+browser's native MediaRecorder encoder with a synthetic display stream; the OS
+screen-share picker is mocked. It does not validate physical tracker hardware,
+display permissions or calibration.
 
 CI runs all of that, plus a dependency audit and a build of both Docker images.
 

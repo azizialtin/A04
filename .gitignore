@@ -38,3 +38,5 @@ backend/data/
 
 /tobii-service/.venv310
 /tobii-service/build/
+# captures the dev bridge could not upload; on the lab PC this sits next to the .exe
+/tobii-service/unsent-recordings/

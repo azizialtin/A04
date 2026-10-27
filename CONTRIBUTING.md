@@ -215,7 +215,7 @@ recording behind the think-aloud (ffmpeg in the bridge, clock-anchored upload,
 screen-relative gaze mapping, clip fallback, probed capture device), and the
 instrument from `A04_DataCollection.xlsx` (in-tool pre-test pages, no questions
 inside a case, diagnosis confidence, post-case battery, the full main-screen
-event log), and the two video sets with the balanced deal plus the browser's own
+event log) with the MSK pages from `MSK_items.docx`, and the two video sets with the balanced deal plus the browser's own
 screen capture for a machine without the bridge, and the wording a researcher
 owns (welcome and case-intro texts, study-wide video defaults, the CK ladder as
 one table), and think-aloud screens that can run in blocks, and exports a person
