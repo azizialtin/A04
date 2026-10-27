@@ -9,7 +9,7 @@ from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.session import Session
 from app.models.study import Study
 from app.services.log_data import MAIN_SCREEN_VARIABLES, variable_name
-from app.services.questionnaires import visible_question_ids
+from app.services.questionnaires import validate_question_definitions, visible_question_ids
 from app.services.study_content import CK_DEBUG_PRE_TEST, CK_PRE_TEST, DEFAULT_BATTERIES
 
 ALL_QUESTIONS = [q for battery in DEFAULT_BATTERIES for q in battery.questions]
@@ -48,9 +48,7 @@ def test_one_press_of_play_is_one_row():
 def test_a_battery_is_well_formed(battery):
     ids = [q["id"] for q in battery.questions]
     assert len(ids) == len(set(ids)), "duplicate variable name"
-    for q in battery.questions:
-        assert q["type"] in {"likert", "multiple_choice", "free_text", "slider", "number"}
-        assert q["text"].strip()
+    assert validate_question_definitions(battery.questions) == []
 
 
 def test_conditional_questions_point_at_a_question_that_exists():
@@ -109,9 +107,39 @@ async def test_a_new_study_arrives_with_the_standard_batteries(client, db, admin
     assert sorted(placements) == [
         (QuestionnairePlacement.case_outro, 0),
         (QuestionnairePlacement.diagnosis, 0),
-        # Demographics, PCK, the two CK pages, then the seven MSK situations.
-        *((QuestionnairePlacement.pre_test, i) for i in range(11)),
+        # Demographics, two CK self-assessments, thirteen tasks, PCK, seven MSK.
+        *((QuestionnairePlacement.pre_test, i) for i in range(24)),
     ]
+
+
+async def test_new_study_has_the_complete_october_instrument_once(client, db, admin_headers):
+    from app.services.pretest_content import load_pretest_manifest, mapped_ck_tasks
+    from app.services.study_content_import import import_ck_pretest
+
+    created = await client.post(
+        "/admin/studies", json={"name": "Oktober-Instrument"}, headers=admin_headers
+    )
+    study_id = created.json()["id"]
+    pages = await _pre_test_pages(db, study_id)
+    assert [page.section_key for page in pages] == [
+        "demographics",
+        "ck_self",
+        "ck_self",
+        *(["ck_tasks"] * 13),
+        "pck",
+        *(["msk"] * 7),
+    ]
+    assert [page.questions[0] for page in pages[3:16]] == mapped_ck_tasks()
+    manifest = load_pretest_manifest()
+    assert pages[3].intro_body == manifest["ck_intro"]["body"]
+    assert all(not page.intro_body for page in pages[4:16])
+    assert pages[16].questions == manifest["pck_example"]["questions"]
+    assert pages[16].description == manifest["pck_example"]["description"]
+    assert pages[16].intro_body
+    # The same import command recognises a new study's existing source pages.
+    messages = await import_ck_pretest(db, study_id, None, pages[16].id, apply=True)
+    assert "No changes" in messages[0]
+    assert len(await _pre_test_pages(db, study_id)) == 24
 
 
 async def test_seeding_again_adds_nothing_and_changes_nothing(client, db, admin_headers):
@@ -148,33 +176,19 @@ async def test_reordering_a_page_does_not_earn_a_second_copy(client, db, admin_h
         select(Questionnaire).where(
             Questionnaire.study_id == study_id,
             Questionnaire.placement == QuestionnairePlacement.pre_test,
-            Questionnaire.order_index == 2,
+            Questionnaire.title == "Fachwissen Programmierung",
         )
     )
     ck.order_index = 5
     await db.flush()
+    expected = await _placements(db, study_id)
 
     again = await client.post(
         f"/admin/studies/{study_id}/questionnaires/seed", headers=admin_headers
     )
     assert again.json() == []
-    assert await _placements(db, study_id) == [
-        (QuestionnairePlacement.case_outro, 0),
-        (QuestionnairePlacement.diagnosis, 0),
-        (QuestionnairePlacement.pre_test, 0),
-        (QuestionnairePlacement.pre_test, 1),
-        (QuestionnairePlacement.pre_test, 3),
-        # The moved CK page now shares its index with an MSK page; ties keep
-        # creation order, which is what the participant sees.
-        (QuestionnairePlacement.pre_test, 4),
-        (QuestionnairePlacement.pre_test, 5),
-        (QuestionnairePlacement.pre_test, 5),
-        (QuestionnairePlacement.pre_test, 6),
-        (QuestionnairePlacement.pre_test, 7),
-        (QuestionnairePlacement.pre_test, 8),
-        (QuestionnairePlacement.pre_test, 9),
-        (QuestionnairePlacement.pre_test, 10),
-    ]
+    assert await _placements(db, study_id) == expected
+    assert expected.count((QuestionnairePlacement.pre_test, 5)) == 2
 
 
 async def test_an_older_study_can_be_brought_up_to_date(client, db, seed_study, admin_headers):
@@ -195,7 +209,7 @@ async def test_an_older_study_can_be_brought_up_to_date(client, db, seed_study, 
         f"/admin/studies/{seed_study.id}/questionnaires/seed", headers=admin_headers
     )
     assert seeded.status_code == 201
-    assert [q["placement"] for q in seeded.json()] == ["pre_test"] * 11 + ["diagnosis"]
+    assert [q["placement"] for q in seeded.json()] == ["pre_test"] * 24 + ["diagnosis"]
     # And the researcher's own outro battery is untouched.
     kept = await db.scalar(
         select(Questionnaire).where(
@@ -357,8 +371,6 @@ async def test_the_msk_migration_appends_the_pages_and_keeps_every_run_on_its_sc
 ):
     from sqlalchemy import text
 
-    from app.services.study_content import seed_batteries
-
     migration = _migration("b3d8f2a6c4e1_msk_pre_test_pages.py")
 
     # A study from before the instrument: the standard block without the MSK
@@ -366,11 +378,25 @@ async def test_the_msk_migration_appends_the_pages_and_keeps_every_run_on_its_sc
     study = Study(name="Vor MSK", description="", created_by=seed_researcher.id)
     db.add(study)
     await db.flush()
-    seeded = await seed_batteries(db, study.id)
-    await db.flush()
-    for page in seeded:
-        if page.section == "MSK":
-            await db.delete(page)
+    # Historical fixture: today's default also includes CK tasks and PCK.
+    # This old migration must still be checked against its original four pages.
+    for index, (title, questions) in enumerate(
+        [
+            ("Angaben zur Person", [{"id": "age", "type": "number", "text": "Alter"}]),
+            ("Fachdidaktisches Wissen", []),
+            ("Fachwissen Programmierung", CK_PRE_TEST),
+            ("Fachwissen Debugging", CK_DEBUG_PRE_TEST),
+        ]
+    ):
+        db.add(
+            Questionnaire(
+                study_id=study.id,
+                placement=QuestionnairePlacement.pre_test,
+                title=title,
+                questions=questions,
+                order_index=index,
+            )
+        )
     own = {"id": "own_1", "type": "text", "text": "Eigene Frage"}
     db.add(
         Questionnaire(

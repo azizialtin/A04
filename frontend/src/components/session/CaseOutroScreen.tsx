@@ -4,6 +4,7 @@ import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
 import type { Answers, Question } from '../../lib/questionnaire'
 import QuestionnaireRenderer from './QuestionnaireRenderer'
 import StudyText from '../StudyText'
+import './CaseOutroScreen.css'
 
 interface Props {
   instruction: string
@@ -57,14 +58,16 @@ export default function CaseOutroScreen({
   }
 
   return (
-    <QuestionnaireRenderer
-      title={heading || t('case_outro.title')}
-      description={body || t('case_outro.body')}
-      instruction={instruction}
-      questions={questions}
-      submitting={submitting}
-      initialAnswers={initialAnswers}
-      onSubmit={onSubmit}
-    />
+    <div className="case-outro">
+      <QuestionnaireRenderer
+        title={heading || t('case_outro.title')}
+        description={body || t('case_outro.body')}
+        instruction={instruction}
+        questions={questions}
+        submitting={submitting}
+        initialAnswers={initialAnswers}
+        onSubmit={onSubmit}
+      />
+    </div>
   )
 }

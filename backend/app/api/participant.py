@@ -17,6 +17,7 @@ from app.models.enums import ParticipantStatus, QuestionnairePlacement
 from app.models.note import Note
 from app.models.participant import Participant
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.questionnaire_timing import QuestionnaireVisit, SectionAttempt
 from app.models.session import Session
 from app.models.study import Study
 from app.models.text_entry import TextEntry
@@ -24,6 +25,7 @@ from app.models.video import Video
 from app.schemas.participant import (
     DiagnosisCreate,
     EventCreate,
+    FinishCkRequest,
     IdResponse,
     NoteCreate,
     NoteResponse,
@@ -31,11 +33,25 @@ from app.schemas.participant import (
     ProgressResult,
     ProgressUpdateRequest,
     QuestionnaireRespondRequest,
+    QuestionnaireVisitRequest,
+    QuestionnaireVisitResponse,
     SessionScriptResponse,
+    StepBackRequest,
     VideoUrlResponse,
 )
 from app.services.event_logger import log_event
-from app.services.questionnaires import missing_required_answers
+from app.services.questionnaires import invalid_partial_answers, missing_required_answers
+from app.services.section_timing import (
+    CK_SECONDS,
+    CK_SECTION,
+    ck_attempt,
+    close_visit,
+    end_attempt,
+    get_visit,
+    lock_session,
+    now_ms,
+    timing_response,
+)
 from app.services.session_script import build_steps, describe_step, video_in_run
 from app.services.video_url import sign_blob_url
 
@@ -77,14 +93,169 @@ async def get_session(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No active run.")
 
     raw = await build_steps(db, participant)
-    steps = [
-        {"index": i, "completed": i < session.current_step_index, **s} for i, s in enumerate(raw)
-    ]
+    steps = []
+    for i, step in enumerate(raw):
+        passed = i < session.current_step_index
+        skipped = (
+            passed
+            and step["kind"] == "questionnaire"
+            and step.get("section_key") == CK_SECTION
+            and step.get("previous_answers") is None
+        )
+        steps.append({"index": i, "completed": passed and not skipped, "skipped": skipped, **step})
     return SessionScriptResponse(
         status=participant.status.value,
         current_step_index=session.current_step_index,
         total_steps=len(raw),
         steps=steps,
+        section_timing=timing_response(await ck_attempt(db, participant.id)),
+    )
+
+
+@router.post("/session/questionnaire-visit", response_model=QuestionnaireVisitResponse)
+async def enter_questionnaire(
+    body: QuestionnaireVisitRequest,
+    participant: Participant = Depends(get_current_participant),
+    db: AsyncSession = Depends(get_db),
+) -> QuestionnaireVisitResponse:
+    session = await lock_session(db, participant.id)
+    raw = await build_steps(db, participant)
+    if body.step_index != session.current_step_index or body.step_index >= len(raw):
+        raise HTTPException(409, "The current page has changed. Reload the session.")
+    step = raw[body.step_index]
+    if (
+        step["kind"] != "questionnaire"
+        or step.get("questionnaire_id") != body.questionnaire_id
+        or not step.get("section_key")
+    ):
+        raise HTTPException(409, "This page does not record section visits.")
+    visit = await db.get(QuestionnaireVisit, str(body.visit_id))
+    if visit is not None:
+        if (
+            visit.participant_id != participant.id
+            or visit.questionnaire_id != body.questionnaire_id
+            or visit.step_index != body.step_index
+        ):
+            raise HTTPException(409, "This visit identity is already in use.")
+        return QuestionnaireVisitResponse(
+            visit_id=visit.id, section_timing=timing_response(await ck_attempt(db, participant.id))
+        )
+    attempt = await ck_attempt(db, participant.id)
+    if step["section_key"] == CK_SECTION and attempt is None:
+        attempt = SectionAttempt(
+            participant_id=participant.id,
+            section_key=CK_SECTION,
+            section=step["section"] or step["title"],
+            started_client_ts=body.client_ts,
+            deadline_ms=now_ms() + CK_SECONDS * 1000,
+        )
+        db.add(attempt)
+    visit = QuestionnaireVisit(
+        id=str(body.visit_id),
+        participant_id=participant.id,
+        questionnaire_id=body.questionnaire_id,
+        section_key=step["section_key"],
+        step_index=body.step_index,
+        entered_client_ts=body.client_ts,
+        is_review=bool(
+            attempt and attempt.ended_client_ts is not None and step["section_key"] == CK_SECTION
+        ),
+    )
+    db.add(visit)
+    await db.commit()
+    return QuestionnaireVisitResponse(visit_id=visit.id, section_timing=timing_response(attempt))
+
+
+@router.post("/session/finish-ck", response_model=ProgressResult)
+async def finish_ck(
+    body: FinishCkRequest,
+    background_tasks: BackgroundTasks,
+    participant: Participant = Depends(get_current_participant),
+    db: AsyncSession = Depends(get_db),
+) -> ProgressResult:
+    session = await lock_session(db, participant.id)
+    raw = await build_steps(db, participant)
+    visit = await get_visit(db, participant.id, str(body.visit_id))
+    if visit.finish_request_id == str(body.request_id):
+        if (
+            visit.submitted_answers != body.answers
+            or visit.exited_client_ts != body.client_ts
+            or visit.step_index != body.expected_step_index
+        ):
+            raise HTTPException(409, "A retry must match the original section finish.")
+        return ProgressResult(
+            status=participant.status.value,
+            current_step_index=session.current_step_index,
+            total_steps=len(raw),
+            complete=False,
+        )
+    index = session.current_step_index
+    if index != body.expected_step_index or index >= len(raw):
+        raise HTTPException(409, "The current page has changed. Reload the session.")
+    step = raw[index]
+    if step["kind"] != "questionnaire" or step.get("section_key") != CK_SECTION:
+        raise HTTPException(409, "Only a CK task can finish the CK section.")
+    if (
+        visit.questionnaire_id != step["questionnaire_id"]
+        or visit.step_index != index
+        or visit.exited_client_ts is not None
+    ):
+        raise HTTPException(409, "This page visit is no longer active.")
+    target = next(
+        (
+            i
+            for i in range(index + 1, len(raw))
+            if raw[i].get("section_key") == "pck"
+            and raw[i]["kind"] in ("section_intro", "questionnaire")
+        ),
+        None,
+    )
+    if target is None:
+        raise HTTPException(
+            409, "No PCK section follows the CK tasks. Ask the supervisor to check the study."
+        )
+    invalid = invalid_partial_answers(step["questions"], body.answers)
+    if invalid:
+        raise HTTPException(422, {"message": "Some answers are invalid.", "missing": invalid})
+    questionnaire = await db.get(Questionnaire, step["questionnaire_id"])
+    assert questionnaire is not None
+    seconds = close_visit(visit, body.client_ts, "supervisor_finish")
+    visit.submitted_answers = body.answers
+    visit.finish_request_id = str(body.request_id)
+    await _store_answers(
+        db,
+        questionnaire,
+        participant,
+        None,
+        body.answers,
+        replace=True,
+        time_spent_seconds=seconds,
+        response_status="partial",
+    )
+    end_attempt(await ck_attempt(db, participant.id), body.client_ts, "supervisor_finish")
+    session.current_step_index = target
+    await db.commit()
+    background_tasks.add_task(
+        log_event,
+        participant_id=participant.id,
+        event_type="admin_finish_ck",
+        client_ts=body.client_ts,
+        payload={
+            "left_step": describe_step(step, index),
+            "current_step": describe_step(raw[target], target),
+            "visit_id": visit.id,
+            "skipped_questionnaire_ids": [
+                s["questionnaire_id"]
+                for s in raw[index + 1 : target]
+                if s["kind"] == "questionnaire" and s.get("section_key") == CK_SECTION
+            ],
+        },
+    )
+    return ProgressResult(
+        status=participant.status.value,
+        current_step_index=target,
+        total_steps=len(raw),
+        complete=False,
     )
 
 
@@ -95,9 +266,7 @@ async def update_progress(
     participant: Participant = Depends(get_current_participant),
     db: AsyncSession = Depends(get_db),
 ) -> ProgressResult:
-    session = await db.scalar(select(Session).where(Session.participant_id == participant.id))
-    if session is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No active run.")
+    session = await lock_session(db, participant.id)
 
     raw = await build_steps(db, participant)
     total = len(raw)
@@ -105,8 +274,34 @@ async def update_progress(
     # Forward-only: a refresh or double-submit can never rewind the run.
     was_at = session.current_step_index
     target = max(0, min(body.current_step_index, total))
+    if (
+        body.expected_step_index is not None
+        and body.expected_step_index != was_at
+        and target != was_at
+    ):
+        raise HTTPException(409, "The current page has changed. Reload the session.")
     if target > was_at:
         session.current_step_index = target
+        if (
+            was_at < total
+            and raw[was_at].get("section_key") == CK_SECTION
+            and (target >= total or raw[target].get("section_key") != CK_SECTION)
+        ):
+            attempt = await ck_attempt(db, participant.id)
+            client_ts = body.client_ts
+            if client_ts is None:
+                client_ts = await db.scalar(
+                    select(QuestionnaireVisit.exited_client_ts)
+                    .where(
+                        QuestionnaireVisit.participant_id == participant.id,
+                        QuestionnaireVisit.step_index == was_at,
+                        QuestionnaireVisit.exited_client_ts.is_not(None),
+                    )
+                    .order_by(QuestionnaireVisit.exited_client_ts.desc())
+                    .limit(1)
+                )
+            if client_ts is not None:
+                end_attempt(attempt, client_ts, "completed")
 
     # The script ends with a read-only `thanks` step that never reports its own
     # progress, so landing on it means every action step is behind us.
@@ -121,6 +316,7 @@ async def update_progress(
         log_event,
         participant_id=participant.id,
         event_type="progress_update",
+        client_ts=body.client_ts,
         payload=_progress_payload(raw, was_at, session.current_step_index, complete),
     )
     return ProgressResult(
@@ -134,6 +330,7 @@ async def update_progress(
 @router.post("/session/step-back", response_model=ProgressResult)
 async def step_back(
     background_tasks: BackgroundTasks,
+    body: StepBackRequest | None = None,
     participant: Participant = Depends(get_current_participant),
     db: AsyncSession = Depends(get_db),
 ) -> ProgressResult:
@@ -145,9 +342,7 @@ async def step_back(
     again overwrites its answers, a case played again records again. The move
     is logged so the data shows where a run doubled back.
     """
-    session = await db.scalar(select(Session).where(Session.participant_id == participant.id))
-    if session is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No active run.")
+    session = await lock_session(db, participant.id)
     was_at = session.current_step_index
     if was_at <= 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Already at the first step.")
@@ -155,6 +350,11 @@ async def step_back(
     raw = await build_steps(db, participant)
     # A pointer past the end — a finished run — comes back onto the last screen.
     target = min(was_at, len(raw)) - 1
+    if body and body.visit_id and body.client_ts is not None:
+        visit = await get_visit(db, participant.id, str(body.visit_id))
+        if visit.step_index != was_at:
+            raise HTTPException(409, "Page visit does not match the current page.")
+        close_visit(visit, body.client_ts, "step_back")
     session.current_step_index = target
     await db.commit()
     background_tasks.add_task(
@@ -370,6 +570,7 @@ async def _store_answers(
     *,
     replace: bool,
     time_spent_seconds: int | None = None,
+    response_status: str = "submitted",
 ) -> None:
     existing = await db.scalar(
         select(QuestionnaireResponse).where(
@@ -386,17 +587,20 @@ async def _store_answers(
                 video_id=video_id,
                 answers=answers,
                 time_spent_seconds=time_spent_seconds,
+                response_status=response_status,
             )
         )
     elif replace:
         existing.answers = answers
         existing.time_spent_seconds = time_spent_seconds
+        existing.response_status = response_status
 
 
 @router.post("/questionnaires/{questionnaire_id}/respond", status_code=status.HTTP_201_CREATED)
 async def respond_questionnaire(
     questionnaire_id: int,
     body: QuestionnaireRespondRequest,
+    background_tasks: BackgroundTasks,
     participant: Participant = Depends(get_current_participant),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
@@ -419,8 +623,43 @@ async def respond_questionnaire(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This questionnaire has no case.")
     if body.video_id is not None:
         await _require_assigned(db, participant, body.video_id)
+    if questionnaire.section_key and not wants_case and body.visit_id is None:
+        raise HTTPException(422, "This section page needs its visit identity and timestamp.")
+    if body.advance and (wants_case or body.visit_id is None):
+        raise HTTPException(422, "Only a visited pre-test page can advance with its answers.")
 
     _reject_missing(questionnaire.questions, body.answers)
+
+    progress_payload = None
+    if body.visit_id is not None:
+        session = await lock_session(db, participant.id)
+        visit = await get_visit(db, participant.id, str(body.visit_id), questionnaire_id)
+        if body.client_ts is None:
+            raise HTTPException(422, "A timed page submission needs its client timestamp.")
+        if visit.exited_client_ts is not None:
+            if visit.exit_reason == "submitted" and visit.submitted_answers == body.answers:
+                return {"status": "ok"}
+            raise HTTPException(409, "This page visit is already closed.")
+        if visit.step_index != session.current_step_index:
+            raise HTTPException(409, "The current page has changed.")
+        if body.advance:
+            raw = await build_steps(db, participant)
+            index = session.current_step_index
+            if (
+                index >= len(raw)
+                or raw[index].get("questionnaire_id") != questionnaire_id
+                or raw[index]["kind"] != "questionnaire"
+            ):
+                raise HTTPException(409, "The current page has changed.")
+            target = index + 1
+            if questionnaire.section_key == CK_SECTION and (
+                target >= len(raw) or raw[target].get("section_key") != CK_SECTION
+            ):
+                end_attempt(await ck_attempt(db, participant.id), body.client_ts, "completed")
+            session.current_step_index = target
+            progress_payload = _progress_payload(raw, index, target, False)
+        body.time_spent_seconds = close_visit(visit, body.client_ts, "submitted")
+        visit.submitted_answers = body.answers
 
     # One response per case (or per run); a resume or double-submit is a no-op
     # success rather than a second row.
@@ -439,6 +678,18 @@ async def respond_questionnaire(
     except IntegrityError:
         # A concurrent submit won the race; the unique index did its job.
         await db.rollback()
+        if body.visit_id is not None:
+            raise HTTPException(
+                409, "The page could not be saved. Retry with the same answers."
+            ) from None
+    if progress_payload is not None:
+        background_tasks.add_task(
+            log_event,
+            participant_id=participant.id,
+            event_type="progress_update",
+            payload=progress_payload,
+            client_ts=body.client_ts,
+        )
     return {"status": "ok"}
 
 

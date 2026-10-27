@@ -9,7 +9,8 @@ import CaseOutroScreen from '../components/session/CaseOutroScreen'
 import CaseVideoScreen from '../components/session/CaseVideoScreen'
 import DiagnosisScreen from '../components/session/DiagnosisScreen'
 import PhaseTransitionScreen from '../components/session/PhaseTransitionScreen'
-import QuestionnaireRenderer from '../components/session/QuestionnaireRenderer'
+import PreTestPage from '../components/session/PreTestPage'
+import SectionIntroScreen from '../components/session/SectionIntroScreen'
 import SosciScreen from '../components/session/SosciScreen'
 import SessionGazeCapture from '../components/session/SessionGazeCapture'
 import StepBackDialog from '../components/session/StepBackDialog'
@@ -89,12 +90,17 @@ function pageDescriptor(step: SessionStep): PageDescriptor | null {
   }
 }
 
-function logPage(eventType: string, page: PageDescriptor, extra: Record<string, unknown> = {}) {
+function logPage(
+  eventType: string,
+  page: PageDescriptor,
+  extra: Record<string, unknown> = {},
+  clientTs = Date.now(),
+) {
   enqueue('event', {
     event_type: eventType,
     video_id: page.video_id ?? undefined,
     payload: { ...page, ...extra },
-    client_ts: Date.now(),
+    client_ts: clientTs,
   })
 }
 
@@ -111,18 +117,37 @@ export default function SessionPage() {
 
   // The supervisor's way back. There is no button: the chord opens a
   // confirmation that names both screens, and the server moves the pointer.
-  const [askingBack, setAskingBack] = useState(false)
+  const [supervisorDialog, setSupervisorDialog] = useState<'back' | 'finish' | null>(null)
+  const [pretestBusy, setPretestBusy] = useState(false)
+  const navigationBusy =
+    respond.isPending || updateProgress.isPending || stepBack.isPending || pretestBusy
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!isStepBackChord(e)) return
+      const back = isStepBackChord(e)
+      const current = session.data?.steps[session.data.current_step_index]
+      const finish =
+        current?.kind === 'questionnaire' &&
+        current.section_key === 'ck_tasks' &&
+        (e.ctrlKey || e.metaKey) &&
+        e.altKey &&
+        e.shiftKey &&
+        e.code === 'KeyN' &&
+        !e.repeat
+      if (!back && !finish) return
       e.preventDefault()
-      setAskingBack(true)
+      if (navigationBusy) return
+      // One state transition also protects two chords pressed before React renders.
+      setSupervisorDialog((open) => open ?? (back ? 'back' : 'finish'))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [navigationBusy, session.data])
 
   const stepNow = session.data?.steps[session.data.current_step_index]
+  const currentVisit = useRef<string | undefined>()
+  useEffect(() => {
+    currentVisit.current = undefined
+  }, [session.data?.current_step_index])
   const pageIndex =
     stepNow && PAGE_KINDS.has(stepNow.kind) ? (session.data?.current_step_index ?? null) : null
   // The outbox only accepts writes once it knows whose they are, and the two
@@ -133,8 +158,13 @@ export default function SessionPage() {
   const enteredRef = useRef<number | null>(null)
   useEffect(() => {
     // Strict mode runs this twice in development; one page is still one entry.
-    if (!ready || pageIndex === null || enteredRef.current === pageIndex) return
+    if (pageIndex === null) {
+      enteredRef.current = null
+      return
+    }
+    if (!ready || enteredRef.current === pageIndex) return
     enteredRef.current = pageIndex
+    if (stepRef.current?.kind === 'questionnaire' && stepRef.current.section_key) return
     const page = stepRef.current ? pageDescriptor(stepRef.current) : null
     if (page) logPage('questionnaire_page_entered', page)
   }, [ready, pageIndex])
@@ -149,21 +179,27 @@ export default function SessionPage() {
   const { steps, current_step_index, total_steps } = session.data
   const step = steps[current_step_index]
 
-  const backDialog = askingBack ? (
-    <StepBackDialog
-      from={step}
-      to={current_step_index > 0 ? steps[current_step_index - 1] : undefined}
-      atStart={current_step_index <= 0}
-      busy={stepBack.isPending}
-      onCancel={() => setAskingBack(false)}
-      onConfirm={() =>
-        stepBack.mutate(undefined, {
-          onSuccess: () => setAskingBack(false),
-          onError: () => toast.show(t('session.error'), 'error'),
-        })
-      }
-    />
-  ) : null
+  const backDialog =
+    supervisorDialog === 'back' ? (
+      <StepBackDialog
+        from={step}
+        to={current_step_index > 0 ? steps[current_step_index - 1] : undefined}
+        atStart={current_step_index <= 0}
+        busy={navigationBusy}
+        onCancel={() => setSupervisorDialog(null)}
+        onConfirm={() =>
+          stepBack.mutate(
+            currentVisit.current
+              ? { visit_id: currentVisit.current, client_ts: Date.now() }
+              : undefined,
+            {
+              onSuccess: () => setSupervisorDialog(null),
+              onError: () => toast.show(t('session.error'), 'error'),
+            },
+          )
+        }
+      />
+    ) : null
 
   if (!step || current_step_index >= total_steps) {
     return (
@@ -174,7 +210,8 @@ export default function SessionPage() {
     )
   }
 
-  const advance = () => updateProgress.mutate(current_step_index + 1)
+  const advance = () =>
+    updateProgress.mutate({ index: current_step_index + 1, expected: current_step_index })
 
   // Every battery submits the same way: store the answers, then move on. A
   // failure keeps the participant on the page with what they typed intact.
@@ -184,6 +221,8 @@ export default function SessionPage() {
     answers: Record<string, unknown>,
     timeSpentSeconds: number,
     page: PageDescriptor | null,
+    visitId?: string,
+    clientTs?: number,
   ) => {
     try {
       await respond.mutateAsync({
@@ -191,17 +230,39 @@ export default function SessionPage() {
         video_id: videoId,
         answers,
         time_spent_seconds: timeSpentSeconds,
+        visit_id: visitId,
+        client_ts: clientTs,
+        advance: Boolean(visitId),
       })
       if (page)
-        logPage('questionnaire_page_submitted', page, { time_spent_seconds: timeSpentSeconds })
-      advance()
+        logPage(
+          'questionnaire_page_submitted',
+          page,
+          {
+            time_spent_seconds: timeSpentSeconds,
+            ...(visitId ? { visit_id: visitId } : {}),
+          },
+          clientTs,
+        )
+      if (!visitId)
+        await updateProgress.mutateAsync({
+          index: current_step_index + 1,
+          expected: current_step_index,
+        })
+      return true
     } catch {
       toast.show(t('session.error'), 'error')
+      return false
     }
   }
 
   let content: ReactNode
   switch (step.kind) {
+    case 'section_intro':
+      content = (
+        <SectionIntroScreen step={step} onContinue={advance} busy={updateProgress.isPending} />
+      )
+      break
     case 'welcome':
       content = (
         <WelcomeScreen
@@ -238,20 +299,31 @@ export default function SessionPage() {
     case 'questionnaire': {
       const qStep = step
       content = (
-        <QuestionnaireRenderer
-          title={qStep.title}
-          description={t('pre_test.page', { current: qStep.page, total: qStep.page_count })}
-          instruction={qStep.description}
-          questions={qStep.questions}
-          submitting={respond.isPending}
-          initialAnswers={qStep.previous_answers ?? undefined}
-          onSubmit={(answers, timeSpentSeconds) =>
+        <PreTestPage
+          step={qStep}
+          participantId={me.data.id}
+          timing={session.data.section_timing}
+          onVisitReady={(visitId) => {
+            currentVisit.current = visitId
+          }}
+          onBusyChange={setPretestBusy}
+          finishRequested={supervisorDialog === 'finish'}
+          onCloseFinish={() => setSupervisorDialog(null)}
+          submitting={
+            respond.isPending ||
+            updateProgress.isPending ||
+            stepBack.isPending ||
+            supervisorDialog === 'back'
+          }
+          onSubmit={(answers, timeSpentSeconds, visitId, clientTs) =>
             submitAnswers(
               qStep.questionnaire_id,
               null,
               answers,
               timeSpentSeconds,
               pageDescriptor(qStep),
+              visitId,
+              clientTs,
             )
           }
         />

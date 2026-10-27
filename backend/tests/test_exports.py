@@ -174,6 +174,16 @@ async def test_the_section_file_adds_up_a_persons_pages(client, db, data, admin_
         "pages_answered": "2",
         "time_spent_seconds": "140",
         "pre_test_total_seconds": "188",
+        "section_key": "",
+        "started_client_ts": "",
+        "ended_client_ts": "",
+        "elapsed_seconds": "",
+        "deadline_ms": "",
+        "deadline_overrun_seconds": "",
+        "exit_reason": "",
+        "visited_pages": "",
+        "visit_seconds": "",
+        "page_visits": "",
     }
     assert by_section["Demographics"]["time_spent_seconds"] == "48"
     # The case battery is not part of the pre-test, but the person's total is.

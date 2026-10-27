@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import type { SessionStep } from '../api/participant'
@@ -88,9 +88,16 @@ vi.mock('../hooks/participant', () => ({
       steps: STEPS,
     },
   }),
-  useUpdateProgress: () => ({ mutate: (index: number) => (currentStepIndex = index) }),
+  useUpdateProgress: () => ({
+    mutate: (value: number | { index: number }) =>
+      (currentStepIndex = typeof value === 'number' ? value : value.index),
+    mutateAsync: async (value: number | { index: number }) =>
+      (currentStepIndex = typeof value === 'number' ? value : value.index),
+  }),
   useRespondQuestionnaire: () => ({ mutateAsync: respond, isPending: false }),
   useStepBack: () => ({ mutate: stepBack, isPending: false }),
+  useEnterQuestionnaire: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useFinishCK: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 vi.mock('../hooks/useOutbox', () => ({ useOutbox: () => 0 }))
@@ -108,6 +115,7 @@ beforeEach(() => {
   respond.mockClear()
   stepBack.mockClear()
   logged.mockClear()
+  localStorage.clear()
 })
 
 const view = () =>
@@ -126,7 +134,9 @@ test('each pre-test page submits only its own answers', async () => {
   const { rerender } = view()
 
   fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '34' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  })
   await vi.waitFor(() => expect(respond).toHaveBeenCalledTimes(1))
   expect(respond.mock.calls[0][0].answers).toEqual({ age: 34 })
 
@@ -142,7 +152,9 @@ test('each pre-test page submits only its own answers', async () => {
   expect(screen.getByRole('spinbutton')).toHaveValue(null)
 
   fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '5' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  })
   await vi.waitFor(() => expect(respond).toHaveBeenCalledTimes(2))
   expect(respond.mock.calls[1][0].answers).toEqual({ ck_pre_loop: 5 })
 })
@@ -168,7 +180,9 @@ test('logs when a question page is entered and when its answers went in', async 
   )
 
   fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '34' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  })
 
   await vi.waitFor(() =>
     expect(logged).toHaveBeenCalledWith(

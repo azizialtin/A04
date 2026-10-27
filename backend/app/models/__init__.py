@@ -8,6 +8,7 @@ from app.models.note import Note
 from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.questionnaire_timing import QuestionnaireVisit, SectionAttempt
 from app.models.researcher import Researcher
 from app.models.screen_recording import ScreenRecording
 from app.models.session import Session
@@ -26,8 +27,10 @@ __all__ = [
     "ParticipantVideo",
     "Questionnaire",
     "QuestionnaireResponse",
+    "QuestionnaireVisit",
     "Researcher",
     "ScreenRecording",
+    "SectionAttempt",
     "Session",
     "Study",
     "TextEntry",

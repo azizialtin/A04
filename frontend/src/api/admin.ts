@@ -9,6 +9,8 @@ export interface StudyTexts {
   welcome_note: string
   case_intro_title: string
   case_intro_body: string
+  pre_test_case_intro_title?: string
+  pre_test_case_intro_body?: string
   case_outro_title: string
   case_outro_body: string
   think_aloud_title: string
@@ -104,6 +106,9 @@ export interface AdminQuestionnaire {
   /** The instrument the page belongs to ("Demographics", "CK-Pretest"); the
    *  time on a section's pages is added up under it. Empty: stands alone. */
   section: string
+  section_key?: string
+  intro_title?: string
+  intro_body?: string
   order_index: number
   questions: unknown[]
 }
@@ -116,6 +121,14 @@ export interface ScreenSummary {
   byte_size: number | null
   /** "bridge" (ffmpeg on the lab machine) or "browser" (the page's own fallback). */
   recorder: 'bridge' | 'browser'
+}
+
+export interface ScreenRecordingRow extends ScreenSummary {
+  participant_id: string
+  video_id: number
+  video_title: string
+  epoch_ms: number | null
+  started_at: string
 }
 
 /** Which endpoint plays this row back: the gaze recording, or the capture alone. */
@@ -707,6 +720,18 @@ export const adminApi = {
       .then((r) => r.data)
   },
   deleteVideo: (id: number) => apiClient.delete(`/admin/videos/${id}`).then((r) => r.data),
+  downloadMedia: async (kind: 'video' | 'screen', id: number) => {
+    const path = kind === 'video' ? `/admin/videos/${id}` : `/admin/screen-recordings/${id}`
+    const { data } = await apiClient.get<{ url: string; filename: string }>(`${path}/download-url`)
+    // Hand the attachment to the browser; recordings must not become one large Blob in memory.
+    const link = document.createElement('a')
+    link.href = data.url
+    link.download = data.filename
+    link.rel = 'noreferrer'
+    document.body.append(link)
+    link.click()
+    link.remove()
+  },
 
   listParticipants: (studyId: number) =>
     apiClient.get<AdminParticipant[]>(`/admin/studies/${studyId}/participants`).then((r) => r.data),
@@ -768,6 +793,12 @@ export const adminApi = {
         params: studyId ? { study_id: studyId } : {},
       })
       .then((r) => r.data.items),
+  listScreenRecordings: (studyId?: number, offset = 0) =>
+    apiClient
+      .get<{ items: ScreenRecordingRow[]; total: number }>('/admin/screen-recordings', {
+        params: { study_id: studyId, offset, limit: 200 },
+      })
+      .then((r) => r.data),
   getReplay: (ref: ReplayRef) =>
     apiClient
       .get<AdminReplay>(

@@ -7,7 +7,7 @@ from pathlib import Path
 from app.models.video import Video
 
 
-def sign_blob_url(blob, expiration: int = 3600) -> str:
+def sign_blob_url(blob, expiration: int = 3600, *, response_disposition: str | None = None) -> str:
     """A V4 signed GET url for `blob`, signed whichever way the runtime allows.
 
     Locally the credentials carry a private key and sign on the spot. On Cloud
@@ -17,6 +17,8 @@ def sign_blob_url(blob, expiration: int = 3600) -> str:
     service account `roles/iam.serviceAccountTokenCreator` on itself.
     """
     terms = {"version": "v4", "expiration": expiration, "method": "GET"}
+    if response_disposition is not None:
+        terms["response_disposition"] = response_disposition
     try:
         return blob.generate_signed_url(**terms)
     except AttributeError as exc:

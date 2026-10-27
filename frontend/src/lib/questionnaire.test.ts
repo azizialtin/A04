@@ -1,6 +1,8 @@
 import type { Question } from './questionnaire'
 import {
   groupQuestions,
+  definitionErrors,
+  invalidPartialAnswers,
   missingRequired,
   validLineNumbers,
   visibleQuestionIds,
@@ -10,6 +12,180 @@ test('required field must be answered', () => {
   const qs: Question[] = [{ id: 'a', type: 'free_text', text: 'why' }]
   expect(missingRequired(qs, {})).toEqual(['a'])
   expect(missingRequired(qs, { a: 'because' })).toEqual([])
+})
+
+const multiSelect: Question = {
+  id: 'multi',
+  type: 'multi_select',
+  text: 'Welche Maßnahmen?',
+  options: [{ value: 1, label: 'Zahl' }, { value: '1', label: 'Text' }, 'trace'],
+}
+
+test('multi-select requires a nonempty typed subset, while optional and partial answers permit empty selections', () => {
+  expect(missingRequired([multiSelect], {})).toEqual(['multi'])
+  expect(missingRequired([multiSelect], { multi: [] })).toEqual(['multi'])
+  expect(missingRequired([multiSelect], { multi: [1, '1'] })).toEqual([])
+  const optional = { ...multiSelect, required: false }
+  expect(missingRequired([optional], {})).toEqual([])
+  expect(missingRequired([optional], { multi: [] })).toEqual([])
+  expect(invalidPartialAnswers([multiSelect], {})).toEqual([])
+  expect(invalidPartialAnswers([multiSelect], { multi: [] })).toEqual([])
+  expect(invalidPartialAnswers([multiSelect], { multi: ['trace', 1] })).toEqual([])
+  for (const value of [
+    null,
+    1,
+    '1',
+    {},
+    [1, 1],
+    ['unknown'],
+    [true],
+    [null],
+    [[]],
+    [NaN],
+    [Infinity],
+  ]) {
+    expect(missingRequired([optional], { multi: value })).toEqual(['multi'])
+    expect(invalidPartialAnswers([multiSelect], { multi: value })).toEqual(['multi'])
+  }
+})
+
+test('multi-select definitions need unique typed options and selections drive conditional visibility', () => {
+  expect(definitionErrors([multiSelect])).toEqual([])
+  for (const options of [undefined, [], ['a', 'a'], [{ value: true, label: 'Boolean' }], [1]]) {
+    expect(definitionErrors([{ ...multiSelect, options }])).not.toEqual([])
+  }
+  const followup: Question = {
+    id: 'why',
+    type: 'free_text',
+    text: 'Warum?',
+    show_if: { question: 'multi', equals: '1' },
+  }
+  expect(missingRequired([multiSelect, followup], { multi: [1] })).toEqual([])
+  expect(missingRequired([multiSelect, followup], { multi: ['1'] })).toEqual(['why'])
+})
+
+test('an entry cap counts locations independently of the valid code-line range', () => {
+  const capped = { ...lines, max_entries: 5 }
+  expect(missingRequired([capped], { lines: [3, 4, 5, 6, 10] })).toEqual([])
+  expect(missingRequired([capped], { lines: [3, 4, 5, 6, 7, 8] })).toEqual(['lines'])
+  expect(validLineNumbers(lines, [3, 4, 5, 6, 7, 8])).toBe(true)
+})
+
+const debugging: Question = { id: 'ck', type: 'debugging', text: 'Fehler?', min: 1, max: 29 }
+
+test('debugging requires both components and defaults to five locations', () => {
+  expect(missingRequired([debugging], { ck: { lines: [6], explanation: 'Falscher Typ' } })).toEqual(
+    [],
+  )
+  for (const value of [
+    {},
+    { lines: [6] },
+    { explanation: 'Falscher Typ' },
+    { lines: 6, explanation: 'Falscher Typ' },
+    { lines: [1, 2, 3, 4, 5, 6], explanation: 'Fehler' },
+    { lines: [30], explanation: 'Fehler' },
+    { lines: [6], explanation: '   ' },
+    { lines: [6], explanation: 'Fehler', unexpected: true },
+  ])
+    expect(missingRequired([debugging], { ck: value })).toEqual(['ck'])
+})
+
+test('supervisor exit keeps incomplete components but rejects malformed values', () => {
+  for (const value of [
+    {},
+    { lines: [6, null] },
+    { explanation: 'Unfertig' },
+    { lines: null, explanation: null },
+  ]) {
+    expect(invalidPartialAnswers([debugging], { ck: value })).toEqual([])
+  }
+  for (const value of [
+    { lines: [0] },
+    { lines: ['6'] },
+    { lines: [null, null, null, null, null, null] },
+    { explanation: 3 },
+  ]) {
+    expect(invalidPartialAnswers([debugging], { ck: value })).toEqual(['ck'])
+  }
+})
+
+const ranking: Question = {
+  id: 'order',
+  type: 'ranking',
+  text: 'Ordnen',
+  options: [
+    { value: 'inspect', label: 'Prüfen' },
+    { value: 'test', label: 'Testen' },
+    { value: 3, label: 'Korrigieren' },
+  ],
+}
+
+test('ranking saves stable values and requires an exact permutation', () => {
+  expect(missingRequired([ranking], { order: [3, 'test', 'inspect'] })).toEqual([])
+  for (const value of [
+    undefined,
+    [],
+    ['test'],
+    ['test', 'test', 3],
+    ['test', 'inspect', '3'],
+    ['test', 'inspect', true],
+  ]) {
+    expect(missingRequired([ranking], { order: value })).toEqual(['order'])
+  }
+})
+
+test('authored definitions reject invalid new fields and duplicate variable IDs', () => {
+  expect(
+    definitionErrors([
+      debugging,
+      ranking,
+      {
+        ...lines,
+        max_entries: 5,
+        code_blocks: [{ filename: 'A.java', code: ['', 'class A {', '}'], start_line: 1 }],
+      },
+    ]),
+  ).toEqual([])
+  expect(definitionErrors([debugging, debugging])).toContain(
+    'Frage 2: Die ID ck ist doppelt vergeben.',
+  )
+  for (const max_entries of [0, -1, 2.5, true, '5', null]) {
+    expect(definitionErrors([{ ...debugging, max_entries }])).not.toEqual([])
+  }
+  expect(definitionErrors([{ ...debugging, code_blocks: [{ code: [1] }] }])).not.toEqual([])
+  expect(definitionErrors([{ ...ranking, options: ['x', 'x'] }])).not.toEqual([])
+  expect(definitionErrors([{ ...debugging, type: {} }])).not.toEqual([])
+})
+
+test('definition validation rejects malformed or missing conditional references', () => {
+  for (const show_if of [
+    'yes',
+    [],
+    { question: 'absent', equals: true },
+    { question: 'ck' },
+    { question: '', equals: 1 },
+  ]) {
+    expect(definitionErrors([{ ...debugging, show_if }])).not.toEqual([])
+  }
+  expect(
+    definitionErrors([
+      { ...debugging, show_if: { question: 'trigger', equals: 1 } },
+      { id: 'trigger', type: 'number', text: 'Trigger' },
+    ]),
+  ).toEqual([])
+})
+
+test('definition validation rejects reversed and noninteger Likert scales and nonfinite numbers', () => {
+  for (const bounds of [
+    { scale_min: 5, scale_max: 1 },
+    { scale_min: 1.5 },
+    { scale_max: Infinity },
+  ]) {
+    expect(
+      definitionErrors([{ id: 'scale', type: 'likert', text: 'Scale', ...bounds }]),
+    ).not.toEqual([])
+  }
+  expect(definitionErrors([{ id: 'n', type: 'number', text: 'N', min: Infinity }])).not.toEqual([])
 })
 
 test('optional field is never missing', () => {

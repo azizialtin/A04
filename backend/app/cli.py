@@ -14,13 +14,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from getpass import getpass
+from pathlib import Path
 
 from sqlalchemy import select
 
 from app.core.database import SessionLocal, engine
+from app.models.participant import Participant
 from app.models.researcher import Researcher
+from app.models.session import Session
 from app.models.study import Study
 from app.services.researchers import (
     ProvisioningError,
@@ -29,6 +33,7 @@ from app.services.researchers import (
     set_researcher_password,
 )
 from app.services.study_content import seed_batteries
+from app.services.study_content_import import ContentImportError, import_ck_pretest
 
 
 def _read_password(given: str | None) -> str:
@@ -74,9 +79,19 @@ async def _list_admins(_: argparse.Namespace) -> None:
 
 async def _seed_questionnaires(args: argparse.Namespace) -> None:
     async with SessionLocal() as db:
-        study = await db.get(Study, args.study_id)
+        study = await db.scalar(select(Study).where(Study.id == args.study_id).with_for_update())
         if study is None:
             raise ProvisioningError(f"No study with id {args.study_id}.")
+        started = await db.scalar(
+            select(Session.id)
+            .join(Participant, Participant.id == Session.participant_id)
+            .where(Participant.study_id == study.id)
+            .limit(1)
+        )
+        if started is not None:
+            raise ProvisioningError(
+                "This study has started runs. Seed the instrument in a new study instead."
+            )
         created = await seed_batteries(db, study.id)
         await db.commit()
 
@@ -86,6 +101,23 @@ async def _seed_questionnaires(args: argparse.Namespace) -> None:
     for q in created:
         print(f"  + {q.placement.value:<11} {q.title} ({len(q.questions)} question(s))")
     print(f"Added {len(created)} questionnaire(s) to {study.name}.")
+
+
+async def _import_ck_pretest(args: argparse.Namespace) -> None:
+    mapping = None
+    if args.mapping:
+        try:
+            mapping = json.loads(Path(args.mapping).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ProvisioningError(f"Cannot read the CK row mapping: {exc}") from exc
+    async with SessionLocal() as db:
+        messages = await import_ck_pretest(
+            db, args.study_id, mapping, args.pck_questionnaire_id, apply=args.apply
+        )
+        if args.apply:
+            await db.commit()
+    for message in messages:
+        print(message)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -117,6 +149,25 @@ def _parser() -> argparse.ArgumentParser:
     seed.add_argument("--study-id", type=int, required=True)
     seed.set_defaults(run=_seed_questionnaires)
 
+    ck = subs.add_parser(
+        "import-ck-pretest", help="preview the October CK import with its approved variable IDs"
+    )
+    ck.add_argument("--study-id", type=int, required=True)
+    ck.add_argument(
+        "--mapping",
+        help="optional JSON override of the approved CSV-row-to-variable mapping",
+    )
+    ck.add_argument(
+        "--pck-questionnaire-id",
+        type=int,
+        required=True,
+        help="first PCK page, after CK self-assessment",
+    )
+    ck.add_argument(
+        "--apply", action="store_true", help="apply the previewed import to an unstarted study"
+    )
+    ck.set_defaults(run=_import_ck_pretest)
+
     return ap
 
 
@@ -131,7 +182,7 @@ def main() -> None:
 
     try:
         asyncio.run(run())
-    except ProvisioningError as exc:
+    except (ProvisioningError, ContentImportError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
 

@@ -86,7 +86,7 @@ export function studyCodeLineCount(text: string): number {
  * array with one entry per line is far easier to type than a string full of
  * `\n`; a string is accepted too. Tabs are kept — the stylesheet sizes them.
  */
-export function codeLines(code: string | string[]): string[] {
+export function codeLines(code: string | string[], preserveBlankLines = false): string[] {
   // The JSON is typed by hand, so the value may be anything; a number or an
   // object shows as its text rather than taking the page down.
   const lines = Array.isArray(code)
@@ -98,7 +98,7 @@ export function codeLines(code: string | string[]): string[] {
     : String(code ?? '')
         .replace(/\r\n?/g, '\n')
         .split('\n')
-  return trimBlankEdges(lines)
+  return preserveBlankLines ? lines : trimBlankEdges(lines)
 }
 
 export type TokenType = 'kw' | 'str' | 'com' | 'num' | 'plain'

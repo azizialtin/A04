@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import type { AxiosError } from 'axios'
 
@@ -10,7 +10,7 @@ import {
   useSeedQuestionnaires,
   useUpdateQuestionnaire,
 } from '../../hooks/admin'
-import type { Question } from '../../lib/questionnaire'
+import { definitionErrors, type Question } from '../../lib/questionnaire'
 import { codeLines } from '../../lib/code'
 import QuestionnaireRenderer from '../session/QuestionnaireRenderer'
 
@@ -33,6 +33,56 @@ const SCALE_6 = [
 // every question type the engine has. The preview below the form renders
 // whichever is chosen.
 const PRESETS: { name: string; questions: Question[] }[] = [
+  {
+    name: 'Mehrfachauswahl',
+    questions: [
+      {
+        id: 'pck_select_example',
+        type: 'multi_select',
+        text: 'Welche Unterstützungsmaßnahmen würden Sie auswählen?',
+        options: [
+          { value: 'trace', label: 'Die Variablenwerte gemeinsam nachvollziehen.' },
+          { value: 'compare', label: 'Das erwartete und beobachtete Ergebnis vergleichen.' },
+          { value: 'explain', label: 'Die Schülerin ihren Lösungsweg erklären lassen.' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'CK-Debugging (max. 5 Zeilen)',
+    questions: [
+      {
+        id: 'ck_task_example',
+        type: 'debugging',
+        text: 'In welcher Zeile befindet sich der Fehler? Was ist der Fehler?',
+        min: 1,
+        max: 3,
+        max_entries: 5,
+        code_blocks: [
+          {
+            filename: 'Beispiel.java',
+            code: ['int x = 1;', 'x = x + 1', 'System.out.println(x);'],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Reihenfolge (PCK)',
+    questions: [
+      {
+        id: 'pck_order_example',
+        type: 'ranking',
+        text: 'Ordnen Sie die Schritte von zuerst bis zuletzt.',
+        options: [
+          { value: 'observe', label: 'Beobachtetes und erwartetes Ergebnis vergleichen.' },
+          { value: 'trace', label: 'Variablenwerte nachvollziehen.' },
+          { value: 'check', label: 'Schleife überprüfen.' },
+          { value: 'test', label: 'Korrigiertes Programm ausführen.' },
+        ],
+      },
+    ],
+  },
   {
     name: 'Skalen',
     questions: [
@@ -118,7 +168,7 @@ const PRESETS: { name: string; questions: Question[] }[] = [
 
 const asJson = (questions: Question[]) => JSON.stringify(questions, null, 2)
 
-const EXAMPLE = asJson(PRESETS[2].questions)
+const EXAMPLE = asJson(PRESETS.find((preset) => preset.name === 'Java-Code')!.questions)
 
 /** The JSON field as questions, or what is wrong with it. */
 function parseQuestions(json: string): { questions: Question[] } | { error: string } {
@@ -129,6 +179,8 @@ function parseQuestions(json: string): { questions: Question[] } | { error: stri
     return { error: 'Ungültiges JSON.' }
   }
   if (!Array.isArray(parsed)) return { error: 'Die Fragen müssen ein JSON-Array sein.' }
+  const errors = definitionErrors(parsed)
+  if (errors.length) return { error: 'Fragen prüfen: ' + errors.join(' ') }
   return { questions: parsed as Question[] }
 }
 
@@ -139,6 +191,7 @@ const isConflict = (error: unknown) => (error as AxiosError)?.response?.status =
 export default function QuestionnairesSection({ studyId }: { studyId: number }) {
   const qs = useQuestionnaires(studyId)
   const create = useCreateQuestionnaire(studyId)
+  const update = useUpdateQuestionnaire(studyId)
   const seed = useSeedQuestionnaires(studyId)
   const del = useDeleteQuestionnaire(studyId)
 
@@ -146,6 +199,11 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [section, setSection] = useState('')
+  const [sectionKey, setSectionKey] = useState('')
+  const [introTitle, setIntroTitle] = useState('')
+  const [introBody, setIntroBody] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const titleInput = useRef<HTMLInputElement>(null)
   const [order, setOrder] = useState('0')
   const [json, setJson] = useState(EXAMPLE)
   const [err, setErr] = useState('')
@@ -163,28 +221,49 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
       return
     }
     setErr('')
-    create.mutate(
-      {
-        placement,
-        title: title.trim(),
-        description: description.trim(),
-        section: section.trim(),
-        order_index: Number(order) || 0,
-        questions: questions as unknown[],
+    const body = {
+      placement,
+      title: title.trim(),
+      description: description.trim(),
+      section: section.trim(),
+      section_key: placement === 'pre_test' ? sectionKey.trim() : '',
+      intro_title: placement === 'pre_test' ? introTitle.trim() : '',
+      intro_body: placement === 'pre_test' ? introBody.trim() : '',
+      order_index: Number(order) || 0,
+      questions: questions as unknown[],
+    }
+    const callbacks = {
+      onSuccess: () => {
+        setTitle('')
+        setDescription('')
+        setEditingId(null)
+        setErr('')
       },
-      {
-        onSuccess: () => {
-          setTitle('')
-          setDescription('')
-        },
-        onError: (error) =>
-          setErr(
-            isConflict(error)
-              ? 'Für diese Platzierung existiert bereits ein Fragebogen.'
-              : 'Der Fragebogen konnte nicht angelegt werden.',
-          ),
-      },
-    )
+      onError: (error: unknown) =>
+        setErr(
+          isConflict(error)
+            ? 'Diese Änderung ist nicht möglich: Die Studie hat bereits gestartete Durchläufe, oder die Platzierung ist belegt.'
+            : 'Der Fragebogen konnte nicht gespeichert werden. Bitte prüfen Sie die Angaben.',
+        ),
+    }
+    if (editingId !== null) update.mutate({ id: editingId, ...body }, callbacks)
+    else create.mutate(body, callbacks)
+  }
+
+  const edit = (q: AdminQuestionnaire) => {
+    setEditingId(q.id)
+    setPlacement(q.placement)
+    setTitle(q.title)
+    setDescription(q.description)
+    setSection(q.section)
+    setSectionKey(q.section_key ?? '')
+    setIntroTitle(q.intro_title ?? '')
+    setIntroBody(q.intro_body ?? '')
+    setOrder(String(q.order_index))
+    setJson(JSON.stringify(q.questions, null, 2))
+    setErr('')
+    titleInput.current?.focus()
+    titleInput.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
   }
 
   const remove = (id: number) => {
@@ -192,11 +271,10 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
     del.mutate(
       { id },
       {
-        onError: () => {
-          if (window.confirm('Es existieren bereits Antworten. Mit Antworten löschen?')) {
-            del.mutate({ id, force: true })
-          }
-        },
+        onError: () =>
+          setErr(
+            'Löschen nicht möglich. Gestartete Durchläufe und gespeicherte Antworten bleiben erhalten.',
+          ),
       },
     )
   }
@@ -226,10 +304,20 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
       </div>
 
       <div className="card form">
-        <h2>Fragebogen anlegen</h2>
+        <h2>
+          {editingId === null ? 'Fragebogen anlegen' : 'Fragebogen bearbeiten · ' + editingId}
+        </h2>
+        {editingId !== null && (
+          <p className="muted small">
+            Inhalt und Reihenfolge können vor dem ersten Durchlauf geändert werden.
+          </p>
+        )}
         <div className="form-row">
-          <label className="label">Platzierung</label>
+          <label className="label" htmlFor="page-placement">
+            Platzierung
+          </label>
           <select
+            id="page-placement"
             className="input"
             value={placement}
             onChange={(e) => setPlacement(e.target.value)}
@@ -247,6 +335,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           </label>
           <input
             id="new-page-title"
+            ref={titleInput}
             className="input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -269,8 +358,11 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           </p>
         </div>
         <div className="form-row">
-          <label className="label">Abschnitt</label>
+          <label className="label" htmlFor="page-section">
+            Abschnitt
+          </label>
           <input
+            id="page-section"
             className="input"
             value={section}
             placeholder="z. B. Demographics, CK-Pretest, MSK"
@@ -282,14 +374,67 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           </p>
         </div>
         <div className="form-row">
-          <label className="label">Reihenfolge</label>
+          <label className="label" htmlFor="page-order">
+            Reihenfolge
+          </label>
           <input
+            id="page-order"
             className="input"
             type="number"
             value={order}
             onChange={(e) => setOrder(e.target.value)}
           />
         </div>
+        {placement === 'pre_test' && (
+          <fieldset className="form">
+            <legend>Abschnitt und Einleitungsseite</legend>
+            <label className="label" htmlFor="page-section-key">
+              Abschnittsfunktion
+            </label>
+            <select
+              id="page-section-key"
+              className="input"
+              value={sectionKey}
+              onChange={(event) => setSectionKey(event.target.value)}
+            >
+              <option value="">Ohne Abschnittssteuerung</option>
+              <option value="ck_tasks">
+                CK-Aufgaben · 7 Minuten, Abschluss durch Studienleitung
+              </option>
+              <option value="pck">PCK · Ziel nach den CK-Aufgaben</option>
+              <option value="ck_self">CK-Selbsteinschätzung</option>
+              <option value="msk">MSK</option>
+              <option value="demographics">Demographie</option>
+              {sectionKey &&
+                !['ck_tasks', 'pck', 'ck_self', 'msk', 'demographics'].includes(sectionKey) && (
+                  <option value={sectionKey}>{sectionKey}</option>
+                )}
+            </select>
+            <p className="muted small">
+              Alle Seiten eines Abschnitts stehen direkt hintereinander. Die Einleitung wird einmal
+              vor der ersten Seite angezeigt; ihre Lesezeit zählt nicht zu den sieben Minuten.
+              Einleitungstext nur auf der ersten ausgefüllten Seite eines Abschnitts eintragen.
+            </p>
+            <label className="label" htmlFor="page-intro-title">
+              Überschrift der Abschnittseinleitung
+            </label>
+            <input
+              id="page-intro-title"
+              className="input"
+              value={introTitle}
+              onChange={(event) => setIntroTitle(event.target.value)}
+            />
+            <label className="label" htmlFor="page-intro-body">
+              Text der Abschnittseinleitung
+            </label>
+            <textarea
+              id="page-intro-body"
+              className="textarea"
+              value={introBody}
+              onChange={(event) => setIntroBody(event.target.value)}
+            />
+          </fieldset>
+        )}
         <div className="form-row">
           <label className="label" htmlFor="new-page-questions">
             Fragen (JSON-Array)
@@ -328,12 +473,14 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             <code>{'"code": ["int i = 0;", "while (i <= n) {", "  i++;", "}"]'}</code>. Er erscheint
             als Codefenster mit Zeilennummern über dem Antwortfeld – für „In welcher Zeile steckt
             der Fehler?“ ist die Frage dann vom Typ <code>line_numbers</code>: Für denselben Fehler
-            lassen sich beliebig viele Zeilen hinzufügen. Die Begründung bleibt ein gemeinsames
-            Freitextfeld. <code>min</code> und <code>max</code> begrenzen die Zeilennummern, nicht
-            die Anzahl der Angaben, und beziehen sich auf die angezeigten Zeilennummern.
-            Code-Ausschnitte auf derselben Seite werden fortlaufend nummeriert. Ausgeblendete Fragen
-            behalten ihre Zeilennummern reserviert. Mit <code>code_start_line</code> kann ein
-            Ausschnitt ausdrücklich an einer anderen Zeilennummer beginnen.
+            lassen sich mehrere Zeilen hinzufügen. <code>max_entries: 5</code> begrenzt die Anzahl.
+            Der Typ <code>debugging</code> speichert Zeilen und Begründung gemeinsam und erlaubt
+            standardmäßig höchstens fünf Angaben. <code>min</code> und <code>max</code> begrenzen
+            die Zeilennummern, nicht die Anzahl der Angaben, und beziehen sich auf die angezeigten
+            Zeilennummern. Code-Ausschnitte auf derselben Seite werden fortlaufend nummeriert.
+            Ausgeblendete Fragen behalten ihre Zeilennummern reserviert. Mit{' '}
+            <code>code_start_line</code> kann ein Ausschnitt ausdrücklich an einer anderen
+            Zeilennummer beginnen.
           </p>
         </div>
         {err && <p className="error-text">{err}</p>}
@@ -341,10 +488,29 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           type="button"
           className="btn btn-primary"
           onClick={submit}
-          disabled={create.isPending}
+          disabled={create.isPending || update.isPending}
         >
-          Anlegen
+          {editingId === null ? 'Anlegen' : 'Änderungen speichern'}
         </button>
+        {editingId !== null && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setEditingId(null)
+              setTitle('')
+              setDescription('')
+              setSection('')
+              setSectionKey('')
+              setIntroTitle('')
+              setIntroBody('')
+              setJson(EXAMPLE)
+              setErr('')
+            }}
+          >
+            Bearbeitung abbrechen
+          </button>
+        )}
       </div>
 
       <div className="card">
@@ -386,12 +552,15 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
               <td>{q.placement}</td>
               <td>{q.title}</td>
               <td>
-                <SectionCell studyId={studyId} id={q.id} value={q.section} />
+                <SectionCell key={q.section} studyId={studyId} id={q.id} value={q.section} />
               </td>
               <td>
                 <ExistingCodeQuestions studyId={studyId} questionnaire={q} />
               </td>
               <td>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => edit(q)}>
+                  Bearbeiten
+                </button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => remove(q.id)}>
                   Löschen
                 </button>

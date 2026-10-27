@@ -31,6 +31,7 @@ from app.models.note import Note
 from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.questionnaire_timing import QuestionnaireVisit, SectionAttempt
 from app.models.researcher import Researcher
 from app.models.text_entry import TextEntry
 from app.models.video import Video
@@ -432,6 +433,8 @@ def _responses_query(study_id: int, participant_ids: list[str] | None = None):
             QuestionnaireResponse.answers,
             QuestionnaireResponse.time_spent_seconds,
             QuestionnaireResponse.created_at,
+            Questionnaire.section_key,
+            QuestionnaireResponse.response_status,
         )
         .join(Participant, Participant.id == QuestionnaireResponse.participant_id)
         .join(Questionnaire, Questionnaire.id == QuestionnaireResponse.questionnaire_id)
@@ -445,39 +448,159 @@ def _responses_query(study_id: int, participant_ids: list[str] | None = None):
 
 
 def _sections_query(study_id: int, participant_ids: list[str] | None = None):
-    """The "Fragebögen" block of the participant panel as a file: one row per
-    person and section.
-
-    A section is the instrument a page belongs to; a page with no section is a
-    section of its own, as the panel counts it. Every page of the section this
-    person answered is added up, so a per-case battery answered nine times adds
-    all nine. `pre_test_total_seconds` is the whole pre-test for that person,
-    the figure the researchers asked for first, repeated on each of their rows
-    so a row stands on its own. Rows come in the order the sections were met.
-    """
+    # Keep the original response-duration totals; actual timed attempts are separate.
     section = func.coalesce(func.nullif(Questionnaire.section, ""), Questionnaire.title)
+    section_group = case(
+        (Questionnaire.section_key != "", Questionnaire.section_key), else_=section
+    )
     is_pre_test = Questionnaire.placement == QuestionnairePlacement.pre_test
     seconds = QuestionnaireResponse.time_spent_seconds
-    stmt = (
+    totals = _only(
         select(
-            QuestionnaireResponse.participant_id,
-            section.label("section"),
+            QuestionnaireResponse.participant_id.label("participant_id"),
+            func.min(section).label("section"),
             func.bool_and(is_pre_test).label("pre_test"),
-            func.count().label("pages_answered"),
+            func.count()
+            .filter(QuestionnaireResponse.response_status == "submitted")
+            .label("pages_answered"),
             func.sum(seconds).label("time_spent_seconds"),
-            # A window over the grouped rows: the person's pre-test pages, summed
-            # once and written on every row of theirs.
             func.sum(func.sum(seconds).filter(is_pre_test))
             .over(partition_by=QuestionnaireResponse.participant_id)
             .label("pre_test_total_seconds"),
+            Questionnaire.section_key.label("section_key"),
+            func.min(QuestionnaireResponse.id).label("first_response"),
         )
         .join(Participant, Participant.id == QuestionnaireResponse.participant_id)
         .join(Questionnaire, Questionnaire.id == QuestionnaireResponse.questionnaire_id)
         .where(Participant.study_id == study_id)
-        .group_by(QuestionnaireResponse.participant_id, section)
-        .order_by(QuestionnaireResponse.participant_id, func.min(QuestionnaireResponse.id))
+        .group_by(QuestionnaireResponse.participant_id, section_group, Questionnaire.section_key),
+        QuestionnaireResponse.participant_id,
+        participant_ids,
+    ).subquery()
+    attempts = _only(
+        select(SectionAttempt)
+        .join(Participant, Participant.id == SectionAttempt.participant_id)
+        .where(Participant.study_id == study_id),
+        SectionAttempt.participant_id,
+        participant_ids,
+    ).subquery()
+    visit_groups = _only(
+        select(
+            QuestionnaireVisit.participant_id.label("participant_id"),
+            QuestionnaireVisit.section_key.label("section_key"),
+            func.min(section).label("section"),
+        )
+        .join(Participant, Participant.id == QuestionnaireVisit.participant_id)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireVisit.questionnaire_id)
+        .where(Participant.study_id == study_id)
+        .group_by(QuestionnaireVisit.participant_id, QuestionnaireVisit.section_key),
+        QuestionnaireVisit.participant_id,
+        participant_ids,
+    ).subquery()
+    pid = func.coalesce(
+        totals.c.participant_id, attempts.c.participant_id, visit_groups.c.participant_id
     )
-    return _only(stmt, QuestionnaireResponse.participant_id, participant_ids)
+    key = func.coalesce(totals.c.section_key, attempts.c.section_key, visit_groups.c.section_key)
+    visits = (
+        select(
+            func.jsonb_agg(
+                aggregate_order_by(
+                    func.jsonb_build_object(
+                        "visit_id",
+                        QuestionnaireVisit.id,
+                        "questionnaire_id",
+                        QuestionnaireVisit.questionnaire_id,
+                        "step_index",
+                        QuestionnaireVisit.step_index,
+                        "entered_client_ts",
+                        QuestionnaireVisit.entered_client_ts,
+                        "exited_client_ts",
+                        QuestionnaireVisit.exited_client_ts,
+                        "exit_reason",
+                        QuestionnaireVisit.exit_reason,
+                        "is_review",
+                        QuestionnaireVisit.is_review,
+                        "submitted_answers",
+                        QuestionnaireVisit.submitted_answers,
+                    ),
+                    QuestionnaireVisit.entered_client_ts,
+                    QuestionnaireVisit.id,
+                )
+            )
+        )
+        .where(
+            QuestionnaireVisit.participant_id == pid,
+            QuestionnaireVisit.section_key == key,
+        )
+        .correlate(totals, attempts, visit_groups)
+        .scalar_subquery()
+    )
+    visited_pages = (
+        select(func.count(func.distinct(QuestionnaireVisit.questionnaire_id)))
+        .where(
+            QuestionnaireVisit.participant_id == pid,
+            QuestionnaireVisit.section_key == key,
+            QuestionnaireVisit.is_review.is_(False),
+        )
+        .correlate(totals, attempts, visit_groups)
+        .scalar_subquery()
+    )
+    visit_seconds = (
+        select(
+            func.sum(QuestionnaireVisit.exited_client_ts - QuestionnaireVisit.entered_client_ts)
+            / 1000.0
+        )
+        .where(
+            QuestionnaireVisit.participant_id == pid,
+            QuestionnaireVisit.section_key == key,
+            QuestionnaireVisit.is_review.is_(False),
+        )
+        .correlate(totals, attempts, visit_groups)
+        .scalar_subquery()
+    )
+    elapsed = (attempts.c.ended_client_ts - attempts.c.started_client_ts) / 1000.0
+    return (
+        select(
+            pid.label("participant_id"),
+            func.coalesce(totals.c.section, attempts.c.section, visit_groups.c.section).label(
+                "section"
+            ),
+            func.coalesce(totals.c.pre_test, True),
+            func.coalesce(totals.c.pages_answered, 0),
+            totals.c.time_spent_seconds,
+            totals.c.pre_test_total_seconds,
+            key,
+            attempts.c.started_client_ts,
+            attempts.c.ended_client_ts,
+            elapsed,
+            attempts.c.deadline_ms,
+            case((attempts.c.ended_client_ts.is_not(None), func.greatest(elapsed - 420, 0))),
+            attempts.c.exit_reason,
+            case((key != "", visited_pages)),
+            visit_seconds,
+            visits,
+        )
+        .select_from(
+            totals.join(
+                attempts,
+                and_(
+                    totals.c.participant_id == attempts.c.participant_id,
+                    totals.c.section_key == attempts.c.section_key,
+                ),
+                full=True,
+            ).join(
+                visit_groups,
+                and_(
+                    func.coalesce(totals.c.participant_id, attempts.c.participant_id)
+                    == visit_groups.c.participant_id,
+                    func.coalesce(totals.c.section_key, attempts.c.section_key)
+                    == visit_groups.c.section_key,
+                ),
+                full=True,
+            )
+        )
+        .order_by(pid, totals.c.first_response.nulls_last(), key)
+    )
 
 
 def _events_query(study_id: int, participant_ids: list[str] | None = None):
@@ -627,6 +750,8 @@ _EXPORTS = {
             "answers",
             "time_spent_seconds",
             "created_at",
+            "section_key",
+            "response_status",
         ],
         _responses_query,
         lambda r: [
@@ -640,6 +765,8 @@ _EXPORTS = {
             json.dumps(r[6]),
             r[7],
             _iso(r[8]),
+            r[9],
+            r[10],
         ],
     ),
     "sections": (
@@ -651,9 +778,25 @@ _EXPORTS = {
             "pages_answered",
             "time_spent_seconds",
             "pre_test_total_seconds",
+            "section_key",
+            "started_client_ts",
+            "ended_client_ts",
+            "elapsed_seconds",
+            "deadline_ms",
+            "deadline_overrun_seconds",
+            "exit_reason",
+            "visited_pages",
+            "visit_seconds",
+            "page_visits",
         ],
         _sections_query,
-        lambda r: [r[0], r[1], "true" if r[2] else "false", r[3], r[4], r[5]],
+        lambda r: [
+            r[0],
+            r[1],
+            "true" if r[2] else "false",
+            *r[3:15],
+            json.dumps(r[15]) if r[15] is not None else "",
+        ],
     ),
     "events": (
         "events.csv",

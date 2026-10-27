@@ -28,7 +28,10 @@ export function useVideoReplay(videoId: number, enabled = true) {
 export function useUpdateProgress() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (index: number) => participantApi.updateProgress(index),
+    mutationFn: (value: number | { index: number; expected: number }) =>
+      typeof value === 'number'
+        ? participantApi.updateProgress(value)
+        : participantApi.updateProgress(value.index, value.expected),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
   })
 }
@@ -36,7 +39,7 @@ export function useUpdateProgress() {
 export function useStepBack() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => participantApi.stepBack(),
+    mutationFn: (body?: { visit_id?: string; client_ts?: number }) => participantApi.stepBack(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
   })
 }
@@ -47,6 +50,7 @@ export function useStepBack() {
 const RETRY = { retry: 2, retryDelay: (attempt: number) => 500 * 2 ** attempt }
 
 export function useRespondQuestionnaire() {
+  const qc = useQueryClient()
   return useMutation({
     ...RETRY,
     mutationFn: (v: {
@@ -54,12 +58,43 @@ export function useRespondQuestionnaire() {
       video_id: number | null
       answers: Record<string, unknown>
       time_spent_seconds?: number
+      visit_id?: string
+      client_ts?: number
+      advance?: boolean
     }) =>
       participantApi.respondQuestionnaire(v.questionnaireId, {
         video_id: v.video_id,
         answers: v.answers,
         time_spent_seconds: v.time_spent_seconds,
+        visit_id: v.visit_id,
+        client_ts: v.client_ts,
+        advance: v.advance,
       }),
+    onSuccess: (_data, variables) =>
+      variables.advance ? qc.invalidateQueries({ queryKey: ['session'] }) : undefined,
+    onError: async (_error, variables) => {
+      if (!variables.advance) return
+      // The save may have committed while every acknowledgement was lost.
+      // Reconcile the pointer without replacing a readable draft with a query error.
+      try {
+        qc.setQueryData(['session'], await participantApi.getSession())
+      } catch {
+        /* retain the current page and its local draft until connected */
+      }
+    },
+  })
+}
+
+export function useEnterQuestionnaire() {
+  return useMutation({ ...RETRY, mutationFn: participantApi.enterQuestionnaire })
+}
+
+export function useFinishCK() {
+  const qc = useQueryClient()
+  return useMutation({
+    ...RETRY,
+    mutationFn: participantApi.finishCK,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
   })
 }
 

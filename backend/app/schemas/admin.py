@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.services.questionnaires import validate_question_definitions
 
 
 class StudyTexts(BaseModel):
@@ -21,6 +23,8 @@ class StudyTexts(BaseModel):
     welcome_note: str = Field(default="", max_length=1000)
     case_intro_title: str = Field(default="", max_length=200)
     case_intro_body: str = Field(default="", max_length=4000)
+    pre_test_case_intro_title: str = Field(default="", max_length=200)
+    pre_test_case_intro_body: str = Field(default="", max_length=4000)
     # The screen that closes a case, and the think-aloud: heading and text.
     case_outro_title: str = Field(default="", max_length=200)
     case_outro_body: str = Field(default="", max_length=4000)
@@ -184,8 +188,19 @@ class QuestionnaireCreate(BaseModel):
     # The instrument the page belongs to; pages sharing one are added up
     # together in the timing statistics.
     section: str = Field(default="", max_length=64)
+    section_key: str = Field(default="", max_length=64, pattern=r"^[a-z0-9_]*$")
+    intro_title: str = Field(default="", max_length=200)
+    intro_body: str = Field(default="", max_length=4000)
     order_index: int = 0
     questions: list[dict] = Field(default_factory=list)
+
+    @field_validator("questions")
+    @classmethod
+    def _questions_valid(cls, value: list[dict]) -> list[dict]:
+        errors = validate_question_definitions(value)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return value
 
 
 class QuestionnaireUpdate(BaseModel):
@@ -193,8 +208,20 @@ class QuestionnaireUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     section: str | None = Field(default=None, max_length=64)
+    section_key: str | None = Field(default=None, max_length=64, pattern=r"^[a-z0-9_]*$")
+    intro_title: str | None = Field(default=None, max_length=200)
+    intro_body: str | None = Field(default=None, max_length=4000)
     order_index: int | None = None
     questions: list[dict] | None = None
+
+    @field_validator("questions")
+    @classmethod
+    def _questions_valid(cls, value: list[dict] | None) -> list[dict] | None:
+        if value is not None:
+            errors = validate_question_definitions(value)
+            if errors:
+                raise ValueError("; ".join(errors))
+        return value
 
 
 class QuestionnaireOut(BaseModel):
@@ -204,6 +231,9 @@ class QuestionnaireOut(BaseModel):
     title: str
     description: str
     section: str
+    section_key: str
+    intro_title: str
+    intro_body: str
     order_index: int
     questions: list[dict]
 

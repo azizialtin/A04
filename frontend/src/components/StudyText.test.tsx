@@ -4,6 +4,15 @@ import StudyText from './StudyText'
 
 const TEXT = 'Schau dir den Code an.\n\n```java\nint i = 0;\n```\n\nWo liegt der Fehler?'
 
+test('emphasizes the timed-section instruction without rendering author HTML', () => {
+  const { container } = render(
+    <StudyText text={'Sie haben **7 Minuten Zeit**. <img src=x onerror=alert(1)>'} />,
+  )
+  expect(container.querySelector('strong')).toHaveTextContent('7 Minuten Zeit')
+  expect(container.querySelector('img')).toBeNull()
+  expect(container.textContent).toContain('<img src=x onerror=alert(1)>')
+})
+
 test('prose becomes paragraphs and the fenced code a numbered window, in order', () => {
   const { container } = render(<StudyText text={TEXT} className="lead" />)
 

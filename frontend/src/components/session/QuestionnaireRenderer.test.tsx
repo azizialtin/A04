@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 
 import type { Question } from '../../lib/questionnaire'
@@ -20,6 +21,57 @@ test('blocks submit until the required question is answered', () => {
 
   fireEvent.click(submit)
   expect(onSubmit).toHaveBeenCalledWith({ c: 3 }, expect.any(Number))
+})
+
+const multiSelect: Question = {
+  id: 'multi',
+  type: 'multi_select',
+  text: 'Welche Maßnahmen?',
+  options: [
+    { value: 1, label: 'Werte verfolgen' },
+    { value: '1', label: 'Ergebnis vergleichen' },
+  ],
+}
+
+test('checkboxes support keyboard selection and preserve numeric versus text option values', async () => {
+  const user = userEvent.setup()
+  const onSubmit = vi.fn()
+  render(<QuestionnaireRenderer title="PCK" questions={[multiSelect]} onSubmit={onSubmit} />)
+  const submit = screen.getByRole('button', { name: 'Weiter' })
+  expect(submit).toBeDisabled()
+  expect(screen.getByRole('group', { name: /Welche Maßnahmen/ })).toBeInTheDocument()
+  const first = screen.getByRole('checkbox', { name: 'Werte verfolgen' })
+  expect(first).toHaveAccessibleDescription('Mehrere Antworten sind möglich.')
+  await user.tab()
+  expect(first).toHaveFocus()
+  await user.keyboard(' ')
+  await user.click(screen.getByRole('checkbox', { name: 'Ergebnis vergleichen' }))
+  expect(first).toBeChecked()
+  await user.click(submit)
+  expect(onSubmit).toHaveBeenCalledWith({ multi: [1, '1'] }, expect.any(Number))
+  await user.click(first)
+  expect(screen.getByRole('checkbox', { name: 'Ergebnis vergleichen' })).toBeChecked()
+  await user.click(screen.getByRole('checkbox', { name: 'Ergebnis vergleichen' }))
+  expect(submit).toBeDisabled()
+})
+
+test('saved checkbox selections restore and an optional question can submit an empty array', async () => {
+  const user = userEvent.setup()
+  const onSubmit = vi.fn()
+  render(
+    <QuestionnaireRenderer
+      title="PCK"
+      questions={[{ ...multiSelect, required: false }]}
+      initialAnswers={{ multi: [1, '1'] }}
+      onSubmit={onSubmit}
+    />,
+  )
+  for (const checkbox of screen.getAllByRole('checkbox')) {
+    expect(checkbox).toBeChecked()
+    await user.click(checkbox)
+  }
+  await user.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(onSubmit).toHaveBeenCalledWith({ multi: [] }, expect.any(Number))
 })
 
 test('reports how long the questionnaire took', () => {
@@ -199,6 +251,150 @@ const multiLine: Question[] = [
   { id: 'lines', type: 'line_numbers', text: 'Welche Zeilen?', min: 1, max: 20 },
   { id: 'reason', type: 'free_text', text: 'Was ist der Fehler?' },
 ]
+
+test('a capped CK task reuses line controls and preserves both answer components', () => {
+  const onSubmit = vi.fn()
+  const onAnswersChange = vi.fn()
+  render(
+    <QuestionnaireRenderer
+      title="CK"
+      questions={[
+        { id: 'ck', type: 'debugging', text: 'Welche Zeilen?', min: 1, max: 29, max_entries: 5 },
+      ]}
+      onSubmit={onSubmit}
+      onAnswersChange={onAnswersChange}
+    />,
+  )
+  const submit = screen.getByRole('button', { name: 'Weiter' })
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1' } })
+  expect(submit).toBeDisabled()
+  fireEvent.change(screen.getByRole('textbox', { name: 'Was ist der Fehler?' }), {
+    target: { value: 'Indexfehler' },
+  })
+  for (let line = 2; line <= 5; line++) {
+    fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: `Welche Zeilen?: Zeilennummer ${line}` }),
+      { target: { value: String(line) } },
+    )
+  }
+  expect(screen.getByRole('button', { name: /Fehler bezieht sich/ })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+  expect(screen.getAllByRole('spinbutton')).toHaveLength(5)
+  expect(onAnswersChange).toHaveBeenLastCalledWith({
+    ck: { lines: [1, 2, 3, 4, 5], explanation: 'Indexfehler' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Zeilennummer 3 entfernen' }))
+  expect(screen.getByRole('button', { name: /Fehler bezieht sich/ })).toBeEnabled()
+  fireEvent.click(submit)
+  expect(onSubmit).toHaveBeenCalledWith(
+    { ck: { lines: [1, 2, 4, 5], explanation: 'Indexfehler' } },
+    expect.any(Number),
+  )
+})
+
+test('a partial debugging answer restores without silently filling missing components', () => {
+  render(
+    <QuestionnaireRenderer
+      title="CK"
+      questions={[{ id: 'ck', type: 'debugging', text: 'Fehler?' }]}
+      initialAnswers={{ ck: { lines: [2, null], explanation: 'Unfertig' } }}
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(2)
+  expect(screen.getAllByRole('spinbutton')[1]).toHaveValue(null)
+  expect(screen.getByRole('textbox')).toHaveValue('Unfertig')
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+})
+
+test('ranking needs an explicit choice, supports keyboard buttons and restores chosen order', () => {
+  const ranking: Question = {
+    id: 'order',
+    type: 'ranking',
+    text: 'Reihenfolge',
+    options: [
+      { value: 'a', label: 'Prüfen' },
+      { value: 'b', label: 'Testen' },
+      { value: 'c', label: 'Korrigieren' },
+    ],
+  }
+  const onSubmit = vi.fn()
+  const { unmount } = render(
+    <QuestionnaireRenderer title="PCK" questions={[ranking]} onSubmit={onSubmit} />,
+  )
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+  const move = screen.getByRole('button', { name: 'Testen: Nach oben verschieben' })
+  move.focus()
+  expect(move).toHaveFocus()
+  fireEvent.click(move)
+  expect(
+    screen
+      .getAllByRole('listitem')
+      .map((item) => within(item).getByText(/Prüfen|Testen|Korrigieren/).textContent),
+  ).toEqual(['Testen', 'Prüfen', 'Korrigieren'])
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(onSubmit).toHaveBeenCalledWith({ order: ['b', 'a', 'c'] }, expect.any(Number))
+  unmount()
+  render(
+    <QuestionnaireRenderer
+      title="PCK"
+      questions={[ranking]}
+      initialAnswers={{ order: ['c', 'a', 'b'] }}
+      onSubmit={onSubmit}
+    />,
+  )
+  expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('Korrigieren')
+  expect(
+    screen.queryByRole('button', { name: 'Diese Reihenfolge übernehmen' }),
+  ).not.toBeInTheDocument()
+})
+
+test('the displayed ranking can be explicitly confirmed without moving a step', () => {
+  const onSubmit = vi.fn()
+  render(
+    <QuestionnaireRenderer
+      title="PCK"
+      questions={[{ id: 'order', type: 'ranking', text: 'Ordnen', options: ['a', 'b'] }]}
+      onSubmit={onSubmit}
+    />,
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Diese Reihenfolge übernehmen' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(onSubmit).toHaveBeenCalledWith({ order: ['a', 'b'] }, expect.any(Number))
+})
+
+test('new code blocks preserve blank first lines and continue across named files', () => {
+  const { container } = render(
+    <QuestionnaireRenderer
+      title="CK"
+      questions={[
+        {
+          id: 'ck',
+          type: 'debugging',
+          text: 'Fehler?',
+          code_blocks: [
+            { filename: 'Erste.java', code: ['', 'class Erste {', '}'], start_line: 1 },
+            { filename: 'Zweite.java', code: ['class Zweite {', '}'] },
+          ],
+        },
+      ]}
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(screen.getByText('Erste.java')).toBeInTheDocument()
+  expect(screen.getByText('Zweite.java')).toBeInTheDocument()
+  const lines = container.querySelectorAll('.code__line')
+  expect(Array.from(lines, (line) => line.getAttribute('data-line'))).toEqual([
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+  ])
+  expect(lines[0]).toHaveTextContent('')
+  expect(lines[1]).toHaveTextContent('class Erste')
+})
 
 test('one error may reference more than five lines while keeping a single explanation', () => {
   const onSubmit = vi.fn()

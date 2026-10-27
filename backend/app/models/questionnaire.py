@@ -33,6 +33,9 @@ class Questionnaire(Base):
     # the time spent on its pages can be added up per section. Free text the
     # researcher owns; empty means the page is a section of its own.
     section: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    section_key: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    intro_title: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    intro_body: Mapped[str] = mapped_column(Text, default="", server_default="")
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     # Free-form question list; the shape is the questionnaire engine's contract.
     questions: Mapped[list] = mapped_column(JSONB, default=list)
@@ -77,4 +80,7 @@ class QuestionnaireResponse(Base):
     )
     answers: Mapped[dict] = mapped_column(JSONB, default=dict)
     time_spent_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_status: Mapped[str] = mapped_column(
+        String(16), default="submitted", server_default="submitted"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

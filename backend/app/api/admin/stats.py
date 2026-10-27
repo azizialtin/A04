@@ -37,6 +37,7 @@ from app.models.note import Note
 from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.questionnaire_timing import SectionAttempt
 from app.models.researcher import Researcher
 from app.models.screen_recording import ScreenRecording
 from app.models.session import Session
@@ -45,7 +46,7 @@ from app.models.text_entry import TextEntry
 from app.models.video import Video
 from app.models.video_set import VideoSet, VideoSetItem
 from app.services.log_data import variable_name
-from app.services.session_script import build_steps, count_steps, default_order
+from app.services.session_script import build_steps, count_steps, default_order, pre_test_step_count
 from app.services.stats import (
     CASE_EVENTS,
     EMPTY_CASE,
@@ -482,9 +483,7 @@ async def study_stats(
 
     # The step denominator. Built arithmetically rather than by assembling every
     # participant's script, which is several queries each.
-    pre_pages = sum(
-        1 for q in batteries if q.placement == QuestionnairePlacement.pre_test and q.questions
-    )
+    pre_pages = pre_test_step_count(batteries)
     # What a participant who has not logged in yet will get: one of the sets,
     # where the study has them — they are the same length by design, so the
     # first filled one will do — or else every video in the study.
@@ -1266,6 +1265,24 @@ async def participant_stats(
             for r, q in responses
         ],
         "sections": _participant_sections(responses),
+        "timed_sections": [
+            {
+                "section_key": attempt.section_key,
+                "section": attempt.section,
+                "started_client_ts": attempt.started_client_ts,
+                "ended_client_ts": attempt.ended_client_ts,
+                "deadline_ms": attempt.deadline_ms,
+                "elapsed_seconds": (attempt.ended_client_ts - attempt.started_client_ts) / 1000
+                if attempt.ended_client_ts is not None
+                else None,
+                "exit_reason": attempt.exit_reason,
+            }
+            for attempt in (
+                await db.scalars(
+                    select(SectionAttempt).where(SectionAttempt.participant_id == p.id)
+                )
+            ).all()
+        ],
         "calibrations": calibrations,
         "events_by_type": by_type,
     }

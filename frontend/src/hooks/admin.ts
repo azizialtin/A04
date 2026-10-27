@@ -221,6 +221,20 @@ export function useGazeRecordings(studyId?: number) {
   })
 }
 
+export function useScreenRecordings(studyId?: number, offset = 0) {
+  return useQuery({
+    queryKey: ['screen-recordings', studyId ?? null, offset],
+    queryFn: () => adminApi.listScreenRecordings(studyId, offset),
+  })
+}
+
+export function useDownloadMedia() {
+  return useMutation({
+    mutationFn: ({ kind, id }: { kind: 'video' | 'screen'; id: number }) =>
+      adminApi.downloadMedia(kind, id),
+  })
+}
+
 export function useReplay(ref: ReplayRef | null) {
   return useQuery({
     queryKey: ['replay', ref?.kind, ref?.id],

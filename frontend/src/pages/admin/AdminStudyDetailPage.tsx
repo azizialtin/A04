@@ -180,6 +180,8 @@ function TextsSection({ study }: { study: Study }) {
       welcome_note: '',
       case_intro_title: '',
       case_intro_body: '',
+      pre_test_case_intro_title: '',
+      pre_test_case_intro_body: '',
       case_outro_title: '',
       case_outro_body: '',
       think_aloud_title: '',
@@ -271,6 +273,31 @@ function TextsSection({ study }: { study: Study }) {
           value={texts.case_intro_body}
           placeholder={TEXT_DEFAULTS.case_intro_body}
           onChange={set('case_intro_body')}
+        />
+      </div>
+
+      <h3>Vor dem Vortest-Video</h3>
+      <p className="muted small">Leer übernimmt den Text „Vor jedem Fall“.</p>
+      <div className="form-row">
+        <label className="label" htmlFor="pretest-case-title">
+          Überschrift für das Vortest-Video
+        </label>
+        <input
+          id="pretest-case-title"
+          className="input"
+          value={texts.pre_test_case_intro_title ?? ''}
+          onChange={set('pre_test_case_intro_title')}
+        />
+      </div>
+      <div className="form-row">
+        <label className="label" htmlFor="pretest-case-body">
+          Einleitung für das Vortest-Video
+        </label>
+        <textarea
+          id="pretest-case-body"
+          className="textarea"
+          value={texts.pre_test_case_intro_body ?? ''}
+          onChange={set('pre_test_case_intro_body')}
         />
       </div>
 

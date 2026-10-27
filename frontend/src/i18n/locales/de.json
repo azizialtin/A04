@@ -124,7 +124,15 @@
     "add_line": "+ Fehler bezieht sich noch auf eine weitere Zeile",
     "remove_line": "Zeilennummer {{index}} entfernen",
     "line_numbers_invalid": "Bitte geben Sie für jede Zeile eine ganze Zahl ab {{min}} ein.",
-    "line_numbers_range": "Bitte geben Sie für jede Zeile eine ganze Zahl zwischen {{min}} und {{max}} ein."
+    "line_numbers_range": "Bitte geben Sie für jede Zeile eine ganze Zahl zwischen {{min}} und {{max}} ein.",
+    "line_entries_limit": "Höchstens {{count}} Zeilenangaben.",
+    "debugging_explanation": "Was ist der Fehler?",
+    "multi_select_hint": "Mehrere Antworten sind möglich.",
+    "ranking_instruction": "Ordnen Sie die Schritte mit den Pfeilen. Sie können die angezeigte Reihenfolge auch bestätigen.",
+    "ranking_up": "Nach oben verschieben",
+    "ranking_down": "Nach unten verschieben",
+    "ranking_confirm": "Diese Reihenfolge übernehmen",
+    "ranking_saved": "Reihenfolge ausgewählt. Änderungen sind weiterhin möglich."
   },
   "thanks": {
     "title": "Vielen Dank!",
@@ -163,7 +171,22 @@
       "diagnosis": "Diagnose",
       "case_outro": "Fall abgeschlossen",
       "think_aloud": "Lautes Denken",
-      "thanks": "Abschluss"
+      "thanks": "Abschluss",
+      "section_intro": "Abschnittseinleitung"
     }
+  },
+  "ck_section": {
+    "starting": "Abschnitt wird gestartet …",
+    "time_remaining": "Verbleibende Zeit im CK-Abschnitt",
+    "expired": "Die Zeit ist abgelaufen. Die Studienleitung beendet den Abschnitt.",
+    "review": "Ansicht nach Abschluss des zeitbegrenzten Abschnitts.",
+    "visit_error": "Die Bearbeitungszeit konnte nicht gestartet werden. Ihre Eingaben bleiben erhalten.",
+    "finish_error": "Der Abschnitt konnte nicht beendet werden. Bitte versuchen Sie es erneut.",
+    "retry": "Erneut versuchen",
+    "finish_title": "CK-Abschnitt beenden",
+    "finish_body": "Den CK-Abschnitt beenden und zur PCK-Einleitung oder ersten PCK-Seite wechseln?",
+    "finish_note": "Die bisherigen Eingaben dieser Seite werden gespeichert. Nicht bearbeitete Seiten bleiben ohne Antworten und Zeitstempel.",
+    "finish_confirm": "Speichern und zu PCK",
+    "intro_timer_note": "Die sieben Minuten beginnen erst mit der ersten Aufgabe."
   }
 }

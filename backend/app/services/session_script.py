@@ -99,6 +99,19 @@ def count_steps(pre_test_pages: int, phases: Sequence[PhaseType], calibration: b
     )
 
 
+def pre_test_step_count(questionnaires: Sequence[Questionnaire]) -> int:
+    pages = [
+        q for q in questionnaires if q.placement == QuestionnairePlacement.pre_test and q.questions
+    ]
+    seen: set[str] = set()
+    count = len(pages)
+    for q in pages:
+        if q.section_key and q.section_key not in seen:
+            seen.add(q.section_key)
+            count += bool(q.intro_title or q.intro_body)
+    return count
+
+
 def _pre_test_step(
     q: Questionnaire, page: int, page_count: int, previous: dict | None = None
 ) -> dict:
@@ -111,6 +124,7 @@ def _pre_test_step(
         # Logged with the page's entry and submit events, so the time on a
         # section's pages can be added up from the event log alone.
         "section": q.section,
+        "section_key": q.section_key,
         "questions": q.questions,
         # Answered once for the whole run, so there is no case to attach it to.
         "video_id": None,
@@ -197,6 +211,7 @@ _DESCRIBING_KEYS = (
     "title",
     "placement",
     "section",
+    "section_key",
     "questionnaire_id",
     "video_id",
     "page",
@@ -344,10 +359,21 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
     texts = StudyTexts.model_validate((study.texts if study else None) or {})
     defaults = StudyVideoDefaults.model_validate((study.video_defaults if study else None) or {})
     steps: list[dict] = [{"kind": "welcome", "texts": texts.model_dump()}]
-    steps.extend(
-        _pre_test_step(q, i + 1, len(pre_test), answered.get((q.id, None)))
-        for i, q in enumerate(pre_test)
-    )
+    seen_sections: set[str] = set()
+    for i, q in enumerate(pre_test):
+        if q.section_key and q.section_key not in seen_sections:
+            seen_sections.add(q.section_key)
+            if q.intro_title or q.intro_body:
+                steps.append(
+                    {
+                        "kind": "section_intro",
+                        "section_key": q.section_key,
+                        "title": q.intro_title or q.section or q.title,
+                        "body": q.intro_body,
+                        "time_limit_seconds": 420 if q.section_key == "ck_tasks" else None,
+                    }
+                )
+        steps.append(_pre_test_step(q, i + 1, len(pre_test), answered.get((q.id, None))))
     steps.append(
         _sosci_step("pretest", study.sosci_pretest_url if study else "", id_param, participant.id)
     )
@@ -383,8 +409,12 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
                     "kind": "case_intro",
                     "phase_type": phase.value,
                     "video_id": video.id,
-                    "title": texts.case_intro_title,
-                    "body": texts.case_intro_body,
+                    "title": (
+                        texts.pre_test_case_intro_title if phase == PhaseType.pre_test else ""
+                    )
+                    or texts.case_intro_title,
+                    "body": (texts.pre_test_case_intro_body if phase == PhaseType.pre_test else "")
+                    or texts.case_intro_body,
                 }
             )
             steps.append(_case_video_step(video, defaults))

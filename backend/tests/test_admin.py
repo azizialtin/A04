@@ -205,7 +205,8 @@ async def test_questionnaire_crud_and_forced_delete(client, db, admin_headers, s
             "placement": "pre_test",
             "title": "Vorwissen",
             "section": " CK-Pretest ",
-            "order_index": 9,
+            # An independent page must not split the default timed CK section.
+            "order_index": 100,
             "questions": [{"id": "c", "type": "likert", "text": "confidence"}],
         },
         headers=admin_headers,

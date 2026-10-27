@@ -15,6 +15,7 @@ from fastapi import (
     Form,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -30,6 +31,7 @@ from app.core.dependencies import get_current_admin
 from app.models.researcher import Researcher
 from app.models.video import Video
 from app.schemas.admin import VideoResponse, VideoUpdate
+from app.services.media_download import issue_download
 from app.services.storage import (
     ALLOWED_VIDEO_EXTENSIONS,
     ALLOWED_VIDEO_TYPES,
@@ -50,6 +52,18 @@ from ._sequence import _gaze_owners, _screen_owners
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/videos/{video_id}/download-url")
+async def video_download_url(
+    video_id: int,
+    request: Request,
+    response: Response,
+    admin: Researcher = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    response.headers["Cache-Control"] = "no-store"
+    return await issue_download(db, "video", video_id, admin, get_settings(), request)
 
 
 @router.get("/studies/{study_id}/videos", response_model=list[VideoResponse])

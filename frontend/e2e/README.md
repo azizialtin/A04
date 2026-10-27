@@ -64,3 +64,22 @@ AOI tests temporarily paint recorded rectangles red, save screenshots to
 added to the application. DOM alignment does not establish physical Tobii
 accuracy: validate gaze-to-display mapping, browser zoom, screen selection,
 calibration, and replay timing on the actual lab hardware.
+
+The October feedback checks also inspect all thirteen default CK tasks in source
+order, exact code numbering (including blank lines and two files), the five-entry
+cap, the shared PCK ranking page, editable introductions, and native admin video
+downloads. They exercise timer expiry without automatic progression, reload
+drafts, supervisor skip, and retry after a lost acknowledgement. The fixtures
+use the approved production question IDs, including rows 25/26 mapped to 08/10,
+and assert that the source exercise order stays unchanged.
+
+`timed-pretest.spec.ts` runs through the real API and Postgres in the ordinary
+`npm run e2e` suite. It checks persisted timing and partial answers against CSV
+exports, and captures all 24 default pre-test pages with conditional fields and
+five CK line entries visible at 1920×1080. This is a browser viewport assumption for regression
+checks; the actual lab monitor, scaling and zoom still need verification.
+
+The ordinary participant walkthrough also captures welcome, survey handoffs,
+phase/case introductions, case screens and popup, diagnosis, unanswered/answered
+post-case forms, think-aloud and completion at that viewport. The overflow
+assertion runs after the full walk so a tall page does not hide later findings.

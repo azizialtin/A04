@@ -51,6 +51,9 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 filterwarnings = [
     "error",
+    # CI uses supported Python 3.11; this SDK notice announces its 2027 retirement.
+    # Actual end-of-life/unsupported-runtime warnings must still fail the suite.
+    'ignore:^You are using a Python version \(3\.11\.\d+\) which Google will stop supporting in new releases of google\.api_core once it reaches its end of life \(2027-10-24\)\.:FutureWarning:^google\.api_core\._python_version_support$',
     # asyncpg teardown noise from the per-test engine; see tests/conftest.py.
     "ignore:coroutine 'Connection._cancel' was never awaited:RuntimeWarning",
     "ignore::pytest.PytestUnraisableExceptionWarning",

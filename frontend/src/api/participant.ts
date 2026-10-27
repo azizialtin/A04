@@ -58,6 +58,13 @@ export interface WelcomeTexts {
 export type SessionStep =
   | (StepBase & { kind: 'welcome'; texts?: WelcomeTexts })
   | (StepBase & {
+      kind: 'section_intro'
+      section_key: string
+      title: string
+      body: string
+      time_limit_seconds: number | null
+    })
+  | (StepBase & {
       kind: 'sosci'
       variant: 'pretest' | 'posttest'
       url: string
@@ -83,6 +90,7 @@ export type SessionStep =
       description: string
       // The instrument the page belongs to; logged with the page's events.
       section: string
+      section_key?: string
       questions: Question[]
       video_id: null
       page: number
@@ -148,6 +156,21 @@ export interface SessionScript {
   current_step_index: number
   total_steps: number
   steps: SessionStep[]
+  section_timing?: SectionTiming | null
+}
+
+export interface SectionTiming {
+  section_key: string
+  deadline_ms: number
+  server_now_ms: number
+  finished: boolean
+  started_client_ts: number | null
+  ended_client_ts: number | null
+}
+
+export interface QuestionnaireVisit {
+  visit_id: string
+  section_timing: SectionTiming | null
 }
 
 export interface ProgressResult {
@@ -171,15 +194,33 @@ export const authApi = {
 export const participantApi = {
   getMe: () => apiClient.get<Me>('/participant/me').then((r) => r.data),
   getSession: () => apiClient.get<SessionScript>('/participant/session').then((r) => r.data),
-  updateProgress: (currentStepIndex: number) =>
+  updateProgress: (currentStepIndex: number, expectedStepIndex?: number) =>
     apiClient
       .patch<ProgressResult>('/participant/session/progress', {
         current_step_index: currentStepIndex,
+        expected_step_index: expectedStepIndex,
+        client_ts: Date.now(),
       })
       .then((r) => r.data),
   /** The supervisor's one screen back; the server logs it. */
-  stepBack: () =>
-    apiClient.post<ProgressResult>('/participant/session/step-back').then((r) => r.data),
+  stepBack: (body?: { visit_id?: string; client_ts?: number }) =>
+    apiClient.post<ProgressResult>('/participant/session/step-back', body).then((r) => r.data),
+  enterQuestionnaire: (body: {
+    step_index: number
+    questionnaire_id: number
+    visit_id: string
+    client_ts: number
+  }) =>
+    apiClient
+      .post<QuestionnaireVisit>('/participant/session/questionnaire-visit', body)
+      .then((r) => r.data),
+  finishCK: (body: {
+    expected_step_index: number
+    visit_id: string
+    request_id: string
+    client_ts: number
+    answers: Record<string, unknown>
+  }) => apiClient.post<ProgressResult>('/participant/session/finish-ck', body).then((r) => r.data),
   getVideoUrl: (videoId: number) =>
     apiClient.get<{ signed_url: string }>(`/participant/videos/${videoId}/url`).then((r) => r.data),
   getVideoNotes: (videoId: number) =>
@@ -205,6 +246,9 @@ export const participantApi = {
       video_id: number | null
       answers: Record<string, unknown>
       time_spent_seconds?: number
+      visit_id?: string
+      client_ts?: number
+      advance?: boolean
     },
   ) =>
     apiClient

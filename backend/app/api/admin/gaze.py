@@ -8,7 +8,7 @@ its recordings in the bucket with nothing in the app able to find them.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,9 +22,62 @@ from app.models.researcher import Researcher
 from app.models.screen_recording import ScreenRecording
 from app.models.video import Video
 from app.services.gaze_replay import compute_replay, compute_screen_replay
+from app.services.media_download import issue_download
 from app.services.video_url import resolve_screen_url, resolve_video_url
 
 router = APIRouter()
+
+
+@router.get("/screen-recordings/{recording_id}/download-url")
+async def screen_download_url(
+    recording_id: int,
+    request: Request,
+    response: Response,
+    admin: Researcher = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    response.headers["Cache-Control"] = "no-store"
+    return await issue_download(db, "screen", recording_id, admin, get_settings(), request)
+
+
+@router.get("/screen-recordings")
+async def list_screen_recordings(
+    study_id: int | None = Query(None),
+    participant_id: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    admin: Researcher = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    query = (
+        select(ScreenRecording, Video.title)
+        .join(Video, Video.id == ScreenRecording.video_id)
+        .join(Participant, Participant.id == ScreenRecording.participant_id)
+        .order_by(ScreenRecording.started_at.desc(), ScreenRecording.id.desc())
+    )
+    if study_id is not None:
+        query = query.where(Participant.study_id == study_id)
+    if participant_id:
+        query = query.where(ScreenRecording.participant_id == participant_id)
+    return {
+        "total": await db.scalar(select(func.count()).select_from(query.order_by(None).subquery())),
+        "items": [
+            {
+                "id": screen.id,
+                "participant_id": screen.participant_id,
+                "video_id": screen.video_id,
+                "video_title": title,
+                "status": screen.status,
+                "error": screen.error,
+                "duration_ms": screen.duration_ms,
+                "byte_size": screen.byte_size,
+                "recorder": screen.recorder,
+                "epoch_ms": screen.epoch_ms,
+                "started_at": screen.started_at.isoformat(),
+            }
+            for screen, title in (await db.execute(query.limit(limit).offset(offset))).all()
+        ],
+    }
 
 
 @router.get("/gaze/recordings")

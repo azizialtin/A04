@@ -1,0 +1,19 @@
+.case-outro {
+  width: 100%;
+}
+.case-outro > .panel {
+  margin-inline: auto;
+}
+
+@media (min-width: 1000px) {
+  .shell__main:has(.case-outro) {
+    padding: 20px 24px;
+  }
+  .case-outro .panel--form {
+    max-width: 1080px;
+    padding: 24px 32px;
+  }
+  .case-outro .qfield {
+    padding: 14px 0 16px;
+  }
+}

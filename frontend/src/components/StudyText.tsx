@@ -4,6 +4,18 @@ import { splitCodeBlocks } from '../lib/code'
 import { bullets, paragraphs } from '../lib/text'
 import CodeBlock from './CodeBlock'
 
+function emphasis(text: string) {
+  return text
+    .split(/(\*\*[^*\n]+\*\*)/g)
+    .map((part, index) =>
+      part.startsWith('**') && part.endsWith('**') ? (
+        <strong key={index}>{part.slice(2, -2)}</strong>
+      ) : (
+        part
+      ),
+    )
+}
+
 /**
  * Researcher-written text as the participant sees it. Prose becomes
  * paragraphs, a paragraph of "- " lines a bulleted list; anything between a
@@ -39,7 +51,7 @@ export default function StudyText({
           <CodeBlock key={i} code={segment.lines} lang={segment.lang} startLine={firstLine} />
         ) : mode === 'preserve' ? (
           <p key={i} className={className} style={{ whiteSpace: 'pre-wrap', ...style }}>
-            {segment.text.replace(/^\n+|\n+$/g, '')}
+            {emphasis(segment.text.replace(/^\n+|\n+$/g, ''))}
           </p>
         ) : (
           paragraphs(segment.text).map((paragraph, j) => {
@@ -47,12 +59,12 @@ export default function StudyText({
             return items ? (
               <ul key={`${i}-${j}`} className={cx('prose-list', className)} style={style}>
                 {items.map((item, k) => (
-                  <li key={k}>{item}</li>
+                  <li key={k}>{emphasis(item)}</li>
                 ))}
               </ul>
             ) : (
               <p key={`${i}-${j}`} className={className} style={style}>
-                {paragraph}
+                {emphasis(paragraph)}
               </p>
             )
           })

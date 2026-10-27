@@ -13,12 +13,14 @@ export default function CodeBlock({
   code,
   lang = 'java',
   startLine = 1,
+  preserveBlankLines = false,
 }: {
   code: string | string[]
   lang?: string
   startLine?: number
+  preserveBlankLines?: boolean
 }) {
-  const lines = codeLines(code)
+  const lines = codeLines(code, preserveBlankLines)
   if (!lines.length) return null
   const rows = tokenise(lines, lang)
   const firstLine = Number.isSafeInteger(startLine) && startLine > 0 ? startLine : 1

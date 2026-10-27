@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -11,15 +12,52 @@ class ParticipantMeResponse(BaseModel):
     status: str
 
 
+class SectionTimingResponse(BaseModel):
+    section_key: str
+    deadline_ms: int
+    server_now_ms: int
+    finished: bool
+    started_client_ts: int
+    ended_client_ts: int | None = None
+
+
 class SessionScriptResponse(BaseModel):
     status: str
     current_step_index: int
     total_steps: int
     steps: list[dict]
+    section_timing: SectionTimingResponse | None = None
 
 
 class ProgressUpdateRequest(BaseModel):
     current_step_index: int = Field(ge=0)
+    client_ts: int | None = Field(default=None, ge=0)
+    expected_step_index: int | None = Field(default=None, ge=0)
+
+
+class QuestionnaireVisitRequest(BaseModel):
+    step_index: int = Field(ge=0)
+    questionnaire_id: int
+    visit_id: UUID
+    client_ts: int = Field(ge=0)
+
+
+class QuestionnaireVisitResponse(BaseModel):
+    visit_id: str
+    section_timing: SectionTimingResponse | None = None
+
+
+class FinishCkRequest(BaseModel):
+    expected_step_index: int = Field(ge=0)
+    visit_id: UUID
+    request_id: UUID
+    client_ts: int = Field(ge=0)
+    answers: dict[str, Any] = Field(default_factory=dict)
+
+
+class StepBackRequest(BaseModel):
+    visit_id: UUID | None = None
+    client_ts: int | None = Field(default=None, ge=0)
 
 
 class ProgressResult(BaseModel):
@@ -56,6 +94,9 @@ class QuestionnaireRespondRequest(BaseModel):
     video_id: int | None = None
     answers: dict[str, Any] = Field(default_factory=dict)
     time_spent_seconds: int | None = None
+    visit_id: UUID | None = None
+    client_ts: int | None = Field(default=None, ge=0)
+    advance: bool = False
 
 
 class EventCreate(BaseModel):

@@ -124,7 +124,15 @@
     "add_line": "+ This error also involves another line",
     "remove_line": "Remove line number {{index}}",
     "line_numbers_invalid": "Enter a whole number of at least {{min}} for every line.",
-    "line_numbers_range": "Enter a whole number between {{min}} and {{max}} for every line."
+    "line_numbers_range": "Enter a whole number between {{min}} and {{max}} for every line.",
+    "line_entries_limit": "At most {{count}} line entries.",
+    "debugging_explanation": "What is the error?",
+    "multi_select_hint": "Select all that apply.",
+    "ranking_instruction": "Use the arrows to put the steps in order. You can also confirm the displayed order.",
+    "ranking_up": "Move up",
+    "ranking_down": "Move down",
+    "ranking_confirm": "Use this order",
+    "ranking_saved": "Order selected. You can still change it."
   },
   "thanks": {
     "title": "Thank you!",
@@ -163,7 +171,22 @@
       "diagnosis": "Diagnosis",
       "case_outro": "Case completed",
       "think_aloud": "Think-aloud",
-      "thanks": "End"
+      "thanks": "End",
+      "section_intro": "Section introduction"
     }
+  },
+  "ck_section": {
+    "starting": "Starting section …",
+    "time_remaining": "Time remaining in the CK section",
+    "expired": "Time is up. The supervisor will end the section.",
+    "review": "Review after the timed section has ended.",
+    "visit_error": "Page timing could not be started. Your answers are kept.",
+    "finish_error": "The section could not be ended. Please try again.",
+    "retry": "Try again",
+    "finish_title": "End CK section",
+    "finish_body": "End the CK section and continue to the PCK introduction or first PCK page?",
+    "finish_note": "Your current answers will be saved. Unvisited pages will have no answers or timestamps.",
+    "finish_confirm": "Save and continue to PCK",
+    "intro_timer_note": "The seven minutes start with the first task."
   }
 }

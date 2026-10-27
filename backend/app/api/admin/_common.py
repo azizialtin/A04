@@ -121,6 +121,9 @@ def _q_out(q: Questionnaire) -> QuestionnaireOut:
         title=q.title,
         description=q.description,
         section=q.section,
+        section_key=q.section_key,
+        intro_title=q.intro_title,
+        intro_body=q.intro_body,
         order_index=q.order_index,
         questions=q.questions,
     )

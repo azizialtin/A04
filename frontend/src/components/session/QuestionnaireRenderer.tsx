@@ -7,16 +7,19 @@ import CodeBlock from '../CodeBlock'
 import StudyText from '../StudyText'
 import {
   groupQuestions,
+  lineEntryLimit,
   missingRequired,
   numberCodeQuestions,
   normaliseOption,
   validLineNumbers,
+  validRanking,
   visibleQuestionIds,
   type Answers,
   type Question,
   type QuestionBlock,
   type QuestionOption,
 } from '../../lib/questionnaire'
+import './QuestionnaireRenderer.css'
 
 interface Props {
   title: string
@@ -25,8 +28,10 @@ interface Props {
   instruction?: string
   questions: Question[]
   submitting?: boolean
+  disabled?: boolean
   /** What the page opens with: the stored answers, when the run was stepped back onto it. */
   initialAnswers?: Answers
+  onAnswersChange?: (answers: Answers) => void
   onSubmit: (answers: Answers, timeSpentSeconds: number) => void
 }
 
@@ -36,7 +41,9 @@ export default function QuestionnaireRenderer({
   instruction,
   questions,
   submitting,
+  disabled,
   initialAnswers,
+  onAnswersChange,
   onSubmit,
 }: Props) {
   const { t } = useTranslation()
@@ -62,12 +69,17 @@ export default function QuestionnaireRenderer({
         ) : null}
       </header>
 
-      <QuestionnaireFields
-        questions={questions}
-        answers={answers}
-        onChange={setAnswers}
-        startLine={questionsStart}
-      />
+      <fieldset className="questionnaire-controls" disabled={disabled || submitting}>
+        <QuestionnaireFields
+          questions={questions}
+          answers={answers}
+          onChange={(next) => {
+            setAnswers(next)
+            onAnswersChange?.(next)
+          }}
+          startLine={questionsStart}
+        />
+      </fieldset>
 
       {/* How many are left, not only that something is: a table of seven rows
           gives no clue why the button will not light up. */}
@@ -82,7 +94,7 @@ export default function QuestionnaireRenderer({
           type="button"
           className="btn btn-primary"
           data-aoi="continue"
-          disabled={missing.length > 0 || submitting}
+          disabled={missing.length > 0 || submitting || disabled}
           onClick={() => onSubmit(answers, elapsed())}
         >
           {submitting ? t('common.loading') : t('questionnaire.submit')}
@@ -235,7 +247,10 @@ function Field({
 }) {
   const required = question.required !== false
   return (
-    <fieldset className="qfield" data-aoi={`question.${question.id}`}>
+    <fieldset
+      className={`qfield${question.type === 'debugging' ? ' qfield--debugging' : ''}`}
+      data-aoi={`question.${question.id}`}
+    >
       <legend
         className="qfield__text"
         data-aoi={`question.${question.id}.prompt`}
@@ -244,13 +259,28 @@ function Field({
         {question.text}
         {required ? <span className="req"> *</span> : null}
       </legend>
-      {question.code ? (
-        <div data-aoi={`question.${question.id}.code`} data-aoi-priority="1">
-          <CodeBlock code={question.code} startLine={question.code_start_line} />
+      <div className="qfield__body">
+        {question.code_blocks?.length ? (
+          <div
+            className="question-code-files"
+            data-aoi={`question.${question.id}.code`}
+            data-aoi-priority="1"
+          >
+            {question.code_blocks.map((block, index) => (
+              <figure className="question-code-file" key={index}>
+                {block.filename ? <figcaption>{block.filename}</figcaption> : null}
+                <CodeBlock code={block.code} startLine={block.start_line} preserveBlankLines />
+              </figure>
+            ))}
+          </div>
+        ) : question.code ? (
+          <div data-aoi={`question.${question.id}.code`} data-aoi-priority="1">
+            <CodeBlock code={question.code} startLine={question.code_start_line} />
+          </div>
+        ) : null}
+        <div data-aoi={`question.${question.id}.answer`} data-aoi-priority="1">
+          <Control question={question} value={value} onChange={onChange} />
         </div>
-      ) : null}
-      <div data-aoi={`question.${question.id}.answer`} data-aoi-priority="1">
-        <Control question={question} value={value} onChange={onChange} />
       </div>
     </fieldset>
   )
@@ -312,6 +342,8 @@ function Control({
         </div>
       )
     }
+    case 'multi_select':
+      return <MultiSelect question={question} value={value} onChange={onChange} />
     case 'free_text':
       return (
         <textarea
@@ -335,12 +367,55 @@ function Control({
       )
     case 'line_numbers':
       return <LineNumbers question={question} value={value} onChange={onChange} />
+    case 'debugging':
+      return <Debugging question={question} value={value} onChange={onChange} />
+    case 'ranking':
+      return <Ranking question={question} value={value} onChange={onChange} />
     default:
       // The question JSON is written by hand in the admin, so a typo in `type`
       // lands here. Saying so beats a heading with nothing under it and a
       // submit button that can never enable.
       return <UnsupportedQuestion type={question.type} />
   }
+}
+
+function MultiSelect({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question
+  value: unknown
+  onChange: (next: unknown) => void
+}) {
+  const { t } = useTranslation()
+  const hintId = useId()
+  const selected: unknown[] = Array.isArray(value) ? value : []
+  return (
+    <div className="choice">
+      <p className="muted small" id={hintId}>
+        {t('questionnaire.multi_select_hint')}
+      </p>
+      {(question.options ?? []).map(normaliseOption).map((option) => (
+        <label key={`${typeof option.value}:${option.value}`} className="choice__option">
+          <input
+            type="checkbox"
+            name={question.id}
+            aria-describedby={hintId}
+            checked={selected.includes(option.value)}
+            onChange={(event) =>
+              onChange(
+                event.target.checked
+                  ? [...selected, option.value]
+                  : selected.filter((item) => item !== option.value),
+              )
+            }
+          />
+          <span>{option.label}</span>
+        </label>
+      ))}
+    </div>
+  )
 }
 
 function LineNumbers({
@@ -362,6 +437,7 @@ function LineNumbers({
     return initial.map((line) => ({ id: nextId.current++, value: (line ?? undefined) as unknown }))
   })
   const min = Math.max(1, question.min ?? 1)
+  const maxEntries = lineEntryLimit(question)
   const omitted = value == null || (Array.isArray(value) && value.length === 0)
   const invalid = !omitted && !validLineNumbers(question, value)
   const errorId = `${id}-error`
@@ -429,7 +505,9 @@ function LineNumbers({
             <button
               type="button"
               className="btn btn-secondary line-numbers__add"
+              disabled={maxEntries !== undefined && rows.length >= maxEntries}
               onClick={() => {
+                if (maxEntries !== undefined && rows.length >= maxEntries) return
                 focusNext.current = rows.length
                 update([...rows, { id: nextId.current++, value: undefined }])
               }}
@@ -439,16 +517,125 @@ function LineNumbers({
           )}
         </div>
       ))}
+      {maxEntries !== undefined ? (
+        <p className="muted small">
+          {t('questionnaire.line_entries_limit', { count: maxEntries })}
+        </p>
+      ) : null}
       {invalid && (
         <p className="error-text" id={errorId}>
           {t(
-            question.max === undefined
-              ? 'questionnaire.line_numbers_invalid'
-              : 'questionnaire.line_numbers_range',
-            { min, max: question.max },
+            maxEntries !== undefined && rows.length > maxEntries
+              ? 'questionnaire.line_entries_limit'
+              : question.max === undefined
+                ? 'questionnaire.line_numbers_invalid'
+                : 'questionnaire.line_numbers_range',
+            { min, max: question.max, count: maxEntries },
           )}
         </p>
       )}
+    </div>
+  )
+}
+
+function Debugging({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question
+  value: unknown
+  onChange: (next: unknown) => void
+}) {
+  const { t } = useTranslation()
+  const explanationId = useId()
+  const answer =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  return (
+    <div className="debugging-answer">
+      <LineNumbers
+        question={question}
+        value={answer.lines}
+        onChange={(lines) => onChange({ ...answer, lines })}
+      />
+      <label htmlFor={explanationId}>{t('questionnaire.debugging_explanation')}</label>
+      <textarea
+        id={explanationId}
+        className="textarea"
+        value={typeof answer.explanation === 'string' ? answer.explanation : ''}
+        onChange={(event) => onChange({ ...answer, explanation: event.target.value })}
+      />
+    </div>
+  )
+}
+
+function Ranking({
+  question,
+  value,
+  onChange,
+}: {
+  question: Question
+  value: unknown
+  onChange: (next: unknown) => void
+}) {
+  const { t } = useTranslation()
+  const options = (question.options ?? []).map(normaliseOption)
+  const answered = validRanking(question, value)
+  const order = answered ? value : options.map((option) => option.value)
+  const move = (index: number, direction: number) => {
+    const next = [...order]
+    const target = index + direction
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
+
+  return (
+    <div className="ranking">
+      <p className="muted small">{t('questionnaire.ranking_instruction')}</p>
+      <ol className="ranking__list">
+        {order.map((optionValue, index) => {
+          const option = options.find((candidate) => candidate.value === optionValue)!
+          return (
+            <li key={`${typeof optionValue}:${optionValue}`} className="ranking__item">
+              <span className="ranking__position" aria-hidden="true">
+                {index + 1}
+              </span>
+              <span className="ranking__label">{option.label}</span>
+              <div className="ranking__actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  aria-label={`${option.label}: ${t('questionnaire.ranking_up')}`}
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  aria-label={`${option.label}: ${t('questionnaire.ranking_down')}`}
+                  disabled={index === order.length - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  ↓
+                </button>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      {!answered ? (
+        <button type="button" className="btn btn-secondary" onClick={() => onChange(order)}>
+          {t('questionnaire.ranking_confirm')}
+        </button>
+      ) : null}
+      <p className="muted small" role="status">
+        {t(answered ? 'questionnaire.ranking_saved' : 'questionnaire.unanswered')}
+      </p>
     </div>
   )
 }

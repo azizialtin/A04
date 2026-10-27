@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import QuestionnairePlacement
 from app.models.questionnaire import Questionnaire
+from app.services.pretest_content import load_pretest_manifest, mapped_ck_tasks
 
 Question = dict[str, Any]
 
@@ -523,12 +524,17 @@ class Battery:
     # The instrument the page belongs to, as the researchers name it; the time
     # on a section's pages is added up under this. Empty: a section of its own.
     section: str = ""
+    section_key: str = ""
+    intro_title: str = ""
+    intro_body: str = ""
 
 
-# The pre-test pages come out in `order_index` order, one screen each. PCK is
-# seeded empty on purpose: the items are still being written, and the step
-# script skips a page with no questions, so an unfinished page is never shown to
-# a participant.
+# Source order is instrument order. The approved ID corrections do not sort
+# or group the thirteen independent debugging exercises.
+OCTOBER_PRETEST = load_pretest_manifest()
+CK_TASKS = mapped_ck_tasks()
+PCK_EXAMPLE = OCTOBER_PRETEST["pck_example"]
+
 DEFAULT_BATTERIES: list[Battery] = [
     Battery(
         QuestionnairePlacement.pre_test,
@@ -537,39 +543,60 @@ DEFAULT_BATTERIES: list[Battery] = [
         "Bitte machen Sie einige Angaben zu sich und zu Ihrer Ausbildung.",
         DEMOGRAPHICS,
         section="Demographics",
+        section_key="demographics",
     ),
     Battery(
         QuestionnairePlacement.pre_test,
         1,
-        "Fachdidaktisches Wissen",
-        "Bitte beantworten Sie die folgenden Fragen.",
-        [],
-        section="PCK-Pretest",
-    ),
-    Battery(
-        QuestionnairePlacement.pre_test,
-        2,
         "Fachwissen Programmierung",
         "Bitte wählen Sie zu jedem Konzept die Aussage, die am besten auf Sie zutrifft.",
         CK_PRE_TEST,
         section="CK-Pretest",
+        section_key="ck_self",
     ),
     Battery(
         QuestionnairePlacement.pre_test,
-        3,
+        2,
         CK_DEBUG_TITLE,
         CK_DEBUG_DESCRIPTION,
         CK_DEBUG_PRE_TEST,
         section="CK-Pretest",
+        section_key="ck_self",
     ),
     *(
         Battery(
             QuestionnairePlacement.pre_test,
-            3 + number,
+            3 + index,
+            f"CK: Aufgabe {index + 1}",
+            "",
+            [question],
+            section="CK-Debugging",
+            section_key="ck_tasks",
+            intro_title=OCTOBER_PRETEST["ck_intro"]["title"] if index == 0 else "",
+            intro_body=OCTOBER_PRETEST["ck_intro"]["body"] if index == 0 else "",
+        )
+        for index, question in enumerate(CK_TASKS)
+    ),
+    Battery(
+        QuestionnairePlacement.pre_test,
+        3 + len(CK_TASKS),
+        PCK_EXAMPLE["title"],
+        PCK_EXAMPLE["description"],
+        PCK_EXAMPLE["questions"],
+        section="PCK-Pretest",
+        section_key="pck",
+        intro_title=PCK_EXAMPLE["title"],
+        intro_body="Bitte beantworten Sie die folgenden Fragen.",
+    ),
+    *(
+        Battery(
+            QuestionnairePlacement.pre_test,
+            3 + len(CK_TASKS) + number,
             f"MSK: Aufgabe {number}",
             msk_description(number, scenario),
             msk_questions(number, options),
             section=MSK_SECTION,
+            section_key="msk",
         )
         for number, (scenario, options) in enumerate(MSK_TASKS, start=1)
     ),
@@ -623,6 +650,9 @@ async def seed_batteries(db: AsyncSession, study_id: int) -> list[Questionnaire]
             title=battery.title,
             description=battery.description,
             section=battery.section,
+            section_key=battery.section_key,
+            intro_title=battery.intro_title,
+            intro_body=battery.intro_body,
             order_index=battery.order_index,
             # A copy: two studies seeded in one process must not end up sharing
             # a question list that either of them can then edit.

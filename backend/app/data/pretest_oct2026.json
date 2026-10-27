@@ -1,0 +1,519 @@
+{
+  "version": "2026-10-27",
+  "source_file": "A04_DataCollection - [TODO] Pre-Test Inside Tool.csv",
+  "source_sha256": "04d93303a2b467856f0532b5136b2d235bb5b2f2303ca489c707d9050a1f8b39",
+  "ck_intro": {
+    "title": "Debugging-Aufgaben",
+    "body": "Im folgenden Abschnitt bearbeiten Sie verschiedene Debugging-Aufgaben. Auf jeder Seite sehen Sie ein Programm mit einem Fehler. Geben Sie an, in welcher Zeile sich der Fehler befindet, und beschreiben Sie kurz, worin der Fehler besteht. Klicken Sie anschließend auf „Weiter“, um zur nächsten Aufgabe zu gelangen.\n\nFür diesen Abschnitt haben Sie **7 Minuten Zeit**. Es gibt bewusst mehr Aufgaben, als Sie in dieser Zeit voraussichtlich bearbeiten können. Sie müssen also nicht alle Aufgaben lösen. Wir möchten einen Eindruck davon gewinnen, wie Sie Fehler in Programmen erkennen und beschreiben. Bearbeiten Sie die Aufgaben daher in Ihrem eigenen Tempo und so sorgfältig wie möglich.\n\nSobald die 7 Minuten abgelaufen sind, geben wir Ihnen Bescheid und leiten Sie zum nächsten Abschnitt weiter."
+  },
+  "ck_tasks": [
+    {
+      "source_row": 14,
+      "source_variable": "ck_pre_01",
+      "question": {
+        "id": "ck_pre_01",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Der Batteriestatus der Kopfhörer soll ausgegeben werden.",
+        "min": 1,
+        "max": 6,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Kopfhörer.java",
+            "code": [
+              "public class Kopfhörer {",
+              "    public void batteriestatusAusgeben() {",
+              "        int batterie = 100",
+              "        System.out.println(\"Batteriestatus: \" + batterie + \"%\");",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 15,
+      "source_variable": "ck_pre_12",
+      "question": {
+        "id": "ck_pre_12",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Nach der Ausführung soll x gleich 10 und y gleich 5 sein.",
+        "min": 1,
+        "max": 8,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static void main(String[] argumente) {",
+              "        int x = 5;",
+              "        int y = 5;",
+              "        y = x;",
+              "        x = z + 5;",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 16,
+      "source_variable": "ck_pre_13",
+      "question": {
+        "id": "ck_pre_13",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Der Endpreis des Kinotickets soll berechnet und ausgegeben werden.",
+        "min": 1,
+        "max": 14,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Kinokasse.java",
+            "code": [
+              "public class Kinokasse {",
+              "",
+              "    private double basispreis = 9.50;",
+              "    private double rabatt = 2.00;",
+              "",
+              "    public void endpreisBerechnen() {",
+              "",
+              "        double endpreis = basispreis - rabatt;",
+              "",
+              "        System.out.println(\"Der Endpreis des Tickets beträgt:\");",
+              "        System.out.prntln(endpreis);",
+              "",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 17,
+      "source_variable": "ck_pre_07",
+      "question": {
+        "id": "ck_pre_07",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Summe aller Werte im Array soll berechnet und ausgegeben werden.",
+        "min": 1,
+        "max": 14,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Rechner.java",
+            "code": [
+              "",
+              "public class Rechner",
+              "",
+              "    public void summeBerechnen() {",
+              "        int[] werte = {3, 5, 2, 8};",
+              "        int summe = 0;",
+              "",
+              "        for (int i = 0; i < werte.length; i++) {",
+              "            summe = summe + werte[i];",
+              "        }",
+              "",
+              "        System.out.println(\"Summe: \" + summe);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 18,
+      "source_variable": "ck_pre_02",
+      "question": {
+        "id": "ck_pre_02",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Beim Aufruf der Methode minimumBerechnen soll das Minimum von 5 und 10 berechnet und ausgegeben werden.",
+        "min": 1,
+        "max": 8,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Minimumrechner.java",
+            "code": [
+              "public class Minimumrechner {",
+              "    public void minimumBerechnen() {",
+              "        int a = 5;",
+              "        int b = 10;",
+              "        int minimum = min(a, b);",
+              "        System.out.println(\"Das Minimum ist \" + minimum);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 19,
+      "source_variable": "ck_pre_03",
+      "question": {
+        "id": "ck_pre_03",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Methode soll true zurückgeben, wenn die Anzahl der ausgeliehenen Bücher das Maximum überschreitet, und andernfalls false.",
+        "min": 1,
+        "max": 11,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bibliothekskonto.java",
+            "code": [
+              "public class Bibliothekskonto {",
+              "",
+              "    private int maximaleBücherzahl = 5;",
+              "",
+              "    public boolean ausleihgrenzeÜberschritten(int ausgelieheneBücher) {",
+              "        if (ausgelieheneBücher <= maximaleBücherzahl) {",
+              "            return true;",
+              "        }",
+              "        return false;",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 20,
+      "source_variable": "ck_pre_04",
+      "question": {
+        "id": "ck_pre_04",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Methode soll den lokalen Wert von x auf den Bereich von 5 bis 10 einschließlich begrenzen. Werte innerhalb des Bereichs sollen unverändert bleiben.",
+        "min": 1,
+        "max": 11,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public void wertBegrenzen(int x) {",
+              "        if (x > 10) {",
+              "            x = 10;",
+              "        } else {",
+              "            if (x > 5) {",
+              "                x = 5;",
+              "            }",
+              "        }",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 21,
+      "source_variable": "ck_pre_05",
+      "question": {
+        "id": "ck_pre_05",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Zahlen 1 bis 5 sollen in aufsteigender Reihenfolge ausgegeben werden.",
+        "min": 1,
+        "max": 9,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static void main(String[] argumente) {",
+              "        for (int i = 1; i < 10; i++) {",
+              "            if (i < 5) {",
+              "                System.out.println(i);",
+              "            }",
+              "        }",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 22,
+      "source_variable": "ck_pre_06",
+      "question": {
+        "id": "ck_pre_06",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Ausgegeben werden soll „Hallo und tschüss“. Die Methode main darf nicht verändert werden.",
+        "min": 1,
+        "max": 20,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static void main(String[] argumente) {",
+              "        halloAusgeben();",
+              "        undAusgeben();",
+              "        tschüssAusgeben();",
+              "    }",
+              "",
+              "    public static void halloAusgeben() {",
+              "        System.out.print(\"Hallo\");",
+              "        undAusgeben();",
+              "    }",
+              "",
+              "    public static void undAusgeben() {",
+              "        System.out.print(\" und \");",
+              "    }",
+              "",
+              "    public static void tschüssAusgeben() {",
+              "        System.out.print(\"tschüss\");",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 23,
+      "source_variable": "ck_pre_09",
+      "question": {
+        "id": "ck_pre_09",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Ein Bericht darüber, wie viele Schafe der Drache heute gegessen hat, soll ausgegeben werden.",
+        "min": 1,
+        "max": 29,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Königsland.java",
+            "code": [
+              "public class Königsland {",
+              "",
+              "    Drache drache;",
+              "",
+              "    public Königsland() {",
+              "        drache = new Drache(\"fünf\", \"vier\");",
+              "    }",
+              "",
+              "    public void königBerichten() {",
+              "        System.out.println(\"Bericht aus dem Königsland:\");",
+              "        System.out.println(\"Der Drache hat heute so viele Schafe gegessen: \" + drache.schafeHeuteAbfragen());",
+              "",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          },
+          {
+            "filename": "Drache.java",
+            "code": [
+              "public class Drache {",
+              "",
+              "    private int schafeHeute;",
+              "    private int bedarf;",
+              "",
+              "    public Drache(int schafeHeute, int bedarf) {",
+              "        this.schafeHeute = schafeHeute;",
+              "        this.bedarf = bedarf;",
+              "    }",
+              "",
+              "    public int schafeHeuteAbfragen() {",
+              "        return schafeHeute;",
+              "    }",
+              "",
+              "}"
+            ],
+            "start_line": 15
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 24,
+      "source_variable": "ck_pre_11",
+      "question": {
+        "id": "ck_pre_11",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die größte der drei Zahlen a, b und c soll ausgegeben werden.",
+        "min": 1,
+        "max": 16,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public void größteZahlAusgeben(int a, int b, int c) {",
+              "        int größteZahl;",
+              "",
+              "        if (a > b) {",
+              "            größteZahl = a;",
+              "        } else {",
+              "            größteZahl = b;",
+              "        }",
+              "",
+              "        if (c > b) {",
+              "            größteZahl = c;",
+              "        }",
+              "        System.out.println(größteZahl);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 25,
+      "source_variable": "ck_pre_12",
+      "question": {
+        "id": "ck_pre_08",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Ausgabe soll zuerst „10“ und anschließend „21“ sein.",
+        "min": 1,
+        "max": 20,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static int addieren(int a, int b) {",
+              "        return a + b;",
+              "    }",
+              "",
+              "    public static int verdoppeln(int c) {",
+              "        return addieren(c, c);",
+              "    }",
+              "",
+              "    public static int quadrieren(int d) {",
+              "        return d * d;",
+              "    }",
+              "",
+              "    public static void main(String[] argumente) {",
+              "",
+              "        System.out.println(verdoppeln(5));",
+              "",
+              "        System.out.println(addieren(verdoppeln(4), 5));",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    },
+    {
+      "source_row": 26,
+      "source_variable": "ck_pre_13",
+      "question": {
+        "id": "ck_pre_10",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die durchschnittliche Stärke aller Superhelden soll berechnet und ausgegeben werden. Nachkommastellen müssen nicht berücksichtigt werden; ein durch Ganzzahldivision abgeschnittener Wert ist ausreichend.",
+        "min": 1,
+        "max": 14,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Superheldenliga.java",
+            "code": [
+              "public class Superheldenliga {",
+              "    public void durchschnittlicheStärkeBerechnen() {",
+              "        // Stärke der Superhelden",
+              "        int[] stärken = {10,88,60,45,44,90,33,88,30,50};",
+              "",
+              "        int summe = 0;",
+              "        for (int i = 1; i < stärken.length; i++)",
+              "        {",
+              "            summe += stärken[i];",
+              "        }",
+              "        double durchschnitt = summe / stärken.length;",
+              "        System.out.println(\"Die durchschnittliche Stärke ist: \" + durchschnitt);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ]
+      }
+    }
+  ],
+  "pck_example": {
+    "issues": [
+      "The shared code appears to omit a closing class brace.",
+      "Part a references a pupil explanation not included in the source."
+    ],
+    "title": "Fachdidaktisches Wissen",
+    "description": "Eine Schülerin soll die Summe aller Werte eines Arrays berechnen. Ihr Programm gibt 15 statt\nder erwarteten 18 aus.\n\n```java\npublic class Rechner\n{\n    public void sum(){\n        int[] werte = {3, 5, 2, 8};\n        int summe = 0;\n\n        for (int i = 1; i < werte.length; i++) {\n            summe = summe + werte[i];\n        }\n\n        System.out.println(\"Summe: \" + summe);\n\n}\n```",
+    "questions": [
+      {
+        "id": "pck_pre_01a",
+        "type": "free_text",
+        "text": "a) Welche Schwierigkeiten oder Fehlvorstellungen könnten die Erklärung der Schülerin\nverursachen? Nennen Sie zwei mögliche Ursachen."
+      },
+      {
+        "id": "pck_pre_01b",
+        "type": "ranking",
+        "text": "b) Die Schülerin möchte herausfinden, warum ihr Programm 15 statt 18 ausgibt. Bringen\nSie die folgenden Schritte einer systematischen Fehlersuche in eine sinnvolle\nReihenfolge.",
+        "options": [
+          {
+            "value": "step_1",
+            "label": "Das beobachtete Ergebnis mit der erwarteten Summe vergleichen."
+          },
+          {
+            "value": "step_2",
+            "label": "Die Werte von i, werte[i] und summe für jeden Schleifendurchlauf in einer Tabelle festhalten."
+          },
+          {
+            "value": "step_3",
+            "label": "Die Schleifenbedingung und den Startwert von i überprüfen."
+          },
+          {
+            "value": "step_4",
+            "label": "Das Programm mit einer korrigierten Schleife erneut ausführen und das Ergebnis überprüfen."
+          }
+        ]
+      },
+      {
+        "id": "pck_pre_01c",
+        "type": "free_text",
+        "text": "c) Beschreiben Sie eine konkrete Unterstützungsmaßnahme, mit der Sie die vermutete\nSchwierigkeit überprüfen und der Schülerin beim Verständnis helfen würden."
+      }
+    ]
+  },
+  "ck_id_mapping": {
+    "decided_on": "2026-10-27",
+    "decision": "User authorized resolving the accidental duplicate IDs. Keep the first ck_pre_12 and ck_pre_13; map later CSV rows 25 and 26 to missing ck_pre_08 and ck_pre_10. Preserve source order.",
+    "rows": {
+      "14": "ck_pre_01",
+      "15": "ck_pre_12",
+      "16": "ck_pre_13",
+      "17": "ck_pre_07",
+      "18": "ck_pre_02",
+      "19": "ck_pre_03",
+      "20": "ck_pre_04",
+      "21": "ck_pre_05",
+      "22": "ck_pre_06",
+      "23": "ck_pre_09",
+      "24": "ck_pre_11",
+      "25": "ck_pre_08",
+      "26": "ck_pre_10"
+    }
+  }
+}

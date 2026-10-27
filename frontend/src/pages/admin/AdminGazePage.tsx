@@ -2,8 +2,9 @@ import { useState } from 'react'
 
 import type { ReplayRef, ScreenSummary } from '../../api/admin'
 import AdminReplayViewer from '../../components/admin/AdminReplayViewer'
+import MediaDownloadButton from '../../components/admin/MediaDownloadButton'
 import ParticipantStatsPanel from '../../components/admin/ParticipantStatsPanel'
-import { useGazeRecordings, useReplay } from '../../hooks/admin'
+import { useGazeRecordings, useReplay, useScreenRecordings } from '../../hooks/admin'
 
 function screenLabel(screen: ScreenSummary | null): string {
   if (!screen) return '—'
@@ -22,6 +23,8 @@ function screenLabel(screen: ScreenSummary | null): string {
 
 export default function AdminGazePage() {
   const recordings = useGazeRecordings()
+  const [screenOffset, setScreenOffset] = useState(0)
+  const screens = useScreenRecordings(undefined, screenOffset)
   const [selected, setSelected] = useState<ReplayRef | null>(null)
   const [inspected, setInspected] = useState<string | null>(null)
   const replay = useReplay(selected)
@@ -106,6 +109,73 @@ export default function AdminGazePage() {
       {selected != null && replay.isLoading && <p className="muted">Replay wird geladen…</p>}
       {selected != null && replay.data && (
         <AdminReplayViewer replay={replay.data} onClose={() => setSelected(null)} />
+      )}
+
+      <h2>Bildschirmaufnahmen herunterladen</h2>
+      <p className="muted">
+        Originalaufnahmen ohne eingeblendeten Blickpunkt. Wiederholte Fälle erscheinen einzeln.
+      </p>
+      {screens.isLoading && <p className="muted">Wird geladen…</p>}
+      {screens.isError && <p className="error-text">Aufnahmen konnten nicht geladen werden.</p>}
+      {screens.data && (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Aufnahme</th>
+              <th>Teilnehmer</th>
+              <th>Video</th>
+              <th>Beginn</th>
+              <th>Status</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {screens.data.items.map((capture) => (
+              <tr key={capture.id}>
+                <td>{capture.id}</td>
+                <td>{capture.participant_id}</td>
+                <td>{capture.video_title}</td>
+                <td>{new Date(capture.started_at).toLocaleString()}</td>
+                <td title={capture.error ?? undefined}>{screenLabel(capture)}</td>
+                <td>
+                  <MediaDownloadButton
+                    kind="screen"
+                    id={capture.id}
+                    disabled={capture.status !== 'stored'}
+                  />
+                </td>
+              </tr>
+            ))}
+            {screens.data.items.length === 0 && (
+              <tr>
+                <td colSpan={6} className="muted">
+                  Noch keine Bildschirmaufnahmen.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      )}
+      {(screenOffset > 0 || (screens.data?.total ?? 0) > 200) && (
+        <div className="inline-form">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={screenOffset === 0 || screens.isFetching}
+            onClick={() => setScreenOffset(Math.max(0, screenOffset - 200))}
+          >
+            Vorherige Aufnahmen
+          </button>
+          <span className="muted">Seite {Math.floor(screenOffset / 200) + 1}</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={screens.isFetching || screenOffset + 200 >= (screens.data?.total ?? 0)}
+            onClick={() => setScreenOffset(screenOffset + 200)}
+          >
+            Weitere Aufnahmen
+          </button>
+        </div>
       )}
     </div>
   )

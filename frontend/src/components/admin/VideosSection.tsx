@@ -9,6 +9,7 @@ import {
   useVideos,
 } from '../../hooks/admin'
 import { useToast } from '../Toast'
+import MediaDownloadButton from './MediaDownloadButton'
 
 const PHASES = [
   ['pre_test', 'Vortest'],
@@ -249,6 +250,7 @@ export default function VideosSection({ studyId }: { studyId: number }) {
               </td>
               <td>{v.has_file ? '✓' : '—'}</td>
               <td>
+                <MediaDownloadButton kind="video" id={v.id} disabled={!v.has_file} />{' '}
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"

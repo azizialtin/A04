@@ -1,0 +1,186 @@
+.pretest-page {
+  width: 100%;
+}
+.pretest-page > .panel {
+  margin-inline: auto;
+}
+.section-timer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem 1rem;
+  max-width: 1080px;
+  margin: 0 auto 0.75rem;
+}
+
+/* Wide lab displays can show existing batteries without changing their pages,
+   question order, or saved response keys. Narrow windows retain normal flow. */
+@media (min-width: 1600px) {
+  .shell__main:has(.pretest-page--matrix),
+  .shell__main:has(.pretest-page--demographics) {
+    padding: 20px 24px;
+  }
+  .pretest-page--matrix .panel--form,
+  .pretest-page--demographics .panel--form {
+    max-width: 1800px;
+    padding: 24px 32px;
+  }
+  .pretest-page--matrix .matrix {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    column-gap: 32px;
+    align-items: start;
+  }
+  .pretest-page--matrix .matrix__legend-title {
+    grid-column: 1;
+  }
+  .pretest-page--matrix .matrix__legend {
+    grid-column: 1;
+  }
+  .pretest-page--matrix .matrix__scroll {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .pretest-page--instructions .panel--form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    column-gap: 32px;
+    align-items: start;
+  }
+  .pretest-page--instructions .qhead {
+    grid-row: 1 / span 3;
+  }
+  .pretest-page--instructions .panel--form > :not(.qhead) {
+    grid-column: 2;
+  }
+  .pretest-page--instructions .matrix {
+    display: block;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .pretest-page--instructions .qhead .lead {
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .pretest-page--instructions .prose-list {
+    margin-block: 10px;
+  }
+  .pretest-page--demographics .qlist {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px 24px;
+    align-items: start;
+  }
+  .pretest-page--demographics .qfield {
+    padding: 8px 0 0;
+  }
+  .pretest-page--demographics .qfield__text {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .pretest-page--demographics .choice {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 12px;
+    font-size: 14px;
+  }
+  .pretest-page--demographics .choice__option {
+    min-height: 24px;
+  }
+  .pretest-page--demographics .textarea {
+    min-height: 48px;
+    height: 48px;
+    padding: 8px 12px;
+  }
+  .pretest-page--demographics .input {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+}
+.section-timer strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+}
+.section-intro {
+  max-width: 900px;
+}
+
+@media (min-width: 1000px) {
+  .shell__main:has(.pretest-page--ck),
+  .shell__main:has(.pretest-page--pck) {
+    padding: 20px 24px;
+  }
+  .pretest-page--ck .panel--form,
+  .pretest-page--pck .panel--form {
+    max-width: 1640px;
+    padding: 24px 32px;
+  }
+  .pretest-page--ck .section-timer {
+    max-width: 1640px;
+  }
+  .pretest-page--ck .qfield {
+    padding-top: 16px;
+  }
+  .pretest-page--ck .qfield--debugging .qfield__body {
+    grid-template-columns: minmax(0, 1.8fr) minmax(340px, 1fr);
+  }
+  .pretest-page--ck .debugging-answer .line-numbers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pretest-page--ck .line-numbers__row {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .pretest-page--ck .line-numbers__row > .btn-ghost {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 0;
+  }
+  .pretest-page--ck .line-numbers__row > .btn-ghost::after {
+    content: '−';
+    font-size: 20px;
+  }
+  .pretest-page--ck .line-numbers__add {
+    width: 100%;
+  }
+  .pretest-page--ck .question-code-files:has(figure:nth-child(2)) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .pretest-page--ck .code,
+  .pretest-page--pck .code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .pretest-page--ck .code__line,
+  .pretest-page--pck .code__line {
+    white-space: pre-wrap;
+  }
+  .pretest-page--pck .panel--form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    align-items: start;
+    column-gap: 32px;
+  }
+  .pretest-page--pck .qhead {
+    grid-row: 1 / span 3;
+  }
+  .pretest-page--pck .panel--form > :not(.qhead) {
+    grid-column: 2;
+  }
+  .pretest-page--pck .qfield {
+    padding: 12px 0;
+  }
+  .pretest-page--pck .qfield__text {
+    margin-bottom: 10px;
+  }
+  .pretest-page--pck .textarea {
+    min-height: 80px;
+  }
+  .pretest-page--pck .ranking__item {
+    padding: 4px 0;
+  }
+}
