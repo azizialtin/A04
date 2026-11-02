@@ -3,6 +3,11 @@
 A04 is four pieces: the FastAPI backend, the static React frontend, Postgres,
 and — lab-side only — the Tobii bridge.
 
+For the LRZ VM deployment alongside EMMA/LENS, use
+[`infrastructure/lrz/README.md`](../infrastructure/lrz/README.md). Its explicit
+`persistent_local` backend validates a durable mount and serves private signed
+media. The cloud-storage requirements below remain the default Cloud Run path.
+
 ## Images
 
 Both apps build from their own directory (they're self-contained):

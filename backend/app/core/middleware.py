@@ -77,7 +77,11 @@ class BodySizeLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        path = scope.get("path", "").encode("latin-1")
+        route_path = scope.get("path", "")
+        root_path = scope.get("root_path", "").rstrip("/")
+        if root_path and (route_path == root_path or route_path.startswith(root_path + "/")):
+            route_path = route_path[len(root_path) :]
+        path = route_path.encode("utf-8")
         limit = (
             self.upload_max_bytes
             if any(path.startswith(p) for p in self.upload_paths)

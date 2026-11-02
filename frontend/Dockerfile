@@ -1,14 +1,16 @@
 # Build the SPA, then serve the static bundle from nginx.
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_TOBII_WS_URL=ws://localhost:8765
+ENV VITE_TOBII_WS_URL=$VITE_TOBII_WS_URL
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:stable-alpine
 # The image's entrypoint renders anything in templates/ with envsubst, so the
 # policy can name the real backend at deploy time.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
