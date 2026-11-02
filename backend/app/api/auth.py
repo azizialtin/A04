@@ -51,8 +51,10 @@ async def participant_login(
         "Too many attempts. Wait a minute, then ask the study team for help.",
     )
     pid = body.participant_id.strip()
+    # Serialize the registered/active check as well as session creation. A study
+    # lock alone leaves simultaneous logins with an outdated participant status.
     participant = await db.scalar(
-        select(Participant).where(func.lower(Participant.id) == pid.lower())
+        select(Participant).where(func.lower(Participant.id) == pid.lower()).with_for_update()
     )
     if participant is None:
         # Only ids an admin pre-registered may log in — no self sign-up.
