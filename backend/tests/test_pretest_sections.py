@@ -591,3 +591,60 @@ async def test_pck_visit_without_response_is_exported(
         await client.get(f"/admin/studies/{seed_study.id}/exports", headers=admin_headers)
     ).json()
     assert next(item["rows"] for item in counts if item["kind"] == "sections") == 1
+
+
+@pytest.mark.parametrize(
+    "question,value",
+    [
+        ({"type": "number", "min": 1, "max": 5}, 999),
+        ({"type": "number"}, "3"),
+        ({"type": "slider"}, 10),
+        ({"type": "likert"}, 1.5),
+        ({"type": "multiple_choice", "options": ["yes", "no"]}, "other"),
+        ({"type": "free_text"}, {"unexpected": "object"}),
+    ],
+)
+async def test_invalid_scalar_submission_and_partial_finish_leave_visit_open(
+    client, db, timed_run, participant_headers, question, value
+):
+    pages, _, session = timed_run
+    pages[0].questions = [{"id": "answer", "text": "Validation", **question}]
+    await db.flush()
+    body, _ = await enter(client, participant_headers, pages[0].id)
+    finish = {
+        "expected_step_index": 2,
+        "visit_id": body["visit_id"],
+        "request_id": str(uuid4()),
+        "client_ts": 1_425_000,
+        "answers": {"answer": value},
+    }
+    for path, payload in [
+        (
+            f"/participant/questionnaires/{pages[0].id}/respond",
+            {
+                "visit_id": body["visit_id"],
+                "client_ts": 1_425_000,
+                "answers": {"answer": value},
+                "advance": True,
+            },
+        ),
+        ("/participant/session/finish-ck", finish),
+    ]:
+        response = await client.post(path, json=payload, headers=participant_headers)
+        assert response.status_code == 422, response.text
+        assert session.current_step_index == 2
+        visit = await db.scalar(select(QuestionnaireVisit))
+        assert visit.exited_client_ts is None
+        assert await db.scalar(select(func.count()).select_from(QuestionnaireResponse)) == 0
+    finish["answers"] = {}
+    assert (
+        await client.post(
+            "/participant/session/finish-ck", json=finish, headers=participant_headers
+        )
+    ).status_code == 200
+    assert (
+        await client.post(
+            "/participant/session/finish-ck", json=finish, headers=participant_headers
+        )
+    ).status_code == 200
+    assert await db.scalar(select(func.count()).select_from(QuestionnaireVisit)) == 1

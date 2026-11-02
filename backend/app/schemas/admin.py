@@ -3,9 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, ValidationInfo, field_validator
 
 from app.services.questionnaires import validate_question_definitions
+
+MetadataTitle = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+]
+VideoTimeLimit = Annotated[int, Field(strict=True, ge=0, le=2_147_483_647)]
 
 
 class StudyTexts(BaseModel):
@@ -48,24 +53,32 @@ MAX_THINK_ALOUD_BATCH = 20
 
 
 class StudyCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
+    name: MetadataTitle
     description: str = ""
-    sosci_pretest_url: str = ""
-    sosci_posttest_url: str = ""
-    sosci_id_param: str = "id"
+    sosci_pretest_url: str = Field(default="", max_length=1000)
+    sosci_posttest_url: str = Field(default="", max_length=1000)
+    sosci_id_param: str = Field(default="id", max_length=64)
     think_aloud_batch_size: int = Field(default=1, ge=1, le=MAX_THINK_ALOUD_BATCH)
 
 
 class StudyUpdate(BaseModel):
-    name: str | None = None
+    name: MetadataTitle | None = None
     description: str | None = None
-    sosci_pretest_url: str | None = None
-    sosci_posttest_url: str | None = None
-    sosci_id_param: str | None = None
+    sosci_pretest_url: str | None = Field(default=None, max_length=1000)
+    sosci_posttest_url: str | None = Field(default=None, max_length=1000)
+    sosci_id_param: str | None = Field(default=None, max_length=64)
     is_active: bool | None = None
     texts: StudyTexts | None = None
     video_defaults: StudyVideoDefaults | None = None
     think_aloud_batch_size: int | None = Field(default=None, ge=1, le=MAX_THINK_ALOUD_BATCH)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def reject_null(cls, value):
+        # Omission leaves the field alone; explicit null is not a database value.
+        if value is None:
+            raise ValueError("Omit unchanged fields instead of setting them to null.")
+        return value
 
 
 class StudyResponse(BaseModel):
@@ -83,14 +96,21 @@ class StudyResponse(BaseModel):
 
 
 class VideoUpdate(BaseModel):
-    title: str | None = None
+    title: MetadataTitle | None = None
     phase_type: str | None = None
     task_description: str | None = None
     info_text: str | None = None
     student_task_text: str | None = None
-    time_limit_seconds: int | None = None
+    time_limit_seconds: VideoTimeLimit | None = None
     use_default_task: bool | None = None
     use_default_info: bool | None = None
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def reject_null(cls, value, info: ValidationInfo):
+        if value is None and info.field_name != "time_limit_seconds":
+            raise ValueError("Only the time limit can be cleared with null.")
+        return value
 
 
 class VideoResponse(BaseModel):

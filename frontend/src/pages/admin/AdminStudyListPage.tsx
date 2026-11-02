@@ -12,7 +12,7 @@ export default function AdminStudyListPage() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim() || name.trim().length > 255 || pre.length > 1000 || post.length > 1000) return
     createStudy.mutate(
       { name: name.trim(), sosci_pretest_url: pre.trim(), sosci_posttest_url: post.trim() },
       {
@@ -33,12 +33,18 @@ export default function AdminStudyListPage() {
         <h2>Neue Studie</h2>
         <div className="form-row">
           <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <input
+            maxLength={255}
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
         <div className="form-row">
           <label className="label">SoSci-Link (Vortest)</label>
           <input
             className="input"
+            maxLength={1000}
             value={pre}
             onChange={(e) => setPre(e.target.value)}
             placeholder="https://…"
@@ -48,6 +54,7 @@ export default function AdminStudyListPage() {
           <label className="label">SoSci-Link (Nachtest)</label>
           <input
             className="input"
+            maxLength={1000}
             value={post}
             onChange={(e) => setPost(e.target.value)}
             placeholder="https://…"
@@ -60,6 +67,11 @@ export default function AdminStudyListPage() {
         >
           Anlegen
         </button>
+        {createStudy.isError && (
+          <p className="error-text" role="alert">
+            Anlegen fehlgeschlagen. Bitte Eingaben prüfen und erneut versuchen.
+          </p>
+        )}
       </form>
 
       {studies.isLoading ? (
