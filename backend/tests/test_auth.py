@@ -139,6 +139,7 @@ async def test_simultaneous_first_logins_create_one_run_and_preserve_balanced_de
 
     from app.api import auth
     from app.core.database import get_db
+    from app.models.interaction_log import InteractionLog
     from app.models.participant import Participant
     from app.models.participant_video import ParticipantVideo
     from app.models.study import Study
@@ -183,6 +184,12 @@ async def test_simultaneous_first_logins_create_one_run_and_preserve_balanced_de
         await asyncio.sleep(0.03)
         return await original_deal(db, participant)
 
+    async def login_event(**values):
+        async with factory() as db:
+            db.add(InteractionLog(**values))
+            await db.commit()
+
+    monkeypatch.setattr(auth, "log_event", login_event)
     monkeypatch.setattr(auth, "deal_on_first_login", slow_deal)
     previous = dict(app.dependency_overrides)
     app.dependency_overrides[get_db] = isolated_db
@@ -190,13 +197,16 @@ async def test_simultaneous_first_logins_create_one_run_and_preserve_balanced_de
         async with AsyncClient(
             transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
         ) as client:
-            responses = await asyncio.gather(
-                *[
-                    client.post(
-                        "/auth/participant/login", json={"participant_id": ids[i % len(ids)]}
-                    )
-                    for i in range(4)
-                ]
+            responses = await asyncio.wait_for(
+                asyncio.gather(
+                    *[
+                        client.post(
+                            "/auth/participant/login", json={"participant_id": ids[i % len(ids)]}
+                        )
+                        for i in range(4)
+                    ]
+                ),
+                timeout=10,
             )
         assert [r.status_code for r in responses] == [200] * 4
         assert sorted(calls) == sorted(ids)
@@ -205,6 +215,16 @@ async def test_simultaneous_first_logins_create_one_run_and_preserve_balanced_de
                 await db.scalars(select(Session).where(Session.participant_id.in_(ids)))
             ).all()
             assert len(sessions) == len(ids)
+            assert (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(InteractionLog)
+                    .where(
+                        InteractionLog.participant_id.in_(ids), InteractionLog.event_type == "login"
+                    )
+                )
+                == 4
+            )
             assert all(s.current_step_index == 0 for s in sessions)
             participants = (
                 await db.scalars(select(Participant).where(Participant.id.in_(ids)))

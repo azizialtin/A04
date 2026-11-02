@@ -80,7 +80,9 @@ async def participant_login(
         participant.think_aloud_batch_size = study.think_aloud_batch_size if study else 1
         db.add(Session(participant_id=participant.id))
         participant.status = ParticipantStatus.active
-        await db.commit()
+    # The background login event uses another transaction with a participant FK.
+    # Release the row lock before it runs, including on repeat logins.
+    await db.commit()
 
     # A run is one sitting, so the token does not need to outlive the day it
     # was issued on — a laptop left open is a much smaller window than 24 h.
