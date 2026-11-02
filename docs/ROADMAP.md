@@ -200,9 +200,16 @@ Incremental, each phase runnable and tested before the next.
   exports. Admins can edit existing questionnaire pages; structural changes
   require an unstarted study. Migration `d9f1a3b5c7e2` adds the timing records.
   New studies receive the thirteen CK tasks with the supplied introduction and
-  the shared PCK example. The approved CK mapping retains source order and maps
-  later duplicate rows 25/26 to `ck_pre_08`/`ck_pre_10`. A guarded dry-run CK
-  import remains available for explicitly selected unstarted studies.
+  the shared PCK example. The CSV supplied on 2 November corrects IDs to
+  `ck_pre_01`–`ck_pre_13` in the same exercise order. New studies use this version;
+  historical studies keep their IDs and the documented crosswalk connects them.
+  A guarded dry-run CK import remains available for selected unstarted studies.
+- [x] **Existing video wording and CK statistics.** Existing clips have an editor
+  for title, task/info/student text, default-text links and timer. Participant
+  statistics show original section duration and overrun separately from summed
+  response times, with review visits, partial answers and saved answer snapshots.
+  The additional PCK questions and final intro wording remain awaiting content;
+  they are not present in the latest CSV.
 - [x] **Admin media downloads.** Stimulus clips and each available raw screen
   recording can be downloaded through native browser attachments. Unavailable
   files are reported explicitly. A gaze-overlay rendering and recording CSV

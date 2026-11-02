@@ -112,8 +112,8 @@ async def test_a_new_study_arrives_with_the_standard_batteries(client, db, admin
     ]
 
 
-async def test_new_study_has_the_complete_october_instrument_once(client, db, admin_headers):
-    from app.services.pretest_content import load_pretest_manifest, mapped_ck_tasks
+async def test_new_study_has_the_corrected_instrument_once(client, db, admin_headers):
+    from app.services.pretest_content import SOURCE_KEY, load_pretest_manifest, mapped_ck_tasks
     from app.services.study_content_import import import_ck_pretest
 
     created = await client.post(
@@ -130,6 +130,10 @@ async def test_new_study_has_the_complete_october_instrument_once(client, db, ad
         *(["msk"] * 7),
     ]
     assert [page.questions[0] for page in pages[3:16]] == mapped_ck_tasks()
+    assert [page.questions[0]["id"] for page in pages[3:16]] == [
+        f"ck_pre_{i:02d}" for i in range(1, 14)
+    ]
+    assert {page.questions[0]["source_ref"]["instrument"] for page in pages[3:16]} == {SOURCE_KEY}
     manifest = load_pretest_manifest()
     assert pages[3].intro_body == manifest["ck_intro"]["body"]
     assert all(not page.intro_body for page in pages[4:16])

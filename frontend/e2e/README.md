@@ -70,8 +70,11 @@ order, exact code numbering (including blank lines and two files), the five-entr
 cap, the shared PCK ranking page, editable introductions, and native admin video
 downloads. They exercise timer expiry without automatic progression, reload
 drafts, supervisor skip, and retry after a lost acknowledgement. The fixtures
-use the approved production question IDs, including rows 25/26 mapped to 08/10,
-and assert that the source exercise order stays unchanged.
+use the November source's corrected IDs 01–13 and assert that the source
+exercise order stays unchanged. Admin browser checks also exercise editing an
+existing video's wording, failed-save retry, default-text toggles and persistence
+after reload. CK statistics checks distinguish actual elapsed time from response
+sums, partial answers, review snapshots and unobserved exits.
 
 `timed-pretest.spec.ts` runs through the real API and Postgres in the ordinary
 `npm run e2e` suite. It checks persisted timing and partial answers against CSV

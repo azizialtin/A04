@@ -24,6 +24,24 @@ test('renders children when open, hides when closed, and closes on the button', 
   expect(screen.queryByText('hello')).not.toBeInTheDocument()
 })
 
+test('disabled dismissal blocks the close button, backdrop and Escape until re-enabled', () => {
+  const onClose = vi.fn()
+  const modal = (closeDisabled: boolean) => (
+    <Modal open title="Saving" onClose={onClose} closeDisabled={closeDisabled}>
+      <p>Saving</p>
+    </Modal>
+  )
+  const { rerender } = render(modal(true))
+  expect(screen.getByRole('button', { name: 'Schließen' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('dialog'))
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(onClose).not.toHaveBeenCalled()
+  rerender(modal(false))
+  expect(screen.getByRole('button', { name: 'Schließen' })).toBeEnabled()
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(onClose).toHaveBeenCalledTimes(1)
+})
+
 test('keeps keyboard focus inside, skips unavailable controls and restores the opener', async () => {
   const user = userEvent.setup()
   const trigger = document.createElement('button')

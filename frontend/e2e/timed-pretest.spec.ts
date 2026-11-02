@@ -1,7 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
+import type { ParticipantQuestionnaireVisit, ParticipantStats } from '../src/api/admin'
 import type { SessionScript, SessionStep } from '../src/api/participant'
+import { duration } from '../src/lib/adminFormat'
 import type { Question } from '../src/lib/questionnaire'
 import { seedStudy } from './seed'
 
@@ -9,7 +11,7 @@ const API = process.env.E2E_API_URL ?? 'http://localhost:8031'
 const EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'e2e@a04.test'
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'e2e-password-1234'
 let researcherToken: string | undefined
-const source = JSON.parse(readFileSync(new URL('../../backend/app/data/pretest_oct2026.json', import.meta.url), 'utf8')) as {
+const source = JSON.parse(readFileSync(new URL('../../backend/app/data/pretest_nov2026.json', import.meta.url), 'utf8')) as {
   ck_tasks: { source_row: number; question: Question }[]
   pck_example: { title: string; description: string; questions: Question[] }
 }
@@ -98,7 +100,7 @@ async function viewportReport(page: Page) {
   })
 }
 
-test('real CK timing survives reload and supervisor finish exports only visited pages', async ({ page, request }, info) => {
+test('real CK timing survives reload and supervisor finish exports only visited pages', async ({ page, request, browser }, info) => {
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1920, height: 1080 })
   const token = await admin(request)
@@ -211,7 +213,7 @@ test('real CK timing survives reload and supervisor finish exports only visited 
     expect(ckSection).toMatchObject({ pages_answered: '0', visited_pages: '1', exit_reason: 'supervisor_finish', deadline_ms: String(deadline) })
     expect(Number(ckSection.started_client_ts)).toBe(initial.section_timing!.started_client_ts)
     expect(Number(ckSection.ended_client_ts)).toBeGreaterThan(Number(ckSection.started_client_ts))
-    const visits = JSON.parse(ckSection.page_visits) as { questionnaire_id: number; entered_client_ts: number; exited_client_ts: number | null; exit_reason: string | null }[]
+    const visits = JSON.parse(ckSection.page_visits) as Omit<ParticipantQuestionnaireVisit, 'title' | 'elapsed_seconds'>[]
     expect(visits.length).toBeGreaterThanOrEqual(2)
     expect(visits.every((visit) => visit.questionnaire_id === first.id)).toBe(true)
     expect(visits.some((visit) => visit.exit_reason === 'supervisor_finish' && visit.exited_client_ts! >= visit.entered_client_ts)).toBe(true)
@@ -220,6 +222,87 @@ test('real CK timing survives reload and supervisor finish exports only visited 
     expect(JSON.parse(pckSection.page_visits)).toEqual([expect.objectContaining({ questionnaire_id: pck.id, exit_reason: 'submitted' })])
     await info.attach('responses-export.json', { body: JSON.stringify(responses, null, 2), contentType: 'application/json' })
     await info.attach('sections-export.json', { body: JSON.stringify(sections, null, 2), contentType: 'application/json' })
+
+    const stats = await api<ParticipantStats>(request, `/admin/participants/${participantId}/stats`, token)
+    expect(stats.questionnaires.find((row) => row.id === first.id)).toMatchObject({
+      response_status: 'partial', answered: 1, seconds: Number(ckResponse.time_spent_seconds),
+    })
+    expect(stats.questionnaires.some((row) => row.id === skipped.id)).toBe(false)
+    expect(stats.timed_sections).toHaveLength(1)
+    const timing = stats.timed_sections[0]
+    expect(timing).toMatchObject({
+      section_key: 'ck_tasks',
+      started_client_ts: Number(ckSection.started_client_ts),
+      ended_client_ts: Number(ckSection.ended_client_ts),
+      deadline_ms: deadline,
+      elapsed_seconds: Number(ckSection.elapsed_seconds),
+      deadline_overrun_seconds: Number(ckSection.deadline_overrun_seconds),
+      exit_reason: 'supervisor_finish', visited_pages: 1,
+    })
+    expect(timing.ended_client_ts).toBe(finished.section_timing!.ended_client_ts)
+    expect(timing.page_visits).toEqual(visits.map((visit) => ({
+      ...visit,
+      title: 'CK Integration 1',
+      elapsed_seconds: visit.exited_client_ts == null
+        ? null : (visit.exited_client_ts - visit.entered_client_ts) / 1000,
+    })))
+    expect(timing.page_visits.find((visit) => visit.exit_reason === 'supervisor_finish')).toMatchObject({
+      is_review: false, submitted_answers: { ck_first: { lines: [3] } },
+    })
+    expect(stats.sections.find((section) => section.section === 'CK-Aufgaben')).toMatchObject({
+      pages: 1, seconds: Number(ckSection.time_spent_seconds),
+    })
+    await info.attach('participant-statistics.json', { body: JSON.stringify(stats, null, 2), contentType: 'application/json' })
+
+    // The researcher reads the same stored sitting in a separate browser session.
+    const adminContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin, viewport: { width: 1920, height: 1080 },
+    })
+    try {
+      await adminContext.addInitScript((adminToken) => {
+        localStorage.setItem('a04_auth', JSON.stringify({ token: adminToken }))
+        localStorage.setItem('i18nextLng', 'de')
+      }, token)
+      const adminPage = await adminContext.newPage()
+      await adminPage.goto(`/admin/studies/${studyId}?tab=stats`)
+      await adminPage.getByRole('row').filter({
+        has: adminPage.getByRole('cell', { name: new RegExp(`^${participantId}\\b`) }),
+      }).getByRole('button', { name: 'Details', exact: true }).click()
+      const details = adminPage.getByRole('region', { name: `Details für ${participantId}`, exact: true })
+      const section = details.getByRole('region', { name: 'Zeitmessung CK-Aufgaben', exact: true })
+      await expect(section.getByText('Durch Betreuung beendet')).toBeVisible()
+      const fact = (label: string) => section.getByText(label, { exact: true }).locator('..').locator('dd')
+      await expect(fact('Dauer (Beginn bis Ende)')).toHaveText(duration(timing.elapsed_seconds))
+      await expect(fact('Überziehung (über 7 Minuten)')).toHaveText(duration(timing.deadline_overrun_seconds))
+      await expect(fact('Besuchte Seiten')).toHaveText('1')
+      for (const [label, value] of [
+        ['Beginn', timing.started_client_ts], ['Ende', timing.ended_client_ts!], ['Timer-Ende (Serverzeit)', deadline],
+      ] as const) {
+        const displayed = await adminPage.evaluate((ts) => new Date(ts).toLocaleString('de-DE'), value)
+        await expect(fact(label)).toHaveText(displayed)
+      }
+      await expect(details.getByRole('row').filter({
+        has: adminPage.getByRole('cell', { name: 'Teilantwort', exact: true }),
+      })).toContainText('CK Integration 1')
+      await expect(details.getByText(/Summierte Antwortzeiten:/)).toBeVisible()
+      await section.getByText(`Seitenbesuche (${timing.page_visits.length})`, { exact: true }).click()
+      const history = section.getByRole('table', { name: 'Seitenbesuche CK-Aufgaben', exact: true })
+      await expect(history.getByRole('row')).toHaveCount(timing.page_visits.length + 1)
+      await expect(history.getByText('CK Integration 2', { exact: true })).toHaveCount(0)
+      await expect(history.getByText('Kein Austritt erfasst', { exact: true }).first()).toBeVisible()
+      const partialVisit = history.getByRole('row').filter({
+        has: adminPage.getByRole('cell', { name: 'Teilantwort gespeichert', exact: true }),
+      })
+      await partialVisit.getByText('Antwortstand anzeigen', { exact: true }).click()
+      await expect(partialVisit.getByText('ck_first', { exact: true })).toBeVisible()
+      await expect(partialVisit.getByText('Zeilen: 3', { exact: true })).toBeVisible()
+      const screenshot = info.outputPath('real-admin-ck-statistics.png')
+      await section.screenshot({ path: screenshot })
+      await info.attach('real-admin-ck-statistics', { path: screenshot, contentType: 'image/png' })
+    } finally {
+      await adminContext.close()
+    }
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('a04_auth')!).token)).toBe(participantToken)
 
     const after = await session()
     const videoIntro = after.steps.find((step) => step.kind === 'case_intro' && step.phase_type === 'pre_test')!
@@ -255,8 +338,8 @@ test('every default pretest page fits the lab viewport, including conditional de
     expect(pages.slice(3, 16).every((step) => step.section_key === 'ck_tasks')).toBe(true)
     expect(pages[16].section_key).toBe('pck')
     expect(pages[16].questions.map((question) => question.id)).toEqual(source.pck_example.questions.map((question) => question.id))
-    expect(source.ck_tasks.find((task) => task.source_row === 25)?.question.id).toBe('ck_pre_08')
-    expect(source.ck_tasks.find((task) => task.source_row === 26)?.question.id).toBe('ck_pre_10')
+    expect(source.ck_tasks.find((task) => task.source_row === 25)?.question.id).toBe('ck_pre_12')
+    expect(source.ck_tasks.find((task) => task.source_row === 26)?.question.id).toBe('ck_pre_13')
     const reports = []
     let current = initial.current_step_index
     for (const step of pages) {

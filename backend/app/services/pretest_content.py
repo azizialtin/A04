@@ -1,4 +1,4 @@
-"""Approved pre-test content with its original CSV provenance."""
+"""Versioned pre-test content with its original CSV provenance."""
 
 from __future__ import annotations
 
@@ -9,20 +9,27 @@ from typing import Any
 
 from app.services.questionnaires import validate_question_definitions
 
-MANIFEST_PATH = Path(__file__).parents[1] / "data" / "pretest_oct2026.json"
-SOURCE_KEY = "a04-pretest-2026-10-27"
+SOURCE_KEY = "a04-pretest-2026-11-02"
+LEGACY_SOURCE_KEY = "a04-pretest-2026-10-27"
+_DATA_DIR = Path(__file__).parents[1] / "data"
+MANIFEST_PATHS = {
+    SOURCE_KEY: _DATA_DIR / "pretest_nov2026.json",
+    LEGACY_SOURCE_KEY: _DATA_DIR / "pretest_oct2026.json",
+}
 
 
 class ContentImportError(ValueError):
     pass
 
 
-def load_pretest_manifest() -> dict[str, Any]:
-    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+def load_pretest_manifest(source_key: str = SOURCE_KEY) -> dict[str, Any]:
+    if source_key not in MANIFEST_PATHS:
+        raise ContentImportError(f"Unknown pre-test source: {source_key}.")
+    return json.loads(MANIFEST_PATHS[source_key].read_text(encoding="utf-8"))
 
 
-def mapped_ck_tasks(mapping: Any = None) -> list[dict]:
-    manifest = load_pretest_manifest()
+def mapped_ck_tasks(mapping: Any = None, *, source_key: str = SOURCE_KEY) -> list[dict]:
+    manifest = load_pretest_manifest(source_key)
     tasks = manifest["ck_tasks"]
     if mapping is None:
         mapping = manifest["ck_id_mapping"]["rows"]
@@ -47,7 +54,7 @@ def mapped_ck_tasks(mapping: Any = None) -> list[dict]:
         question = deepcopy(task["question"])
         question["id"] = mapping[str(task["source_row"])]
         question["source_ref"] = {
-            "instrument": SOURCE_KEY,
+            "instrument": source_key,
             "row": task["source_row"],
             "variable": task["source_variable"],
         }

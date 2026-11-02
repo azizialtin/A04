@@ -16,6 +16,7 @@ import {
   when,
 } from '../../lib/adminFormat'
 import { Facts, Meter, Pill, Stat, StatGrid } from './stat'
+import TimedSectionStats from './TimedSectionStats'
 
 /**
  * One participant's run, case by case.
@@ -145,6 +146,8 @@ export default function ParticipantStatsPanel({
             )}
           </div>
 
+          <TimedSectionStats rows={stats.data.timed_sections ?? []} />
+
           <h4 className="section-head">Fragebögen</h4>
           {stats.data.sections.length > 0 && <SectionTotals rows={stats.data.sections} />}
           <div className="table-scroll">
@@ -155,9 +158,10 @@ export default function ParticipantStatsPanel({
                   <th>Abschnitt</th>
                   <th>Platzierung</th>
                   <th>Fall</th>
-                  <th className="num">Beantwortet</th>
-                  <th className="num">Dauer</th>
-                  <th>Zeitpunkt</th>
+                  <th>Status</th>
+                  <th className="num">Angaben</th>
+                  <th className="num">Antwortzeit</th>
+                  <th>Angelegt</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,6 +171,23 @@ export default function ParticipantStatsPanel({
                     <td className="muted">{q.section || '—'}</td>
                     <td>{placementLabel(q.placement)}</td>
                     <td className="muted">{q.video_title ?? '—'}</td>
+                    <td>
+                      <Pill
+                        tone={
+                          q.response_status === 'partial'
+                            ? 'warn'
+                            : q.response_status === 'submitted'
+                              ? 'ok'
+                              : 'idle'
+                        }
+                      >
+                        {q.response_status === 'partial'
+                          ? 'Teilantwort'
+                          : q.response_status === 'submitted'
+                            ? 'Abgegeben'
+                            : 'Status unbekannt'}
+                      </Pill>
+                    </td>
                     <td className="num">
                       {num(q.answered)}/{num(q.questions)}
                     </td>
@@ -176,7 +197,7 @@ export default function ParticipantStatsPanel({
                 ))}
                 {!stats.data.questionnaires.length && (
                   <tr>
-                    <td colSpan={7} className="muted">
+                    <td colSpan={8} className="muted">
                       Noch nichts beantwortet.
                     </td>
                   </tr>
@@ -261,11 +282,7 @@ export default function ParticipantStatsPanel({
   )
 }
 
-/**
- * Time per section — every page of "Demographics" or "CK-Pretest" this person
- * answered, added up — and the pre-test as a whole, which is the figure the
- * researchers asked for first.
- */
+/** Response sums keep their original meaning, separately from timed attempts. */
 function SectionTotals({ rows }: { rows: ParticipantSectionTime[] }) {
   const preTest = rows.filter((s) => s.pre_test && s.seconds != null)
   const lines = rows.map((s): [string, string] => [
@@ -274,9 +291,17 @@ function SectionTotals({ rows }: { rows: ParticipantSectionTime[] }) {
   ])
   if (preTest.length) {
     const total = preTest.reduce((sum, s) => sum + (s.seconds ?? 0), 0)
-    lines.push(['Vortest gesamt', duration(total)])
+    lines.push(['Vortest (Summe der Antwortzeiten)', duration(total)])
   }
-  return <Facts rows={lines} />
+  return (
+    <>
+      <p className="muted small">
+        Summierte Antwortzeiten: letzter gespeicherter Stand je Seite, einschließlich Teilantworten.
+        Diese Summe ist keine durchgehende Abschnittszeit.
+      </p>
+      <Facts rows={lines} />
+    </>
+  )
 }
 
 function CaseCard({ row }: { row: ParticipantCaseStats }) {

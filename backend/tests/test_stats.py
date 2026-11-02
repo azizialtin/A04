@@ -19,6 +19,7 @@ from app.models.note import Note
 from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.questionnaire_timing import QuestionnaireVisit, SectionAttempt
 from app.models.screen_recording import ScreenRecording
 from app.models.session import Session
 from app.models.text_entry import TextEntry
@@ -529,6 +530,170 @@ async def test_participant_stats_total_each_section_in_the_order_it_was_met(
         {"section": "Demographics", "pages": 1, "seconds": 100, "pre_test": True},
         {"section": "CK-Pretest", "pages": 2, "seconds": 100, "pre_test": True},
     ]
+    assert body["timed_sections"] == []
+    assert all(q["response_status"] == "submitted" for q in body["questionnaires"])
+
+
+async def test_timed_statistics_keep_original_attempt_and_visit_snapshots(
+    client, db, seed_study, seed_participant, admin_headers
+):
+    pages = [
+        Questionnaire(
+            study_id=seed_study.id,
+            placement=QuestionnairePlacement.pre_test,
+            title=f"CK {i}",
+            section="CK-Aufgaben",
+            section_key="ck_tasks",
+            order_index=i,
+            questions=[{"id": f"ck_{i}", "type": "free_text", "text": "Fehler?"}],
+        )
+        for i in range(4)
+    ]
+    db.add_all(pages)
+    db.add(Participant(id="OTHER", study_id=seed_study.id))
+    await db.flush()
+    db.add(
+        SectionAttempt(
+            participant_id=seed_participant.id,
+            section="CK-Aufgaben",
+            section_key="ck_tasks",
+            started_client_ts=T0,
+            ended_client_ts=T0 + 425_000,
+            # The server and client clocks may differ: overrun uses the client duration.
+            deadline_ms=T0 + 3_600_000 + 420_000,
+            exit_reason="supervisor_finish",
+        )
+    )
+    for visit_id, page, start, end, reason, review, answers in [
+        ("first", pages[0], 0, 200_000, "submitted", False, {"ck_0": "Original"}),
+        ("lost-exit", pages[1], 200_000, None, None, False, None),
+        ("partial", pages[1], 210_000, 425_000, "supervisor_finish", False, {"ck_1": "Teil"}),
+        ("review", pages[0], 900_000, 905_000, "submitted", True, {"ck_0": "Korrigiert"}),
+        ("review-only", pages[2], 950_000, 960_000, "submitted", True, {"ck_2": "Später"}),
+    ]:
+        db.add(
+            QuestionnaireVisit(
+                id=visit_id,
+                participant_id=seed_participant.id,
+                questionnaire_id=page.id,
+                section_key="ck_tasks",
+                step_index=page.order_index + 1,
+                entered_client_ts=T0 + start,
+                exited_client_ts=T0 + end if end is not None else None,
+                exit_reason=reason,
+                is_review=review,
+                submitted_answers=answers,
+            )
+        )
+    db.add(
+        QuestionnaireVisit(
+            id="other-person",
+            participant_id="OTHER",
+            questionnaire_id=pages[0].id,
+            section_key="ck_tasks",
+            step_index=1,
+            entered_client_ts=T0,
+        )
+    )
+    for page, answer, seconds, response_status in [
+        (pages[0], {"ck_0": "Korrigiert"}, 5, "submitted"),
+        (pages[1], {"ck_1": "Teil"}, 215, "partial"),
+    ]:
+        db.add(
+            QuestionnaireResponse(
+                participant_id=seed_participant.id,
+                questionnaire_id=page.id,
+                answers=answer,
+                time_spent_seconds=seconds,
+                response_status=response_status,
+            )
+        )
+    await db.flush()
+
+    response = await client.get(
+        f"/admin/participants/{seed_participant.id}/stats", headers=admin_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sections"][0]["seconds"] == 220  # Latest response totals retain their meaning.
+    assert [q["response_status"] for q in body["questionnaires"]] == ["submitted", "partial"]
+    assert len(body["timed_sections"]) == 1
+    attempt = body["timed_sections"][0]
+    assert attempt["started_client_ts"] == T0
+    assert attempt["ended_client_ts"] == T0 + 425_000
+    assert attempt["deadline_ms"] == T0 + 4_020_000
+    assert attempt["elapsed_seconds"] == 425
+    assert attempt["deadline_overrun_seconds"] == 5
+    assert attempt["exit_reason"] == "supervisor_finish"
+    assert attempt["visited_pages"] == 2  # Review-only work does not enter the original sitting.
+    visits = attempt["page_visits"]
+    assert [v["visit_id"] for v in visits] == [
+        "first",
+        "lost-exit",
+        "partial",
+        "review",
+        "review-only",
+    ]
+    assert visits[0]["title"] == "CK 0"
+    assert visits[0]["submitted_answers"] == {"ck_0": "Original"}
+    assert visits[1]["exited_client_ts"] is None
+    assert visits[1]["elapsed_seconds"] is None
+    assert visits[1]["submitted_answers"] is None
+    assert visits[2]["exit_reason"] == "supervisor_finish"
+    assert visits[3]["is_review"] is True
+    assert visits[3]["submitted_answers"] == {"ck_0": "Korrigiert"}
+    assert pages[3].id not in {v["questionnaire_id"] for v in visits}
+
+
+async def test_open_timed_attempt_has_no_invented_end_or_elapsed_time(
+    client, db, seed_study, seed_participant, admin_headers
+):
+    page = Questionnaire(
+        study_id=seed_study.id,
+        placement=QuestionnairePlacement.pre_test,
+        title="CK 1",
+        section="CK-Aufgaben",
+        section_key="ck_tasks",
+        questions=[{"id": "ck_1", "type": "free_text", "text": "Fehler?"}],
+    )
+    db.add(page)
+    await db.flush()
+    db.add(
+        SectionAttempt(
+            participant_id=seed_participant.id,
+            section="CK-Aufgaben",
+            section_key="ck_tasks",
+            started_client_ts=T0,
+            deadline_ms=T0 + 420_000,
+        )
+    )
+    db.add(
+        QuestionnaireVisit(
+            id="open",
+            participant_id=seed_participant.id,
+            questionnaire_id=page.id,
+            section_key="ck_tasks",
+            step_index=1,
+            entered_client_ts=T0,
+        )
+    )
+    await db.flush()
+
+    response = await client.get(
+        f"/admin/participants/{seed_participant.id}/stats", headers=admin_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["questionnaires"] == []
+    assert body["sections"] == []
+    attempt = body["timed_sections"][0]
+    assert attempt["ended_client_ts"] is None
+    assert attempt["elapsed_seconds"] is None
+    assert attempt["deadline_overrun_seconds"] is None
+    assert attempt["exit_reason"] is None
+    assert attempt["visited_pages"] == 1
+    assert attempt["page_visits"][0]["exited_client_ts"] is None
+    assert attempt["page_visits"][0]["elapsed_seconds"] is None
 
 
 async def test_a_page_without_a_section_is_a_section_of_its_own(client, run, admin_headers):

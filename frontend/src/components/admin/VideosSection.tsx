@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
-import type { Study, StudyVideoDefaults } from '../../api/admin'
+import type { AdminVideo, Study, StudyVideoDefaults, VideoUpdate } from '../../api/admin'
 import {
   useDeleteVideo,
   useStudy,
   useUpdateStudy,
+  useUpdateVideo,
   useUploadVideo,
   useVideos,
 } from '../../hooks/admin'
+import Modal from '../Modal'
 import { useToast } from '../Toast'
 import MediaDownloadButton from './MediaDownloadButton'
 
@@ -24,6 +26,7 @@ export default function VideosSection({ studyId }: { studyId: number }) {
   const del = useDeleteVideo(studyId)
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
+  const [editing, setEditing] = useState<AdminVideo | null>(null)
 
   const defaults = study.data?.video_defaults
 
@@ -250,6 +253,15 @@ export default function VideosSection({ studyId }: { studyId: number }) {
               </td>
               <td>{v.has_file ? '✓' : '—'}</td>
               <td>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  aria-label={`Video „${v.title}“ bearbeiten`}
+                  onClick={() => setEditing(v)}
+                  disabled={!study.data}
+                >
+                  Bearbeiten
+                </button>{' '}
                 <MediaDownloadButton kind="video" id={v.id} disabled={!v.has_file} />{' '}
                 <button
                   type="button"
@@ -287,15 +299,203 @@ export default function VideosSection({ studyId }: { studyId: number }) {
           )}
         </tbody>
       </table>
+      {editing && defaults && (
+        <VideoEditor
+          key={editing.id}
+          video={editing}
+          defaults={defaults}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
+  )
+}
+
+function VideoEditor({
+  video,
+  defaults,
+  onClose,
+}: {
+  video: AdminVideo
+  defaults: StudyVideoDefaults
+  onClose: () => void
+}) {
+  const update = useUpdateVideo(video.study_id)
+  const toast = useToast()
+  const [title, setTitle] = useState(video.title)
+  const [task, setTask] = useState(video.task_description)
+  const [info, setInfo] = useState(video.info_text)
+  const [studentTask, setStudentTask] = useState(video.student_task_text)
+  const [limit, setLimit] = useState(video.time_limit_seconds?.toString() ?? '')
+  const [useDefaultTask, setUseDefaultTask] = useState(video.use_default_task)
+  const [useDefaultInfo, setUseDefaultInfo] = useState(video.use_default_info)
+  const [errors, setErrors] = useState<{ title?: string; limit?: string }>({})
+  const titleRef = useRef<HTMLInputElement>(null)
+  const limitRef = useRef<HTMLInputElement>(null)
+  const saving = useRef(false)
+
+  const close = () => {
+    if (!saving.current) onClose()
+  }
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (saving.current) return
+    const seconds = limit.trim() ? Number(limit) : null
+    const nextErrors: typeof errors = {}
+    if (!title.trim() || title.trim().length > 255) {
+      nextErrors.title = 'Bitte einen Titel mit 1 bis 255 Zeichen eingeben.'
+    }
+    if (seconds !== null && (!Number.isInteger(seconds) || seconds < 0)) {
+      nextErrors.limit = 'Bitte ganze Sekunden ab 0 eingeben oder das Feld leeren.'
+    } else if (seconds !== null && seconds > 2_147_483_647) {
+      nextErrors.limit = 'Das Zeitlimit ist zu groß. Bitte einen kleineren Wert eingeben.'
+    }
+    setErrors(nextErrors)
+    if (nextErrors.title || nextErrors.limit) {
+      ;(nextErrors.title ? titleRef : limitRef).current?.focus()
+      return
+    }
+    const values: VideoUpdate = {
+      title: title.trim(),
+      task_description: task,
+      info_text: info,
+      student_task_text: studentTask,
+      time_limit_seconds: seconds,
+      use_default_task: useDefaultTask,
+      use_default_info: useDefaultInfo,
+    }
+    // Preserve untouched fields, including overrides hidden by a study default.
+    const body = Object.fromEntries(
+      Object.entries(values).filter(([key, value]) => value !== video[key as keyof VideoUpdate]),
+    ) as VideoUpdate
+    if (!Object.keys(body).length) {
+      onClose()
+      return
+    }
+    saving.current = true
+    update.mutate(
+      { id: video.id, body },
+      {
+        onSuccess: () => {
+          toast.show('Video gespeichert.', 'success')
+          onClose()
+        },
+        onSettled: () => {
+          saving.current = false
+        },
+      },
+    )
+  }
+
+  return (
+    <Modal open title="Video bearbeiten" onClose={close} closeDisabled={update.isPending}>
+      <form onSubmit={submit} noValidate aria-busy={update.isPending}>
+        <p className="muted small">Die Texte werden beim nächsten Laden des Falls übernommen.</p>
+        <fieldset
+          disabled={update.isPending}
+          style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+        >
+          <div className="form-row">
+            <label className="label" htmlFor="edit-video-title">
+              Titel
+            </label>
+            <input
+              ref={titleRef}
+              id="edit-video-title"
+              className="input"
+              value={title}
+              maxLength={255}
+              required
+              aria-invalid={!!errors.title}
+              aria-describedby={errors.title ? 'edit-video-title-error' : undefined}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+            {errors.title && (
+              <p id="edit-video-title-error" className="error-text" role="alert">
+                {errors.title}
+              </p>
+            )}
+          </div>
+          <DefaultableText
+            id="edit-video-task"
+            label="Aufgabe (Task)"
+            value={task}
+            onChange={setTask}
+            useDefault={useDefaultTask}
+            onUseDefault={setUseDefaultTask}
+            defaultText={defaults.task_description}
+          />
+          <DefaultableText
+            id="edit-video-info"
+            label="Info-Text"
+            value={info}
+            onChange={setInfo}
+            useDefault={useDefaultInfo}
+            onUseDefault={setUseDefaultInfo}
+            defaultText={defaults.info_text}
+          />
+          <div className="form-row">
+            <label className="label" htmlFor="edit-video-student-task">
+              Schüler-Aufgabe
+            </label>
+            <textarea
+              id="edit-video-student-task"
+              className="textarea"
+              value={studentTask}
+              onChange={(event) => setStudentTask(event.target.value)}
+            />
+            <p className="muted small">
+              Java-Code zwischen zwei eigenen Zeilen mit <code>```</code> setzen; Einrückung und
+              Leerzeilen bleiben erhalten.
+            </p>
+          </div>
+          <div className="form-row">
+            <label className="label" htmlFor="edit-video-limit">
+              Zeitlimit (Sekunden, leer = kein Timer)
+            </label>
+            <input
+              ref={limitRef}
+              id="edit-video-limit"
+              className="input"
+              type="number"
+              min={0}
+              step={1}
+              value={limit}
+              aria-invalid={!!errors.limit}
+              aria-describedby={errors.limit ? 'edit-video-limit-error' : undefined}
+              onChange={(event) => setLimit(event.target.value)}
+            />
+            {errors.limit && (
+              <p id="edit-video-limit-error" className="error-text" role="alert">
+                {errors.limit}
+              </p>
+            )}
+          </div>
+          {update.isError && (
+            <p className="error-text" role="alert">
+              Das Video konnte nicht gespeichert werden. Ihre Eingaben bleiben erhalten. Bitte
+              erneut versuchen.
+            </p>
+          )}
+          <div className="modal__actions">
+            <button type="button" className="btn btn-secondary" onClick={close}>
+              Abbrechen
+            </button>
+            <button type="submit" className="btn btn-primary">
+              {update.isPending ? 'Wird gespeichert…' : 'Speichern'}
+            </button>
+          </div>
+        </fieldset>
+      </form>
+    </Modal>
   )
 }
 
 /**
  * A text field that can defer to the study's default instead. Ticked, the
- * video stores nothing of its own and shows whatever the default says — now
- * and after the default is edited; the field turns into a read-only preview
- * so what will be shown is never a guess.
+ * field previews the study text; an existing override remains available
+ * when the researcher switches back.
  */
 function DefaultableText({
   id,

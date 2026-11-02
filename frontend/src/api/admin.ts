@@ -53,6 +53,19 @@ export interface AdminVideo {
   use_default_info: boolean
 }
 
+export type VideoUpdate = Partial<
+  Pick<
+    AdminVideo,
+    | 'title'
+    | 'task_description'
+    | 'info_text'
+    | 'student_task_text'
+    | 'time_limit_seconds'
+    | 'use_default_task'
+    | 'use_default_info'
+  >
+>
+
 export interface AdminParticipant {
   id: string
   status: string
@@ -473,6 +486,32 @@ export interface ParticipantSectionTime {
   pre_test: boolean
 }
 
+export interface ParticipantQuestionnaireVisit {
+  visit_id: string
+  questionnaire_id: number
+  title: string
+  step_index: number
+  entered_client_ts: number
+  exited_client_ts: number | null
+  elapsed_seconds: number | null
+  exit_reason: string | null
+  is_review: boolean
+  submitted_answers: Record<string, unknown> | null
+}
+
+export interface ParticipantTimedSection {
+  section_key: string
+  section: string
+  started_client_ts: number
+  ended_client_ts: number | null
+  deadline_ms: number
+  elapsed_seconds: number | null
+  deadline_overrun_seconds: number | null
+  exit_reason: string | null
+  visited_pages: number
+  page_visits: ParticipantQuestionnaireVisit[]
+}
+
 /** A section across the study: totals per person first, then the average and
  *  median over people — how long the pre-test takes someone. */
 export interface StudySectionTime {
@@ -535,10 +574,12 @@ export interface ParticipantStats {
     video_title: string | null
     questions: number
     answered: number
+    response_status: 'submitted' | 'partial'
     seconds: number | null
     created_at: string | null
   }[]
   sections: ParticipantSectionTime[]
+  timed_sections: ParticipantTimedSection[]
   calibrations: {
     id: number
     status: string
@@ -671,6 +712,8 @@ export const adminApi = {
 
   listVideos: (studyId: number) =>
     apiClient.get<AdminVideo[]>(`/admin/studies/${studyId}/videos`).then((r) => r.data),
+  updateVideo: (id: number, body: VideoUpdate) =>
+    apiClient.patch<AdminVideo>(`/admin/videos/${id}`, body).then((r) => r.data),
   uploadVideo: async (
     studyId: number,
     input: VideoUploadInput,

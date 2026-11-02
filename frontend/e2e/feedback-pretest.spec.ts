@@ -7,7 +7,7 @@ import type { GazeContext, GazeSample } from '../src/api/gaze'
 import type { GazeLayout } from '../src/lib/gazeGeometry'
 
 const API = 'http://a04.invalid'
-const source = JSON.parse(readFileSync(new URL('../../backend/app/data/pretest_oct2026.json', import.meta.url), 'utf8')) as {
+const source = JSON.parse(readFileSync(new URL('../../backend/app/data/pretest_nov2026.json', import.meta.url), 'utf8')) as {
   ck_intro: { title: string; body: string }
   ck_tasks: { source_row: number; question: Question }[]
   pck_example: { title: string; description: string; questions: Question[] }
@@ -202,11 +202,11 @@ async function geometryScreenshots(page: Page, layout: GazeLayout, info: TestInf
 test('all thirteen source CK pages preserve code and fit with five line entries', async ({ page }, info) => {
   expect(source.ck_tasks.map((task) => task.source_row)).toEqual(Array.from({ length: 13 }, (_, i) => i + 14))
   expect(source.ck_tasks.map((task) => task.question.id)).toEqual([
-    'ck_pre_01', 'ck_pre_12', 'ck_pre_13', 'ck_pre_07', 'ck_pre_02', 'ck_pre_03', 'ck_pre_04',
-    'ck_pre_05', 'ck_pre_06', 'ck_pre_09', 'ck_pre_11', 'ck_pre_08', 'ck_pre_10',
+    'ck_pre_01', 'ck_pre_02', 'ck_pre_03', 'ck_pre_04', 'ck_pre_05', 'ck_pre_06', 'ck_pre_07',
+    'ck_pre_08', 'ck_pre_09', 'ck_pre_10', 'ck_pre_11', 'ck_pre_12', 'ck_pre_13',
   ])
-  expect(source.ck_tasks.find((task) => task.source_row === 25)?.question.id).toBe('ck_pre_08')
-  expect(source.ck_tasks.find((task) => task.source_row === 26)?.question.id).toBe('ck_pre_10')
+  expect(source.ck_tasks.find((task) => task.source_row === 25)?.question.id).toBe('ck_pre_12')
+  expect(source.ck_tasks.find((task) => task.source_row === 26)?.question.id).toBe('ck_pre_13')
   const state = await session(page)
   await expect(page.getByText('7 Minuten Zeit', { exact: true })).toHaveJSProperty('tagName', 'STRONG')
   expect(state.visits).toHaveLength(0)

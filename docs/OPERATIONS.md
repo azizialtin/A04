@@ -336,18 +336,29 @@ PCK pages that were visited but not submitted. Historical
 responses without these records retain blank timing fields. Filter out review
 visits when analysing the original timed attempt.
 
-The October source snapshot and safe import command are documented in
-[`backend/app/data/README.md`](../backend/app/data/README.md). The approved CK
-mapping retains the first `ck_pre_12`/`ck_pre_13` and assigns later CSV rows
-25/26 to `ck_pre_08`/`ck_pre_10`, preserving source order. The PCK example is kept
-as supplied; its author-review notes do not prevent loading it. Additional
-intro wording and PCK items can be edited before the first participant login.
+The versioned source snapshots, ID crosswalk and safe import command are documented
+in [`backend/app/data/README.md`](../backend/app/data/README.md). The CSV supplied
+on 2 November corrects CK IDs to `ck_pre_01`–`ck_pre_13` without changing the
+exercise order or content. New studies use this version; existing studies and
+the October snapshot retain their original IDs. Never combine exports by question
+ID alone across these versions; use the documented exercise crosswalk.
+The PCK example is kept as supplied. The new CSV contains no additional PCK items
+or final section-introduction wording; those can be edited before the first
+participant login when supplied.
+
+In the admin's participant statistics, **Abschnittszeiten** shows actual section
+start/end, elapsed time, CK overrun and the original visited-page count.
+Expand **Seitenbesuche** for review flags, missing exits and saved answer snapshots.
+**Summierte Antwortzeiten** remains the sum of the latest saved page responses,
+including partial answers; it is not the original uninterrupted section duration.
+In **Videos**, each existing clip's **Bearbeiten** action updates its title,
+task/info/student text, default-text links and timer without re-uploading media.
 
 Existing studies are not changed by the new defaults or schema migration.
 The standard-battery seed action skips a pre-test placement that already has
 pages. Use a new study for a new instrument version, or preview the guarded CK
 import for a selected unstarted study whose populated PCK page already follows
-self-assessment. The command uses the approved mapping unless an explicit
+self-assessment. The command uses the current version's mapping unless an explicit
 override is supplied, previews changes by default, and refuses studies with
 started sessions or responses. A local draft and local tests do not deploy
 the instrument to a live environment.

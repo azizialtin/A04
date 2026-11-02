@@ -150,7 +150,7 @@ def _parser() -> argparse.ArgumentParser:
     seed.set_defaults(run=_seed_questionnaires)
 
     ck = subs.add_parser(
-        "import-ck-pretest", help="preview the October CK import with its approved variable IDs"
+        "import-ck-pretest", help="preview the current CK import with its versioned variable IDs"
     )
     ck.add_argument("--study-id", type=int, required=True)
     ck.add_argument(

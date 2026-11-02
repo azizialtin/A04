@@ -8,6 +8,7 @@ import {
   type ResearcherCreate,
   type SequenceItemInput,
   type Study,
+  type VideoUpdate,
   type VideoUploadInput,
 } from '../api/admin'
 
@@ -61,6 +62,20 @@ export function useExports(studyId: number, participantIds?: string[]) {
 
 export function useVideos(studyId: number) {
   return useQuery({ queryKey: ['videos', studyId], queryFn: () => adminApi.listVideos(studyId) })
+}
+
+export function useUpdateVideo(studyId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: VideoUpdate }) => adminApi.updateVideo(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['videos', studyId] })
+      qc.invalidateQueries({ queryKey: ['video-sets', studyId] })
+      qc.invalidateQueries({ queryKey: ['participant'] })
+      qc.invalidateQueries({ queryKey: ['stats'] })
+      qc.invalidateQueries({ queryKey: ['gaze'] })
+    },
+  })
 }
 
 export function useUploadVideo(studyId: number) {

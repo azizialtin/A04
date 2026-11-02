@@ -1,18 +1,41 @@
-# October 2026 pre-test source
+# Versioned pre-test sources
 
-`pretest_oct2026.json` contains participant-facing content from the supplied CSV.
-It preserves all thirteen CK rows in source order and retains their original
-source variables as provenance. It contains no expected error lines, solutions
-or scoring rationale. The shared PCK example is under `pck_example`; its supplied
-code, wording and three subquestions remain together on one page.
+`pretest_nov2026.json` is the current participant-facing content, from
+`A04_DataCollection - [TODO] Pre-Test Inside Tool (1).csv`, supplied on
+2 November 2026. It preserves all thirteen CK exercises in CSV row order, now
+named `ck_pre_01` through `ck_pre_13`. Only the CK IDs changed in the updated
+CSV: the exercises, code, blank lines, file boundaries, prompts and order did
+not change. Its source key is `a04-pretest-2026-11-02`.
 
-The user approved the CK mapping on 27 October 2026: retain the first
-`ck_pre_12` and `ck_pre_13` (CSV rows 15 and 16), and assign the later duplicates
-on rows 25 and 26 to `ck_pre_08` and `ck_pre_10`. The complete mapping is stored
-in `ck_id_mapping.rows`. The task order remains
-`01, 12, 13, 07, 02, 03, 04, 05, 06, 09, 11, 08, 10`; IDs never determine order.
-Each imported question also retains its CSV row and original variable in
-`source_ref` for analysis.
+`pretest_oct2026.json` remains unchanged as the historical source for
+`a04-pretest-2026-10-27`. That version used the user-approved correction for
+duplicate CSV IDs: retain the first `ck_pre_12`/`ck_pre_13` and name the later
+duplicates `ck_pre_08`/`ck_pre_10`. Do not reinterpret an existing response's ID
+using the new manifest. Each task's `source_ref` identifies its source version,
+CSV row and original variable. The current manifest's `ck_id_mapping.crosswalk`
+records the corresponding exercise across versions:
+
+| CSV row | October study ID | November study ID |
+| --- | --- | --- |
+| 14 | `ck_pre_01` | `ck_pre_01` |
+| 15 | `ck_pre_12` | `ck_pre_02` |
+| 16 | `ck_pre_13` | `ck_pre_03` |
+| 17 | `ck_pre_07` | `ck_pre_04` |
+| 18 | `ck_pre_02` | `ck_pre_05` |
+| 19 | `ck_pre_03` | `ck_pre_06` |
+| 20 | `ck_pre_04` | `ck_pre_07` |
+| 21 | `ck_pre_05` | `ck_pre_08` |
+| 22 | `ck_pre_06` | `ck_pre_09` |
+| 23 | `ck_pre_09` | `ck_pre_10` |
+| 24 | `ck_pre_11` | `ck_pre_11` |
+| 25 | `ck_pre_08` | `ck_pre_12` |
+| 26 | `ck_pre_10` | `ck_pre_13` |
+
+Neither manifest contains expected error lines, solutions or scoring rationale.
+The shared PCK example is under `pck_example`; its supplied code, wording and
+three subquestions remain together on one page. The new CSV still supplies only
+`pck_pre_01a`, `pck_pre_01b` and `pck_pre_01c`; it adds no further PCK questions,
+final introduction text or AOI definitions.
 
 New studies receive demographics, the two existing CK self-assessment pages,
 the supplied CK introduction and thirteen tasks, an editable PCK introduction
@@ -40,12 +63,16 @@ command with `--apply` to insert the thirteen CK pages and their introduction
 before the selected PCK page. Existing pages retain their relative order and
 content. The import marks the CK and selected PCK sections for supervised timing
 and navigation; it does not replace the selected PCK content or rename existing
-self-assessment variables. It uses the approved mapping by default. An optional
+self-assessment variables. It uses the November mapping by default. An optional
 `--mapping /path/to/row-ids.json` overrides it with a complete, unique mapping
 whose keys are the CSV row numbers `14` through `26` as strings.
 
 The command rejects studies with sessions or responses, conflicting variable IDs,
-and partial/edited previous imports. Repeating an unchanged import does nothing.
-It never overwrites researcher edits or truncates historical answers.
+mixed source versions, and partial/edited previous imports. Repeating an unchanged
+import does nothing. An intact October import is verified against the October
+manifest and reported as an unchanged historical instrument; it is never silently
+renamed to the November IDs. An explicit mapping that would rename an existing
+import is also refused. Use a new study for the corrected instrument.
+The command never overwrites researcher edits or truncates historical answers.
 Started studies require a separate new study; neither the schema migration nor
 this command rewrites their questionnaire pages or saved session pointers.

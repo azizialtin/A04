@@ -531,9 +531,9 @@ class Battery:
 
 # Source order is instrument order. The approved ID corrections do not sort
 # or group the thirteen independent debugging exercises.
-OCTOBER_PRETEST = load_pretest_manifest()
+PRETEST_CONTENT = load_pretest_manifest()
 CK_TASKS = mapped_ck_tasks()
-PCK_EXAMPLE = OCTOBER_PRETEST["pck_example"]
+PCK_EXAMPLE = PRETEST_CONTENT["pck_example"]
 
 DEFAULT_BATTERIES: list[Battery] = [
     Battery(
@@ -572,8 +572,8 @@ DEFAULT_BATTERIES: list[Battery] = [
             [question],
             section="CK-Debugging",
             section_key="ck_tasks",
-            intro_title=OCTOBER_PRETEST["ck_intro"]["title"] if index == 0 else "",
-            intro_body=OCTOBER_PRETEST["ck_intro"]["body"] if index == 0 else "",
+            intro_title=PRETEST_CONTENT["ck_intro"]["title"] if index == 0 else "",
+            intro_body=PRETEST_CONTENT["ck_intro"]["body"] if index == 0 else "",
         )
         for index, question in enumerate(CK_TASKS)
     ),

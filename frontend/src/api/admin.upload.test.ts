@@ -4,10 +4,11 @@ import { adminApi } from './admin'
 import apiClient from './client'
 
 vi.mock('./client', () => ({
-  default: { post: vi.fn() },
+  default: { post: vi.fn(), patch: vi.fn() },
 }))
 
 const post = vi.mocked(apiClient.post)
+const patch = vi.mocked(apiClient.patch)
 
 /** A stand-in for the browser's uploader that records what it was handed. */
 class FakeXHR {
@@ -58,9 +59,20 @@ const meta = {
 
 beforeEach(() => {
   post.mockReset()
+  patch.mockReset()
   FakeXHR.last = null
   FakeXHR.status = 200
   vi.stubGlobal('XMLHttpRequest', FakeXHR)
+})
+
+test('editing metadata patches the existing video without starting a media upload', async () => {
+  const body = { title: 'Corrected title', time_limit_seconds: null, use_default_task: true }
+  patch.mockResolvedValueOnce({ data: { id: 9, ...body } })
+
+  expect(await adminApi.updateVideo(9, body)).toEqual({ id: 9, ...body })
+  expect(patch).toHaveBeenCalledWith('/admin/videos/9', body)
+  expect(post).not.toHaveBeenCalled()
+  expect(FakeXHR.last).toBeNull()
 })
 
 test('sends the clip to the bucket and only its details to the backend', async () => {

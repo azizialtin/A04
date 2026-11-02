@@ -30,9 +30,17 @@ interface Props {
   onClose: () => void
   children: ReactNode
   aoiId?: string
+  closeDisabled?: boolean
 }
 
-export default function Modal({ open, title, onClose, children, aoiId = 'dialog' }: Props) {
+export default function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  aoiId = 'dialog',
+  closeDisabled = false,
+}: Props) {
   const root = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
   // A child with autoFocus may receive focus before the opening effect runs.
@@ -44,8 +52,10 @@ export default function Modal({ open, title, onClose, children, aoiId = 'dialog'
       document.activeElement instanceof HTMLElement ? document.activeElement : null
   }
   useLayoutEffect(() => {
-    close.current = onClose
-  }, [onClose])
+    close.current = () => {
+      if (!closeDisabled) onClose()
+    }
+  }, [onClose, closeDisabled])
   useLayoutEffect(() => {
     const dialog = root.current
     if (!open || !dialog) return
@@ -104,12 +114,18 @@ export default function Modal({ open, title, onClose, children, aoiId = 'dialog'
       aria-modal="true"
       data-aoi-modal={aoiId}
       aria-label={title}
-      onClick={onClose}
+      onClick={() => close.current()}
     >
       <div className="modal" data-aoi={aoiId} onClick={(e) => e.stopPropagation()}>
         <div className="modal__header">
           <h3 className="modal__title">{title}</h3>
-          <button type="button" className="btn btn-ghost" onClick={onClose} aria-label="Schließen">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => close.current()}
+            aria-label="Schließen"
+            disabled={closeDisabled}
+          >
             ✕
           </button>
         </div>

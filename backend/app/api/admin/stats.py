@@ -37,7 +37,7 @@ from app.models.note import Note
 from app.models.participant import Participant
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
-from app.models.questionnaire_timing import SectionAttempt
+from app.models.questionnaire_timing import QuestionnaireVisit, SectionAttempt
 from app.models.researcher import Researcher
 from app.models.screen_recording import ScreenRecording
 from app.models.session import Session
@@ -46,6 +46,7 @@ from app.models.text_entry import TextEntry
 from app.models.video import Video
 from app.models.video_set import VideoSet, VideoSetItem
 from app.services.log_data import variable_name
+from app.services.section_timing import CK_SECONDS, CK_SECTION
 from app.services.session_script import build_steps, count_steps, default_order, pre_test_step_count
 from app.services.stats import (
     CASE_EVENTS,
@@ -383,6 +384,76 @@ def _participant_sections(responses: Sequence[Any]) -> list[dict[str, Any]]:
         if q.placement != QuestionnairePlacement.pre_test:
             entry["pre_test"] = False
     return list(out.values())
+
+
+async def _participant_timed_sections(
+    db: AsyncSession, participant_id: str
+) -> list[dict[str, Any]]:
+    attempts = (
+        await db.scalars(
+            select(SectionAttempt)
+            .where(SectionAttempt.participant_id == participant_id)
+            .order_by(SectionAttempt.started_client_ts, SectionAttempt.id)
+        )
+    ).all()
+    if not attempts:
+        return []
+    visits: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for visit, title in (
+        await db.execute(
+            select(QuestionnaireVisit, Questionnaire.title)
+            .join(Questionnaire, Questionnaire.id == QuestionnaireVisit.questionnaire_id)
+            .where(
+                QuestionnaireVisit.participant_id == participant_id,
+                QuestionnaireVisit.section_key.in_([attempt.section_key for attempt in attempts]),
+            )
+            .order_by(QuestionnaireVisit.entered_client_ts, QuestionnaireVisit.id)
+        )
+    ).all():
+        visits[visit.section_key].append(
+            {
+                "visit_id": visit.id,
+                "questionnaire_id": visit.questionnaire_id,
+                "title": title,
+                "step_index": visit.step_index,
+                "entered_client_ts": visit.entered_client_ts,
+                "exited_client_ts": visit.exited_client_ts,
+                "elapsed_seconds": (visit.exited_client_ts - visit.entered_client_ts) / 1000
+                if visit.exited_client_ts is not None
+                else None,
+                "exit_reason": visit.exit_reason,
+                "is_review": visit.is_review,
+                "submitted_answers": visit.submitted_answers,
+            }
+        )
+    out = []
+    for attempt in attempts:
+        elapsed = (
+            (attempt.ended_client_ts - attempt.started_client_ts) / 1000
+            if attempt.ended_client_ts is not None
+            else None
+        )
+        page_visits = visits[attempt.section_key]
+        out.append(
+            {
+                "section_key": attempt.section_key,
+                "section": attempt.section,
+                "started_client_ts": attempt.started_client_ts,
+                "ended_client_ts": attempt.ended_client_ts,
+                "deadline_ms": attempt.deadline_ms,
+                "elapsed_seconds": elapsed,
+                # The deadline uses the server clock; research durations use the client clock.
+                "deadline_overrun_seconds": max(elapsed - CK_SECONDS, 0)
+                if elapsed is not None and attempt.section_key == CK_SECTION
+                else None,
+                "exit_reason": attempt.exit_reason,
+                "visited_pages": len(
+                    {v["questionnaire_id"] for v in page_visits if not v["is_review"]}
+                ),
+                "page_visits": page_visits,
+            }
+        )
+    return out
 
 
 @router.get("/studies/{study_id}/stats")
@@ -1259,30 +1330,14 @@ async def participant_stats(
                 "video_title": titles[r.video_id].title if r.video_id in titles else None,
                 "questions": len(q.questions or []),
                 "answered": len(r.answers or {}),
+                "response_status": r.response_status,
                 "seconds": r.time_spent_seconds,
                 "created_at": _iso(r.created_at),
             }
             for r, q in responses
         ],
         "sections": _participant_sections(responses),
-        "timed_sections": [
-            {
-                "section_key": attempt.section_key,
-                "section": attempt.section,
-                "started_client_ts": attempt.started_client_ts,
-                "ended_client_ts": attempt.ended_client_ts,
-                "deadline_ms": attempt.deadline_ms,
-                "elapsed_seconds": (attempt.ended_client_ts - attempt.started_client_ts) / 1000
-                if attempt.ended_client_ts is not None
-                else None,
-                "exit_reason": attempt.exit_reason,
-            }
-            for attempt in (
-                await db.scalars(
-                    select(SectionAttempt).where(SectionAttempt.participant_id == p.id)
-                )
-            ).all()
-        ],
+        "timed_sections": await _participant_timed_sections(db, p.id),
         "calibrations": calibrations,
         "events_by_type": by_type,
     }

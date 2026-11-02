@@ -1,4 +1,4 @@
-"""Preview or import the approved October CK instrument into an unstarted study."""
+"""Preview or import the current CK instrument into an unstarted study."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.session import Session
 from app.models.study import Study
 from app.services.pretest_content import (
+    MANIFEST_PATHS,
     SOURCE_KEY,
 )
 from app.services.pretest_content import (
@@ -27,10 +28,10 @@ from app.services.pretest_content import (
 from app.services.study_content import CK_DEBUG_PRE_TEST, CK_PRE_TEST
 
 
-def _source_row(questionnaire: Questionnaire) -> int | None:
+def _source_row(questionnaire: Questionnaire, source_key: str) -> int | None:
     for question in questionnaire.questions:
         reference = question.get("source_ref")
-        if isinstance(reference, dict) and reference.get("instrument") == SOURCE_KEY:
+        if isinstance(reference, dict) and reference.get("instrument") == source_key:
             row = reference.get("row")
             return row if isinstance(row, int) and not isinstance(row, bool) else None
     return None
@@ -97,10 +98,29 @@ async def import_ck_pretest(
         raise ContentImportError(
             "PCK currently precedes CK self-assessment. Arrange the draft study's sections in the admin first."
         )
-    source_pages = [(row, page) for page in pages if (row := _source_row(page)) is not None]
+    existing_sources = {
+        reference["instrument"]
+        for page in pages
+        for question in page.questions
+        if isinstance(reference := question.get("source_ref"), dict)
+        and isinstance(reference.get("instrument"), str)
+        and reference.get("instrument") in MANIFEST_PATHS
+    }
+    if len(existing_sources) > 1:
+        raise ContentImportError(
+            "CK pages from multiple source versions are present; no changes were made."
+        )
+    source_key = next(iter(existing_sources), SOURCE_KEY)
+    if source_key != SOURCE_KEY:
+        # Verify prior imports against their own immutable instrument, never today's IDs.
+        manifest = load_pretest_manifest(source_key)
+        questions = mapped_ck_tasks(mapping, source_key=source_key)
+    source_pages = [
+        (row, page) for page in pages if (row := _source_row(page, source_key)) is not None
+    ]
     existing = dict(source_pages)
     expected_rows = [task["source_row"] for task in manifest["ck_tasks"]]
-    if existing:
+    if existing_sources:
         if set(existing) != set(expected_rows) or len(source_pages) != len(questions):
             raise ContentImportError(
                 "Only part of this import is present. Review existing pages before importing again."
@@ -121,13 +141,18 @@ async def import_ck_pretest(
                     f"Imported CSV row {row} has been edited or remapped; no changes were made."
                 )
         actual_rows = [
-            _source_row(page)
+            _source_row(page, source_key)
             for page in pages[max(0, target_index - len(questions)) : target_index]
         ]
         if actual_rows != expected_rows or target.section_key != "pck":
             raise ContentImportError(
                 "Imported sections have been reordered or relabeled; no changes were made."
             )
+        if source_key != SOURCE_KEY:
+            return [
+                f"All thirteen CK task pages match their original {source_key} import. "
+                "No changes. Create a new study to use the corrected CSV IDs."
+            ]
         return ["All thirteen CK task pages already match this import. No changes."]
 
     mapped_ids = {question["id"] for question in questions}
@@ -147,7 +172,10 @@ async def import_ck_pretest(
     if any(page.section_key == "pck" for page in pages[pck_end:]):
         raise ContentImportError("PCK pages must be consecutive before importing CK.")
 
-    changes = [f"Insert thirteen CK pages before questionnaire {target.id}: {target.title}."]
+    changes = [
+        f"Source: {SOURCE_KEY}.",
+        f"Insert thirteen CK pages before questionnaire {target.id}: {target.title}.",
+    ]
     for index, (task, question) in enumerate(zip(manifest["ck_tasks"], questions, strict=True)):
         changes.append(
             f"  + CK: Aufgabe {index + 1}: CSV row {task['source_row']} → {question['id']}"

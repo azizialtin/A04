@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
-import type { ParticipantStats } from '../../api/admin'
+import type { ParticipantStats, ParticipantTimedSection } from '../../api/admin'
 import ParticipantStatsPanel from './ParticipantStatsPanel'
 
 const useParticipantStats = vi.fn()
@@ -139,6 +140,7 @@ function stats(overrides: Partial<ParticipantStats> = {}): ParticipantStats {
     ],
     questionnaires: [],
     sections: [],
+    timed_sections: [],
     calibrations: [],
     events_by_type: [],
     ...overrides,
@@ -212,6 +214,145 @@ test('adds the time up per section, and the pre-test as a whole', () => {
   expect(screen.getByText('4:00 min · 9 Seiten')).toBeInTheDocument()
   // 165 + 188, the per-case battery left out.
   expect(screen.getByText('5:53 min')).toBeInTheDocument()
+  expect(screen.getByText(/Summierte Antwortzeiten:/)).toBeInTheDocument()
+  expect(screen.getByText('Keine Abschnittszeitmessung erfasst.')).toBeInTheDocument()
+})
+
+function timedSection(overrides: Partial<ParticipantTimedSection> = {}): ParticipantTimedSection {
+  const start = Date.parse('2026-11-02T09:00:00Z')
+  return {
+    section_key: 'ck_tasks',
+    section: 'CK-Aufgaben',
+    started_client_ts: start,
+    ended_client_ts: start + 425_000,
+    deadline_ms: start + 420_000,
+    elapsed_seconds: 425,
+    deadline_overrun_seconds: 5,
+    exit_reason: 'supervisor_finish',
+    visited_pages: 1,
+    page_visits: [
+      {
+        visit_id: 'partial',
+        questionnaire_id: 4,
+        title: 'CK 1',
+        step_index: 5,
+        entered_client_ts: start,
+        exited_client_ts: start + 425_000,
+        elapsed_seconds: 425,
+        exit_reason: 'supervisor_finish',
+        is_review: false,
+        submitted_answers: { ck_01: { lines: [3], explanation: 'Originaler Teilstand' } },
+      },
+      {
+        visit_id: 'review',
+        questionnaire_id: 4,
+        title: 'CK 1',
+        step_index: 5,
+        entered_client_ts: start + 900_000,
+        exited_client_ts: start + 930_000,
+        elapsed_seconds: 30,
+        exit_reason: 'submitted',
+        is_review: true,
+        submitted_answers: { ck_01: { lines: [4], explanation: 'Spätere Überarbeitung' } },
+      },
+      {
+        visit_id: 'lost-exit',
+        questionnaire_id: 4,
+        title: 'CK 1',
+        step_index: 5,
+        entered_client_ts: start + 960_000,
+        exited_client_ts: null,
+        elapsed_seconds: null,
+        exit_reason: null,
+        is_review: true,
+        submitted_answers: null,
+      },
+    ],
+    ...overrides,
+  }
+}
+
+test('distinguishes elapsed CK time, partial answers and immutable review snapshots', async () => {
+  const user = userEvent.setup()
+  const section = timedSection()
+  useParticipantStats.mockReturnValue({
+    data: stats({
+      timed_sections: [section],
+      sections: [{ section: 'CK-Aufgaben', pages: 1, seconds: 30, pre_test: true }],
+      questionnaires: [
+        {
+          id: 4,
+          response_id: 10,
+          title: 'CK 1',
+          placement: 'pre_test',
+          section: 'CK-Aufgaben',
+          video_id: null,
+          video_title: null,
+          questions: 1,
+          answered: 1,
+          response_status: 'partial',
+          seconds: 30,
+          created_at: '2026-11-02T09:00:00Z',
+        },
+      ],
+    }),
+    isLoading: false,
+    isError: false,
+  })
+  render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)
+
+  const timing = screen.getByRole('region', { name: 'Zeitmessung CK-Aufgaben' })
+  expect(within(timing).getByText('Durch Betreuung beendet')).toBeInTheDocument()
+  expect(within(timing).getByText('Dauer (Beginn bis Ende)').nextElementSibling).toHaveTextContent(
+    '7:05 min',
+  )
+  expect(within(timing).getByText('5 s')).toBeVisible()
+  expect(within(timing).getByText('Timer-Ende (Serverzeit)')).toBeInTheDocument()
+  expect(screen.getByText('30 s · 1 Seite')).toBeInTheDocument()
+  expect(screen.getByText('Teilantwort')).toBeInTheDocument()
+
+  await user.click(within(timing).getByText('Seitenbesuche (3)'))
+  const visits = within(timing).getByRole('table', { name: 'Seitenbesuche CK-Aufgaben' })
+  const rows = within(visits).getAllByRole('row')
+  expect(within(rows[1]).getByText('Teilantwort gespeichert')).toBeVisible()
+  expect(within(rows[2]).getByText('Überarbeitung')).toBeVisible()
+  expect(within(rows[3]).getByText('Kein Austritt erfasst')).toBeVisible()
+  expect(within(rows[3]).getAllByText('—')).toHaveLength(2)
+  expect(within(rows[3]).getByText('Kein Antwortstand erfasst')).toBeVisible()
+
+  await user.click(within(rows[1]).getByText('Antwortstand anzeigen'))
+  await user.click(within(rows[2]).getByText('Antwortstand anzeigen'))
+  expect(within(rows[1]).getByText(/Zeilen: 3.*Erklärung: Originaler Teilstand/s)).toBeVisible()
+  expect(within(rows[2]).getByText(/Zeilen: 4.*Erklärung: Spätere Überarbeitung/s)).toBeVisible()
+})
+
+test('keeps absent timing and an empty saved answer distinct from zero and missing snapshots', async () => {
+  const user = userEvent.setup()
+  const section = timedSection({
+    ended_client_ts: null,
+    elapsed_seconds: null,
+    deadline_overrun_seconds: null,
+    exit_reason: null,
+    page_visits: [],
+  })
+  useParticipantStats.mockReturnValue({
+    data: stats({ timed_sections: [section] }),
+    isLoading: false,
+    isError: false,
+  })
+  const { rerender } = render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)
+
+  const timing = screen.getByRole('region', { name: 'Zeitmessung CK-Aufgaben' })
+  expect(within(timing).getByText('Kein Ende erfasst')).toBeInTheDocument()
+  expect(within(timing).getAllByText('—')).toHaveLength(3)
+  expect(within(timing).queryByText('0 s')).not.toBeInTheDocument()
+
+  section.page_visits = [{ ...timedSection().page_visits[0], submitted_answers: {} }]
+  rerender(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)
+  await user.click(within(timing).getByText('Seitenbesuche (1)'))
+  await user.click(within(timing).getByText('Antwortstand anzeigen'))
+  expect(within(timing).getByText('Leerer Antwortstand')).toBeVisible()
+  expect(within(timing).queryByText('Kein Antwortstand erfasst')).not.toBeInTheDocument()
 })
 
 test('reveals the first loaded result without stealing focus again on refresh', () => {
