@@ -460,7 +460,7 @@ export interface ParticipantCaseStats {
     samples: number
     sampling_rate_hz: number | null
     expected_samples: number | null
-    /** Samples captured as a percentage of what the tracker should have produced. */
+    /** Case-screen sample delivery over capture intervals; null if timing is incomplete. */
     yield: number | null
     started_at: string | null
     completed_at: string | null

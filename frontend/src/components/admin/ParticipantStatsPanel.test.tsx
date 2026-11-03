@@ -165,7 +165,29 @@ test('reads the run case by case, and says which cases were not reached', () => 
   // Watching time and screen time are reported apart: the gap is what they
   // spent reading and typing with the clip paused.
   expect(screen.getByText('26 s Video · 31 s am Schirm')).toBeInTheDocument()
-  expect(screen.getByText(/97,1 % Ausbeute/)).toBeInTheDocument()
+  expect(screen.getByText(/97,1 % Erfassungsquote \(geschätzt\)/)).toBeInTheDocument()
+})
+
+test('a completed run does not display an unfinished step fraction', () => {
+  const completed = stats()
+  completed.status = 'completed'
+  completed.session.progress = 100
+  completed.session.step = 53
+  completed.session.total_steps = 54
+  useParticipantStats.mockReturnValue({ data: completed, isLoading: false, isError: false })
+  render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)
+  expect(screen.getByText('100 %')).toBeInTheDocument()
+  expect(screen.getByText('Alle Schritte abgeschlossen')).toBeInTheDocument()
+  expect(screen.queryByText('Schritt 53/54')).not.toBeInTheDocument()
+})
+
+test('incomplete recording timing does not invent a capture percentage', () => {
+  const incomplete = stats()
+  incomplete.cases[0].gaze.yield = null
+  useParticipantStats.mockReturnValue({ data: incomplete, isLoading: false, isError: false })
+  render(<ParticipantStatsPanel participantId="P02" onClose={vi.fn()} />)
+  expect(screen.getByText(/Erfassungsquote nicht bestimmbar/)).toBeInTheDocument()
+  expect(screen.queryByText(/0 % Erfassungsquote/)).not.toBeInTheDocument()
 })
 
 test('an empty figure reads as unknown rather than as zero', () => {

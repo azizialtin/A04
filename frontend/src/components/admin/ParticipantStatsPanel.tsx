@@ -80,7 +80,11 @@ export default function ParticipantStatsPanel({
               hint={
                 <Meter
                   value={stats.data.session.progress}
-                  label={`Schritt ${stats.data.session.step}/${stats.data.session.total_steps}`}
+                  label={
+                    stats.data.status === 'completed' || stats.data.session.completed_at
+                      ? 'Alle Schritte abgeschlossen'
+                      : `Schritt ${stats.data.session.step}/${stats.data.session.total_steps}`
+                  }
                 />
               }
             />
@@ -137,6 +141,12 @@ export default function ParticipantStatsPanel({
           />
 
           <h4 className="section-head">Fälle</h4>
+          <p className="muted">
+            Gaze je Fall zählt nur den Fall-Bildschirm. Die Erfassungsquote schätzt die
+            gespeicherten Proben anhand der abgeschlossenen Aufnahmezeiten und Abtastraten.
+            Sie enthält auch ungültige Blickproben und bewertet keine Blickqualität.
+            Bei offenen oder widersprüchlichen Aufnahmezeiten ist sie nicht bestimmbar.
+          </p>
           <div className="case-cards">
             {stats.data.cases.map((c) => (
               <CaseCard key={c.video_id} row={c} />
@@ -373,7 +383,9 @@ function CaseCard({ row }: { row: ParticipantCaseStats }) {
                 'Gaze',
                 row.gaze.recordings
                   ? `${compact(row.gaze.samples)} Samples${
-                      row.gaze.yield == null ? '' : ` · ${percent(row.gaze.yield)} Ausbeute`
+                      row.gaze.yield == null
+                        ? ' · Erfassungsquote nicht bestimmbar'
+                        : ` · ${percent(row.gaze.yield)} Erfassungsquote (geschätzt)`
                     }${row.gaze.sampling_rate_hz ? ` · ${row.gaze.sampling_rate_hz} Hz` : ''}`
                   : 'nicht aufgezeichnet',
               ],

@@ -149,6 +149,20 @@ willing to lose.
 
 ## Gaze data and analysis
 
+Participant progress reaches 100% when the participant or session is completed,
+including runs whose saved pointer is on the final thank-you screen. The saved
+zero-based pointer remains unchanged.
+
+Case-level gaze statistics count only `case_video` recordings; participant and
+study totals still include questionnaire samples. The displayed Erfassungsquote
+is an estimate of sample delivery, not eye validity or calibration accuracy.
+Its denominator sums each completed recording's server-clock duration multiplied
+by that recording's nominal sampling rate, so resumed attempts, gaps and mixed
+rates are handled separately. Upload delays can lower this estimate. Open or
+inconsistent recordings (including impossible sample counts) show no percentage;
+they are never silently clamped to 100%. Historical records without usable timing
+also show no percentage. Raw gaze data and CSV exports are unchanged.
+
 `gaze.csv` is one row per stored sample, including invalid samples. It preserves
 `ts`, `device_ts`, left/right coordinates, validity and pupil diameters. It also
 includes participant/recording ids, case columns where applicable, `step_kind`,
