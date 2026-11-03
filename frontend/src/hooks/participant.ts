@@ -22,6 +22,7 @@ export function useVideoReplay(videoId: number, enabled = true) {
     queryKey: ['replay', videoId],
     queryFn: () => participantApi.getVideoReplay(videoId),
     enabled,
+    refetchInterval: (query) => (query.state.data?.recording_pending ? 1500 : false),
   })
 }
 

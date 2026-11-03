@@ -9,7 +9,10 @@
     "id_placeholder": "z. B. TN-042",
     "hint": "Bitte geben Sie die ID ein, die Sie vom Studienteam erhalten haben.",
     "submit": "Anmelden",
-    "error_unknown": "Unbekannte Teilnehmer-ID. Bitte wenden Sie sich an das Studienteam."
+    "error_unknown": "Unbekannte Teilnehmer-ID. Bitte wenden Sie sich an das Studienteam.",
+    "error_completed": "Sie haben diese Studie bereits abgeschlossen. Vielen Dank für Ihre Teilnahme!",
+    "error_rate_limit": "Zu viele Anmeldeversuche. Bitte warten Sie eine Minute und versuchen Sie es erneut.",
+    "error_connection": "Anmeldung momentan nicht möglich. Bitte prüfen Sie die Verbindung und versuchen Sie es erneut."
   },
   "welcome": {
     "title": "Willkommen",
@@ -112,7 +115,8 @@
     "saving": "Die Bildschirmaufzeichnung wird gespeichert…",
     "browser_capture": "vom Browser aufgezeichnet",
     "numbered": "{{title}} {{current}} von {{total}}",
-    "batch_hint": "Sie sehen nun nacheinander die Aufzeichnungen der letzten {{total}} Fälle."
+    "batch_hint": "Sie sehen nun nacheinander die Aufzeichnungen der letzten {{total}} Fälle.",
+    "upload_pending": "Die Bildschirmaufzeichnung wird noch hochgeladen. Die Wiedergabe aktualisiert sich automatisch."
   },
   "questionnaire": {
     "submit": "Weiter",

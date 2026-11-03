@@ -36,6 +36,32 @@ const position = (over: Partial<ThinkAloudPosition> = {}): ThinkAloudPosition =>
 
 beforeEach(() => vi.clearAllMocks())
 
+test('pending uploads update the replay without resetting the fallback on each signed URL refresh', async () => {
+  const saved = { ...replay }
+  Object.assign(replay, {
+    source: 'clip',
+    epoch_ms: null,
+    recording_pending: true,
+    video_url: '/clip?token=one',
+  })
+  try {
+    const { container, rerender } = render(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('aktualisiert sich automatisch')
+    const original = container.querySelector('video')
+    const originalUrl = original?.getAttribute('src')
+    Object.assign(replay, { video_url: '/clip?token=two' })
+    rerender(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
+    expect(container.querySelector('video')).toBe(original)
+    expect(container.querySelector('video')?.getAttribute('src')).toBe(originalUrl)
+    Object.assign(replay, saved, { recording_pending: false })
+    rerender(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
+    expect(container.querySelector('video')).not.toBe(original)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  } finally {
+    Object.assign(replay, saved, { recording_pending: false })
+  }
+})
+
 test('says which case is playing, so a recording is never a guess', async () => {
   render(<ThinkAloudScreen videoId={1} position={position()} onComplete={vi.fn()} />)
 

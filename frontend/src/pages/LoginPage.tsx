@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { isAxiosError } from 'axios'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
@@ -23,8 +24,17 @@ export default function LoginPage() {
       const { access_token } = await authApi.participantLogin(id.trim())
       login(access_token)
       navigate('/session', { replace: true })
-    } catch {
-      toast.show(t('login.error_unknown'), 'error')
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined
+      const key =
+        status === 403
+          ? 'error_completed'
+          : status === 401
+            ? 'error_unknown'
+            : status === 429
+              ? 'error_rate_limit'
+              : 'error_connection'
+      toast.show(t(`login.${key}`), status === 403 ? 'info' : 'error')
       setBusy(false)
     }
   }

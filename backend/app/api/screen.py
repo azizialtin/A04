@@ -154,6 +154,7 @@ def _mark_stored(
     fps: float | None,
 ) -> None:
     recording.status = "stored"
+    recording.error = None
     recording.storage_mode = storage_mode
     recording.storage_path = path
     recording.epoch_ms = epoch_ms
@@ -187,6 +188,7 @@ async def start_screen_recording(
         video_id=body.video_id,
         storage_mode=settings.SCREEN_STORAGE_MODE,
         recorder=body.recorder,
+        last_seen_at=datetime.now(UTC) if body.recorder == "browser" else None,
     )
     db.add(recording)
     await db.commit()
@@ -197,6 +199,20 @@ async def start_screen_recording(
         expires=timedelta(hours=settings.SCREEN_UPLOAD_TOKEN_HOURS),
     )
     return StartResponse(recording_id=recording.id, upload_token=token)
+
+
+@router.post("/recordings/{recording_id}/heartbeat")
+async def recording_heartbeat(
+    recording_id: int,
+    claims: dict = Depends(_upload_claims),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    recording = await _open_recording(db, recording_id, claims)
+    if recording.recorder != "browser" or recording.status != "recording":
+        raise HTTPException(status.HTTP_409_CONFLICT, "That browser capture is not running.")
+    recording.last_seen_at = datetime.now(UTC)
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.post("/recordings/{recording_id}/upload-url", response_model=UploadUrlResponse)

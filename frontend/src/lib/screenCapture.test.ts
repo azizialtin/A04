@@ -18,6 +18,8 @@ vi.mock('../api/screen', () => ({
     start: vi.fn(),
     markFailed: vi.fn(),
     deliver: vi.fn(),
+    heartbeat: vi.fn(),
+    abandon: vi.fn(),
   },
 }))
 
@@ -108,9 +110,58 @@ beforeEach(() => {
   start.mockReset().mockResolvedValue({ recording_id: 7, upload_token: 'tok' })
   markFailed.mockReset().mockResolvedValue({} as never)
   deliver.mockReset().mockResolvedValue(undefined)
+  vi.mocked(screenApi.heartbeat)
+    .mockReset()
+    .mockResolvedValue({} as Response)
+  vi.mocked(screenApi.abandon)
+    .mockReset()
+    .mockResolvedValue({} as Response)
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  _reset()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
+test('keeps a browser capture alive through a slow upload and stops heartbeats afterwards', async () => {
+  vi.useFakeTimers()
+  let uploaded!: () => void
+  deliver.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        uploaded = resolve
+      }),
+  )
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(screenApi.heartbeat).toHaveBeenCalledWith(7, 'tok')
+  const done = recording.stop()
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(screenApi.heartbeat).toHaveBeenCalledTimes(2)
+  uploaded()
+  await done
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(screenApi.heartbeat).toHaveBeenCalledTimes(2)
+  window.dispatchEvent(new Event('pagehide'))
+  expect(screenApi.abandon).not.toHaveBeenCalled()
+})
+
+test('reports an interrupted capture when the page unloads, even if opening was slow', async () => {
+  let opened!: (value: { recording_id: number; upload_token: string }) => void
+  start.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        opened = resolve
+      }),
+  )
+  startBrowserRecording(42, new FakeStream() as unknown as MediaStream)
+  window.dispatchEvent(new Event('pagehide'))
+  opened({ recording_id: 7, upload_token: 'tok' })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(screenApi.abandon).toHaveBeenCalledWith(7, 'tok')
+})
 
 test('the bridge is asked whether it will record', async () => {
   const answer = bridgeCanRecord()

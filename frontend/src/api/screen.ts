@@ -42,6 +42,17 @@ export const screenApi = {
       .then((r) => r.data),
   markFailed: (recordingId: number, error: string) =>
     apiClient.patch(`/screen/recordings/${recordingId}/failed`, { error }),
+  heartbeat: (recordingId: number, token: string) =>
+    asUploader(absolute(`/screen/recordings/${recordingId}/heartbeat`), token, {
+      method: 'POST',
+    }),
+  abandon: (recordingId: number, token: string) =>
+    asUploader(screenApi.failedUrl(recordingId), token, {
+      method: 'PATCH',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Browser page closed before the capture was delivered.' }),
+    }),
   uploadUrl: (recordingId: number) => absolute(`/screen/recordings/${recordingId}/upload`),
   failedUrl: (recordingId: number) => absolute(`/screen/recordings/${recordingId}/failed`),
   // Where the bridge asks for somewhere in the bucket to put the capture, and

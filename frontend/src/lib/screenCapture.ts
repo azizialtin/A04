@@ -33,6 +33,7 @@ const BITS_PER_SECOND = 2_500_000
 const TIMESLICE_MS = 1000
 const OPEN_ATTEMPTS = 2
 const OPEN_RETRY_MS = 500
+const HEARTBEAT_MS = 30_000
 
 // Cheapest first among what MediaRecorder implementations actually offer.
 const MIME_CANDIDATES = [
@@ -47,6 +48,7 @@ let declined = false
 let bridgeFailedOnce = false
 let probe: { at: number; answer: Promise<boolean> } | null = null
 const uploads = new Map<number, Promise<void>>()
+const recordingCleanups = new Set<() => void>()
 
 /** Ask the bridge whether it will record the screen. False on no bridge. */
 export function bridgeCanRecord(timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
@@ -277,7 +279,8 @@ export function startBrowserRecording(
     recorder.start(TIMESLICE_MS)
   } catch {
     void opened.then(
-      (o) => o && screenApi.markFailed(o.recording_id, 'MediaRecorder would not start'),
+      (o) =>
+        o && screenApi.markFailed(o.recording_id, 'MediaRecorder would not start').catch(() => {}),
     )
     return null
   }
@@ -285,6 +288,30 @@ export function startBrowserRecording(
   const stopped = new Promise<void>((resolve) => {
     recorder.onstop = () => resolve()
     recorder.onerror = () => resolve()
+  })
+
+  let abandoned = false
+  let heartbeat: number | undefined
+  const onPageHide = () => {
+    abandoned = true
+    window.clearInterval(heartbeat)
+    void opened.then((o) => {
+      if (o) void screenApi.abandon(o.recording_id, o.upload_token).catch(() => {})
+    })
+  }
+  const cleanup = () => {
+    window.clearInterval(heartbeat)
+    window.removeEventListener('pagehide', onPageHide)
+    recordingCleanups.delete(cleanup)
+  }
+  window.addEventListener('pagehide', onPageHide)
+  recordingCleanups.add(cleanup)
+  void opened.then((o) => {
+    if (!o || abandoned) return
+    // Keep the lease until delivery finishes, including a slow upload.
+    heartbeat = window.setInterval(() => {
+      void screenApi.heartbeat(o.recording_id, o.upload_token).catch(() => {})
+    }, HEARTBEAT_MS)
   })
 
   const finish = async () => {
@@ -334,6 +361,7 @@ export function startBrowserRecording(
     stop: () => {
       if (!delivery) {
         delivery = finish().finally(() => {
+          cleanup()
           if (uploads.get(videoId) === delivery) uploads.delete(videoId)
         })
         uploads.set(videoId, delivery)
@@ -350,6 +378,7 @@ export function uploadSettled(videoId: number): Promise<void> {
 
 /** For tests: forget everything this module remembers. */
 export function _reset(): void {
+  for (const cleanup of recordingCleanups) cleanup()
   held = null
   declined = false
   bridgeFailedOnce = false

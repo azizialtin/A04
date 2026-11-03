@@ -4,6 +4,7 @@ the bridge, and getting gaze back on the right timeline."""
 from __future__ import annotations
 
 import struct
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -69,6 +70,127 @@ async def _upload(client, recording_id, token, *, epoch_ms=EPOCH, duration_ms=60
             "fps": "30",
         },
     )
+
+
+async def test_replay_reports_pending_then_ready_for_a_delayed_bridge_upload(
+    client, assigned_video, participant_headers
+):
+    opened = (await _open(client, participant_headers, assigned_video.id)).json()
+    path = f"/gaze/videos/{assigned_video.id}/replay"
+    pending = (await client.get(path, headers=participant_headers)).json()
+    assert pending["source"] == "clip" and pending["recording_pending"] is True
+    assert (
+        await _upload(client, opened["recording_id"], opened["upload_token"])
+    ).status_code == 200
+    ready = (await client.get(path, headers=participant_headers)).json()
+    assert ready["source"] == "screen" and ready["recording_pending"] is False
+
+
+async def test_replay_does_not_substitute_an_older_capture_while_the_new_one_is_uploading(
+    client, assigned_video, participant_headers
+):
+    first = (await _open(client, participant_headers, assigned_video.id)).json()
+    await _upload(client, first["recording_id"], first["upload_token"])
+    await _open(client, participant_headers, assigned_video.id)
+    replay = (
+        await client.get(f"/gaze/videos/{assigned_video.id}/replay", headers=participant_headers)
+    ).json()
+    assert replay["source"] == "clip" and replay["recording_pending"] is True
+
+
+@pytest.mark.parametrize("heartbeat", [None, "stale"])
+async def test_admin_list_expires_abandoned_browser_captures_but_preserves_bridge_and_live_captures(
+    client, assigned_video, participant_headers, admin_headers, db, heartbeat
+):
+    old = datetime.now(UTC) - timedelta(minutes=4)
+    rows = [
+        ScreenRecording(
+            participant_id="T-001",
+            video_id=assigned_video.id,
+            recorder="browser",
+            started_at=old,
+            last_seen_at=old if heartbeat else None,
+        ),
+        ScreenRecording(
+            participant_id="T-001",
+            video_id=assigned_video.id,
+            recorder="browser",
+            started_at=old,
+            last_seen_at=datetime.now(UTC),
+        ),
+        ScreenRecording(
+            participant_id="T-001", video_id=assigned_video.id, recorder="bridge", started_at=old
+        ),
+    ]
+    db.add_all(rows)
+    await db.flush()
+    result = (await client.get("/admin/screen-recordings", headers=admin_headers)).json()
+    states = {r["id"]: r["status"] for r in result["items"]}
+    assert [states[r.id] for r in rows] == ["failed", "recording", "recording"]
+
+
+async def test_browser_heartbeat_is_scoped_and_prevents_expiry(
+    client, assigned_video, participant_headers, admin_headers, db
+):
+    first = (
+        await client.post(
+            "/screen/recordings",
+            json={"video_id": assigned_video.id, "recorder": "browser"},
+            headers=participant_headers,
+        )
+    ).json()
+    second = (
+        await client.post(
+            "/screen/recordings",
+            json={"video_id": assigned_video.id, "recorder": "browser"},
+            headers=participant_headers,
+        )
+    ).json()
+    row = await db.get(ScreenRecording, first["recording_id"])
+    row.last_seen_at = datetime.now(UTC) - timedelta(minutes=4)
+    await db.flush()
+    own = {"Authorization": f"Bearer {first['upload_token']}"}
+    path = f"/screen/recordings/{row.id}/heartbeat"
+    assert (await client.post(path, headers=participant_headers)).status_code == 401
+    assert (
+        await client.post(path, headers={"Authorization": f"Bearer {second['upload_token']}"})
+    ).status_code == 403
+    assert (await client.post(path, headers=own)).status_code == 200
+    listing = (await client.get("/admin/screen-recordings", headers=admin_headers)).json()
+    assert all(r["status"] == "recording" for r in listing["items"])
+
+
+async def test_abandoned_capture_is_not_pending_and_a_late_upload_can_recover(
+    client, assigned_video, participant_headers, db
+):
+    opened = (
+        await client.post(
+            "/screen/recordings",
+            json={"video_id": assigned_video.id, "recorder": "browser"},
+            headers=participant_headers,
+        )
+    ).json()
+    row = await db.get(ScreenRecording, opened["recording_id"])
+    row.last_seen_at = datetime.now(UTC) - timedelta(minutes=4)
+    await db.flush()
+    path = f"/gaze/videos/{assigned_video.id}/replay"
+    replay = (await client.get(path, headers=participant_headers)).json()
+    assert replay["recording_pending"] is False and replay["source"] == "clip"
+    own = {"Authorization": f"Bearer {opened['upload_token']}"}
+    assert (
+        await client.post(f"/screen/recordings/{row.id}/heartbeat", headers=own)
+    ).status_code == 409
+    assert (await _upload(client, row.id, opened["upload_token"])).status_code == 200
+    ready = (await client.get(path, headers=participant_headers)).json()
+    assert ready["source"] == "screen"
+    await db.refresh(row)
+    assert row.error is None and row.status == "stored"
+    failed = await client.patch(
+        f"/screen/recordings/{row.id}/failed", json={"error": "late unload"}, headers=own
+    )
+    assert failed.status_code == 409
+    await db.refresh(row)
+    assert row.status == "stored"
 
 
 # --- the timeline ---------------------------------------------------------

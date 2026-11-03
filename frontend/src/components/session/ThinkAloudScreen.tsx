@@ -119,12 +119,21 @@ export default function ThinkAloudScreen({ videoId, position, heading, body, onC
         ) : null}
       </header>
 
-      <ReplayPlayer replay={replay.data} notes={notes.data ?? []} />
+      {replay.data.recording_pending ? (
+        <p role="status">{t('think_aloud.upload_pending')}</p>
+      ) : null}
+      <ReplayPlayer
+        key={`${videoId}-${replay.data.source}-${replay.data.epoch_ms ?? 'clip'}`}
+        replay={replay.data}
+        notes={notes.data ?? []}
+      />
 
       <footer className="think-aloud__foot">
         <span className="muted">
           {t('think_aloud.stats', { points: replay.data.plotted_points })}
-          {replay.data.source === 'clip' ? ` · ${t('think_aloud.clip_only')}` : ''}
+          {replay.data.source === 'clip' && !replay.data.recording_pending
+            ? ` · ${t('think_aloud.clip_only')}`
+            : ''}
           {replay.data.recorder === 'browser' ? ` · ${t('think_aloud.browser_capture')}` : ''}
         </span>
         <button type="button" className="btn btn-primary btn-lg" onClick={onComplete}>
@@ -148,9 +157,10 @@ function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapsh
   const showGazeRef = useRef(showGaze)
   showGazeRef.current = showGaze
 
-  const url = replay.video_url.startsWith('/')
-    ? `${apiClient.defaults.baseURL}${replay.video_url}`
-    : replay.video_url
+  // Polling can renew the signed clip URL; keep its playback position while waiting.
+  const [initialUrl] = useState(replay.video_url)
+  const mediaUrl = replay.recording_pending ? initialUrl : replay.video_url
+  const url = mediaUrl.startsWith('/') ? `${apiClient.defaults.baseURL}${mediaUrl}` : mediaUrl
 
   // On a screen recording the playhead is wall time, so the notes go on it by
   // their own timestamp; on the clip it is clip time, so they go on by playhead.
