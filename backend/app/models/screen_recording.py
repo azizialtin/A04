@@ -47,6 +47,13 @@ class ScreenRecording(Base):
     # whose clock anchor is the browser's and a frame or two less exact.
     recorder: Mapped[str] = mapped_column(String(16), default="bridge", server_default="bridge")
 
+    # Reported by the capture pipeline, independently of file delivery. Old
+    # uploads remain unknown: a stored video is not evidence of a soundtrack.
+    audio_status: Mapped[str] = mapped_column(
+        String(16), default="unknown", server_default="unknown"
+    )
+    audio_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # Wall-clock ms on the lab machine at video position 0. Gaze samples carry
     # that same clock, so a sample's position in this recording is just
     # `ts - epoch_ms` — no playback spans to reconstruct, and a sample taken

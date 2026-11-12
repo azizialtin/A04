@@ -6,6 +6,8 @@ RUN npm ci
 COPY . .
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_TOBII_WS_URL=ws://127.0.0.1:8766
+ENV VITE_TOBII_WS_URL=$VITE_TOBII_WS_URL
 RUN npm run build
 
 FROM nginx:1.27-alpine
@@ -17,6 +19,6 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Defaults suit the local stack. In production set CSP_POLICY with the backend
 # origin in connect-src, and the bucket host in media-src if videos are served
 # from signed GCS urls.
-ENV CSP_POLICY="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: http://localhost:8030; connect-src 'self' http://localhost:8030 ws://localhost:8765; frame-src https://www.soscisurvey.de; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+ENV CSP_POLICY="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: http://localhost:8030; connect-src 'self' http://localhost:8030 ws://localhost:8766 ws://127.0.0.1:8766; frame-src https://www.soscisurvey.de; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 EXPOSE 80

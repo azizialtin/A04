@@ -31,6 +31,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stimulus_audio import StimulusAudio
+
 DEFAULT_FPS = 30
 # Screen content is flat and text-heavy; this stays sharp and keeps a ten-minute
 # case near 150 MB rather than a gigabyte.
@@ -67,6 +69,8 @@ class Recording:
     width: int | None = None
     height: int | None = None
     fps: float = DEFAULT_FPS
+    audio_status: str = "unknown"
+    audio_error: str | None = None
 
 
 @dataclass
@@ -218,6 +222,7 @@ class ScreenRecorder:
         self._tasks: list[asyncio.Task] = []
         self._dir: Path | None = None
         self._path: Path | None = None
+        self.audio: StimulusAudio | None = None
 
     @property
     def running(self) -> bool:
@@ -232,25 +237,25 @@ class ScreenRecorder:
 
         self._dir = Path(tempfile.mkdtemp(prefix="a04-screen-"))
         self._path = self._dir / "screen.mp4"
+        self.audio = StimulusAudio(self._dir)
         self._progress = _Progress()
-
-        self._proc = await asyncio.create_subprocess_exec(
-            *_ffmpeg_command(
-                self._path, self.fps, self.crf, self.max_height, self.device, self.test_pattern
-            ),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        self._tasks = [
-            asyncio.create_task(self._read_progress()),
-            asyncio.create_task(self._read_stderr()),
-        ]
 
         # Block until frames are actually coming out. A wrong capture device or
         # a refused screen-recording permission fails here, while the browser is
         # still listening — not ten minutes later with an empty file.
         try:
+            self._proc = await asyncio.create_subprocess_exec(
+                *_ffmpeg_command(
+                    self._path, self.fps, self.crf, self.max_height, self.device, self.test_pattern
+                ),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            self._tasks = [
+                asyncio.create_task(self._read_progress()),
+                asyncio.create_task(self._read_stderr()),
+            ]
             await asyncio.wait_for(self._await_anchor(), FIRST_FRAME_TIMEOUT_S)
         except asyncio.TimeoutError:
             await self._abort()
@@ -258,6 +263,9 @@ class ScreenRecorder:
                 f"ffmpeg produced no frames in {FIRST_FRAME_TIMEOUT_S:.0f}s"
                 f"{_no_frames_hint()}: {self._stderr_tail()}"
             ) from None
+        except (Exception, asyncio.CancelledError):
+            await self._abort()
+            raise
 
     async def _resolve_device(self) -> None:
         """Fill in the capture device on the one platform that cannot be guessed.
@@ -358,6 +366,13 @@ class ScreenRecorder:
                 proc.stdin.close()
         try:
             await asyncio.wait_for(proc.wait(), STOP_TIMEOUT_S)
+        except asyncio.CancelledError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+            await self._settle()
+            self.discard()
+            raise
         except asyncio.TimeoutError:
             with contextlib.suppress(ProcessLookupError):
                 proc.kill()
@@ -401,26 +416,29 @@ def _metadata(recording: Recording) -> dict[str, str]:
         "epoch_ms": str(recording.epoch_ms),
         "duration_ms": str(recording.duration_ms),
         "fps": str(recording.fps),
+        "audio_status": recording.audio_status,
     }
     if recording.width and recording.height:
         metadata["width"] = str(recording.width)
         metadata["height"] = str(recording.height)
+    if recording.audio_error:
+        metadata["audio_error"] = recording.audio_error
     return metadata
 
 
-def _committed(response, fallback: int) -> int:
+def _committed(response) -> int:
     """How far GCS says it got, from the Range it answers an unfinished PUT with.
 
     The header is `bytes=0-<last byte stored>`, so the next chunk starts one
-    past it. Anything unparseable falls back to what we believe we sent.
+    past it. No Range means the bucket has persisted no bytes.
     """
     header = response.headers.get("Range", "")
-    if header.startswith("bytes=0-"):
-        try:
-            return int(header.split("-", 1)[1]) + 1
-        except ValueError:
-            pass
-    return fallback
+    if not header:
+        return 0
+    match = re.fullmatch(r"bytes=0-(\d+)", header)
+    if match:
+        return int(match.group(1)) + 1
+    raise ScreenRecordingError("the bucket returned an invalid committed byte range")
 
 
 async def _session_offset(client, session_url: str, total: int) -> int:
@@ -435,7 +453,10 @@ async def _session_offset(client, session_url: str, total: int) -> int:
     if response.status_code in (200, 201):
         return total
     if response.status_code == 308:
-        return _committed(response, 0)
+        offset = _committed(response)
+        if offset >= total:
+            raise ScreenRecordingError("the bucket returned an impossible unfinished byte range")
+        return offset
     raise ScreenRecordingError(
         f"the bucket would not resume: {response.status_code} {response.text[:200]}"
     )
@@ -465,6 +486,8 @@ async def _put_to_bucket(client, session_url: str, path: Path) -> None:
                     content=chunk,
                     headers={"Content-Range": f"bytes {offset}-{end}/{total}"},
                 )
+                if response.status_code >= 500:
+                    raise ScreenRecordingError(f"the bucket temporarily failed: {response.status_code}")
             except Exception:
                 if attempt >= UPLOAD_ATTEMPTS:
                     raise
@@ -474,10 +497,21 @@ async def _put_to_bucket(client, session_url: str, path: Path) -> None:
                 continue
 
             if response.status_code in (200, 201):
+                if end + 1 != total:
+                    raise ScreenRecordingError("the bucket completed before receiving the full capture")
                 return
             if response.status_code == 308:
-                offset = _committed(response, offset + len(chunk))
-                attempt = 1
+                committed = _committed(response)
+                if committed > end + 1 or committed >= total:
+                    raise ScreenRecordingError("the bucket returned an impossible unfinished byte range")
+                if committed <= offset:
+                    if attempt >= UPLOAD_ATTEMPTS:
+                        raise ScreenRecordingError("the bucket made no upload progress")
+                    await asyncio.sleep(UPLOAD_BACKOFF_S * attempt)
+                    attempt += 1
+                else:
+                    attempt = 1
+                offset = committed
                 continue
             raise ScreenRecordingError(
                 f"the bucket said {response.status_code}: {response.text[:200]}"
@@ -528,6 +562,8 @@ async def upload(
                         "width": recording.width,
                         "height": recording.height,
                         "fps": recording.fps,
+                        "audio_status": recording.audio_status,
+                        "audio_error": recording.audio_error,
                     },
                 )
                 if done.status_code >= 300:
@@ -577,8 +613,12 @@ async def report_failure(url: str, token: str, error: str) -> None:
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            await client.patch(
+            response = await client.patch(
                 url, headers={"Authorization": f"Bearer {token}"}, json={"error": error[:500]}
             )
+            if response.status_code >= 300:
+                raise ScreenRecordingError(
+                    f"backend refused failure report: {response.status_code} {response.text[:200]}"
+                )
     except Exception as exc:
         print(f"[bridge] could not report the failure ({exc}): {error}")

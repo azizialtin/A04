@@ -121,6 +121,16 @@ export default function AdminReplayViewer({
         {replay.unmapped_samples} außerhalb der Aufzeichnung · {replay.offscreen_samples} daneben ·{' '}
         {replay.sampling_rate_hz} Hz
       </p>
+      {replay.source === 'screen' && replay.audio_status !== 'captured' && (
+        <p role="status" className="error-text">
+          {replay.audio_status === 'silent'
+            ? 'Kein hörbarer Videoton erkannt. Die Aufnahme kann absichtlich stumm sein; bitte prüfen.'
+            : replay.audio_status === 'unknown' || !replay.audio_status
+              ? 'Videoton nicht geprüft. Ältere Bildschirmaufzeichnungen können stumm sein.'
+              : 'Der Videoton wurde nicht vollständig aufgezeichnet. Bitte Aufnahme prüfen.'}
+          {replay.audio_error ? ` (${replay.audio_error})` : ''}
+        </p>
+      )}
       {replay.source === 'clip' && (
         <p className="muted" style={{ fontSize: '0.85rem' }}>
           Für diesen Fall gibt es keine Bildschirmaufzeichnung; zu sehen ist nur der Stimulus, nicht

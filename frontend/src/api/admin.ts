@@ -1,3 +1,4 @@
+import type { AudioCaptureMeta } from './screen'
 import apiClient from './client'
 import type { ReplayPoint } from './participant'
 
@@ -126,7 +127,7 @@ export interface AdminQuestionnaire {
   questions: unknown[]
 }
 
-export interface ScreenSummary {
+export interface ScreenSummary extends Partial<AudioCaptureMeta> {
   id: number
   status: 'recording' | 'stored' | 'failed'
   error: string | null
@@ -167,7 +168,7 @@ export interface GazeRow {
   screen: ScreenSummary | null
 }
 
-export interface AdminReplay {
+export interface AdminReplay extends Partial<AudioCaptureMeta> {
   recording_id: number
   participant_id: string
   video_id: number

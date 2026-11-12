@@ -1,5 +1,6 @@
 import { screenApi } from '../api/screen'
 import { TOBII_WS_URL } from './tobii'
+import { beginStimulusAudio, prepareStimulusAudio } from './stimulusAudio'
 
 /**
  * The page's own screen capture, for when no bridge can record.
@@ -14,9 +15,9 @@ import { TOBII_WS_URL } from './tobii'
  * Two things a browser capture cannot do as well. It needs the participant to
  * grant it once per page load, through the browser's own picker — asked for on
  * the case intro, before the clip, so the case itself is never interrupted.
- * And its clock anchor is `Date.now()` when the recorder reports it has
- * started, which trails the first frame by a frame or two; the notes and any
- * gaze land on the same wall clock, so they still line up to within that.
+ * Its clock anchor is `Date.now()` at `MediaRecorder.start()`. The start event
+ * is queued asynchronously by the encoder and can arrive hundreds of
+ * milliseconds later, so it cannot timestamp the beginning of the file.
  */
 
 const PROBE_TIMEOUT_MS = 2000
@@ -36,8 +37,8 @@ const OPEN_RETRY_MS = 500
 
 // Cheapest first among what MediaRecorder implementations actually offer.
 const MIME_CANDIDATES = [
-  'video/webm;codecs=vp9',
-  'video/webm;codecs=vp8',
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
   'video/webm',
   'video/mp4',
 ]
@@ -209,6 +210,8 @@ export async function ensureDisplayStream(): Promise<MediaStream | null> {
  * that brought us here still counts as the participant's gesture.
  */
 export async function prepareCapture(): Promise<void> {
+  // Resume during the gesture even when the bridge records the desktop.
+  void prepareStimulusAudio()
   if (!canCaptureHere() || heldStream()) return
   if (!bridgeFailedOnce && (await bridgeCanRecord())) return
   await ensureDisplayStream()
@@ -249,69 +252,136 @@ export function startBrowserRecording(
   stream: MediaStream,
 ): BrowserRecording | null {
   if (!canCaptureHere()) return null
+  const audio = beginStimulusAudio()
+  const videoTracks = stream.getVideoTracks()
   let recorder: MediaRecorder
   try {
+    if (!videoTracks.length || videoTracks.every((track) => track.readyState === 'ended')) {
+      throw new Error('No live display track')
+    }
+    // Display audio can contain notifications and other applications.
+    const combined = new MediaStream([...videoTracks, ...(audio.stream?.getAudioTracks() ?? [])])
     const mimeType = pickMimeType()
-    recorder = new MediaRecorder(stream, {
+    recorder = new MediaRecorder(combined, {
       ...(mimeType ? { mimeType } : {}),
       videoBitsPerSecond: BITS_PER_SECOND,
+      audioBitsPerSecond: 128_000,
     })
   } catch {
+    audio.fail('The browser could not create the audiovisual recorder')
+    audio.finish()
     return null
   }
 
   const chunks: Blob[] = []
   let epochMs = 0
-  let startedAt = 0
+  let recordingStarted = false
+  let startedAt: number | null = null
+  let stoppedAt: number | null = null
+  let stopRequested = false
+  let finalized = false
+  let stopError: string | null = null
+  let resolveStopped: () => void = () => {}
+  const stopped = new Promise<void>((resolve) => {
+    resolveStopped = resolve
+  })
+  const captureEnded = () => {
+    stoppedAt ??= performance.now()
+    audio.finish()
+    resolveStopped()
+  }
   recorder.ondataavailable = (e) => {
-    if (e.data && e.data.size) chunks.push(e.data)
+    if (!finalized && e.data?.size) chunks.push(e.data)
   }
   recorder.onstart = () => {
-    // Position 0 of the file is now, give or take the first frame.
-    epochMs = Date.now()
-    startedAt = performance.now()
+    recordingStarted = true
   }
-
-  const opened = openRecording(videoId)
-  try {
-    recorder.start(TIMESLICE_MS)
-  } catch {
-    void opened.then(
-      (o) => o && screenApi.markFailed(o.recording_id, 'MediaRecorder would not start'),
-    )
-    return null
+  recorder.onstop = () => {
+    if (!stopRequested) audio.fail('The browser recorder ended before the case was complete')
+    captureEnded()
   }
-
-  const stopped = new Promise<void>((resolve) => {
-    recorder.onstop = () => resolve()
-    recorder.onerror = () => resolve()
-  })
-
-  const finish = async () => {
+  recorder.onerror = () => {
+    audio.fail('MediaRecorder reported a capture error')
+    // The final dataavailable and stop events follow error asynchronously.
+  }
+  const requestStop = () => {
+    stopRequested = true
     if (recorder.state !== 'inactive') {
       try {
         recorder.stop()
       } catch {
-        /* already stopped */
+        stopError = 'The browser recorder could not finish its media file'
+        audio.fail(stopError)
+        captureEnded()
       }
     }
-    await stopped
-    const durationMs = startedAt ? Math.round(performance.now() - startedAt) : 0
+  }
+  const displayEnded = () => {
+    audio.fail('Display sharing ended before the case was complete')
+    requestStop()
+  }
+  for (const track of videoTracks) track.addEventListener('ended', displayEnded)
+  const release = () => {
+    for (const track of videoTracks) track.removeEventListener('ended', displayEnded)
+    audio.finish()
+  }
+  const opened = openRecording(videoId)
+  void opened.then((row) => {
+    if (!row) audio.fail('The recording could not be opened on the server')
+  })
+  try {
+    epochMs = Date.now()
+    startedAt = performance.now()
+    recorder.start(TIMESLICE_MS)
+  } catch {
+    audio.fail('MediaRecorder would not start')
+    release()
+    void opened.then(async (row) => {
+      if (row)
+        await screenApi
+          .markFailed(row.recording_id, 'MediaRecorder would not start')
+          .catch(() => {})
+    })
+    return null
+  }
+
+  const finish = async () => {
+    requestStop()
+    let timer = 0
+    await Promise.race([
+      stopped,
+      new Promise<void>((resolve) => {
+        timer = window.setTimeout(() => {
+          stopError = 'The browser recorder did not finish within 10 seconds'
+          audio.fail(stopError)
+          resolve()
+        }, 10_000)
+      }),
+    ])
+    window.clearTimeout(timer)
+    release()
+    finalized = true
+    const audioMeta = audio.snapshot()
+    const durationMs =
+      startedAt === null ? 0 : Math.round((stoppedAt ?? performance.now()) - startedAt)
     const started = await opened
     if (!started) return
-    if (!chunks.length || !epochMs) {
+    if (stopError || !recordingStarted || !chunks.length || !epochMs) {
       await screenApi
-        .markFailed(started.recording_id, 'the browser capture produced no frames')
+        .markFailed(started.recording_id, stopError ?? 'the browser capture produced no frames')
         .catch(() => {})
       return
     }
-    // Normalised to something the backend stores under a real extension: some
-    // browsers report the WebM family as x-matroska, and a file saved as .mp4
-    // that is not one will not play back.
     const reported = (recorder.mimeType || chunks[0].type || '').split(';')[0]
     const type = reported === 'video/mp4' ? reported : 'video/webm'
+    if (!['video/mp4', 'video/webm', 'video/x-matroska'].includes(reported)) {
+      await screenApi
+        .markFailed(started.recording_id, `Unsupported recording format: ${reported || 'unknown'}`)
+        .catch(() => {})
+      return
+    }
     const blob = new Blob(chunks, { type })
-    const { width, height } = stream.getVideoTracks()[0]?.getSettings() ?? {}
+    const { width, height } = videoTracks[0]?.getSettings() ?? {}
     try {
       await screenApi.deliver(started.recording_id, started.upload_token, blob, {
         epoch_ms: epochMs,
@@ -319,6 +389,7 @@ export function startBrowserRecording(
         width: width ?? null,
         height: height ?? null,
         fps: TARGET_FPS,
+        ...audioMeta,
       })
     } catch (err) {
       await screenApi
@@ -327,8 +398,6 @@ export function startBrowserRecording(
     }
   }
 
-  // One delivery per recording however often stop() is called: a second run
-  // would send the whole capture again and then be refused by the backend.
   let delivery: Promise<void> | null = null
   return {
     stop: () => {

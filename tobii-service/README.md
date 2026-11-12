@@ -19,18 +19,22 @@ permission.
 ## Real tracker (lab machine)
 
 The Tobii Pro SDK (`tobii_research`) is **Python 3.10 only**. Create a 3.10
-virtual environment, install `tobii_research` from the vendor package, then:
+virtual environment, install `tobii-research==2.1.0`, then:
 
 ```bash
-python tobii_bridge.py            # defaults to ws://0.0.0.0:8765
+python tobii_bridge.py            # defaults to ws://127.0.0.1:8766
 ```
 
 Point the frontend at a non-default address with `VITE_TOBII_WS_URL`.
+The LRZ site at `https://a04.rdm.lab.lrz.de` uses `ws://127.0.0.1:8766` and permits
+that port in its CSP. This is also the executable's default, so double-clicking
+works without shortcut arguments. A custom `--port` must match the frontend URL
+and its CSP.
 
 ## Packaging for the lab machines
 
 A lab PC gets a folder, not a checkout: no Python to install, no vendor SDK to
-find, no ffmpeg to put on PATH, no flags to type. Build it from the 3.10
+find, no ffmpeg to put on PATH. Build it from the 3.10
 environment that already runs the bridge here, so what the lab gets is what was
 tested:
 
@@ -50,6 +54,12 @@ stay open for the session — closing it stops gaze and screen recording.
 
 The package is a snapshot: rebuild and resend it when the bridge changes,
 because nothing on the lab PC updates itself.
+
+The `Build Windows bridge` GitHub Actions workflow builds on Windows Server 2022
+with Python 3.10 x64, the pinned Tobii SDK and a checksum-verified FFmpeg archive.
+It runs the bridge tests, loads the native SDK inside the frozen executable,
+and checks its default port 8766 and LRZ origin before publishing the ZIP as a
+workflow artifact. The artifact includes a SHA256 file and build manifest.
 
 ## Screen recording
 
@@ -153,6 +163,9 @@ hardware.
 -> {"type":"start_screen_recording","upload_url":…,"session_url":…,
     "complete_url":…,"failed_url":…,"token":…}
 <- {"type":"screen_recording_started","ok":true,"error":null}
+-> {"type":"start_stimulus_audio","epoch_ms":…, "mime_type":"audio/webm;codecs=opus"}
+-> binary audio chunks (at most 64 KiB each, in order)
+-> {"type":"finish_stimulus_audio","audio_status":"captured","audio_error":null}
 -> {"type":"stop_screen_recording"}
 <- {"type":"screen_recording_stopped","ok":true,"error":null}
 ```
@@ -162,6 +175,32 @@ token that can do nothing but deliver that one file. The upload happens after
 the reply, in the background, because by then the participant is already on the
 next screen — which is also why the bridge reports its own late failures to
 `failed_url` rather than back over this socket.
+
+The status handshake advertises `stimulus_audio: true` when ffmpeg and ffprobe
+are available. The page records the actual case video's audio through Web Audio
+and MediaRecorder, including silence while it is delayed, paused, buffering or
+finished. It sends no microphone or computer-wide audio. The bridge writes the
+ordered stream to disk (256 MiB limit), and ffmpeg joins it to the screen after
+capture. Audio is trimmed or delayed against the existing screen `epoch_ms`,
+then padded to the screen duration. The video packets, its clock anchor and the
+gaze clock are unchanged. Replay and native downloads use the resulting MP4.
+
+Both upload routes carry `audio_status` and `audio_error` independently of video
+success. `captured` means the browser observed a signal and the bridge verified
+encoded audio packets in the final MP4. `silent` means no signal was observed;
+it can mean an intentionally muted clip, a silent source, or a capture problem.
+An interrupted/invalid stream or failed mux is `failed`; a client supplying no
+audio is `unavailable`. The original screen file is still uploaded on audio
+failure. These checks do not prove what came out of the participant's speakers:
+OS volume, headphones and physical output must be checked in the lab.
+
+Rebuild on Windows using `build_package.py` and distribute the complete new
+folder. The builder checks the bundled ffmpeg/ffprobe with real H.264, Opus and
+AAC media, then starts the frozen executable with mock gaze and screen capture
+disabled to verify its imports, default LRZ origin and WebSocket exchange before
+creating the zip. This does not test the physical Tobii tracker or Windows
+desktop permission. Deployment of the website alone does not
+update an existing executable. Existing silent recordings are unchanged.
 
 **Where the bytes go.** The bridge asks `session_url` first. A hosted backend
 answers with a resumable session in its bucket, and the capture is PUT there
@@ -173,7 +212,9 @@ instead, and the file is posted to `upload_url` as before.
 
 A chunk that fails is retried from wherever the bucket says it got to, rather
 than restarting the whole capture. If the upload cannot be finished at all the
-file is kept locally and the failure reported, exactly as before.
+file is kept locally under a unique name and the failure reported. If the
+recovery folder cannot be created or written, the original temporary recording
+is retained and its path is printed and included in the failure report.
 
 ## Binding and origins
 
@@ -182,8 +223,9 @@ machine, and a participant's live gaze has no business on the lab network. Pass
 `--host 0.0.0.0` if you really do need it reachable from elsewhere.
 
 It also refuses connections whose `Origin` is not the study's own page, so
-another tab cannot read the participant's gaze. The default allows
-`http://localhost:5175`; add others with `--allow-origin`, repeatable:
+another tab cannot read the participant's gaze. The defaults allow the LRZ study
+at `https://a04.rdm.lab.lrz.de`, the existing Cloud Run hostname, and localhost
+development on port 5175. `--allow-origin` replaces those defaults and is repeatable:
 
 ```bash
 python tobii_bridge.py --allow-origin https://a04.example.org

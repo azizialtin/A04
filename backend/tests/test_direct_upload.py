@@ -181,10 +181,41 @@ async def test_completing_stores_the_size_the_bucket_reports(
     assert row.storage_path == f"screens/T-001/{recording_id}.mp4"
     assert row.byte_size == 7_654_321
     assert row.epoch_ms == EPOCH
+    assert row.audio_status == "unknown"
     # The size is taken from the bucket, never from what the client claimed.
     assert landed["checked"] == [
         (f"screens/T-001/{recording_id}.mp4", get_settings().MAX_SCREEN_RECORDING_BYTES)
     ]
+
+
+@pytest.mark.parametrize("audio_status", ["captured", "silent", "failed", "unavailable"])
+async def test_bucket_completion_preserves_audio_health(
+    client, db, assigned_video, participant_headers, bucket, landed, audio_status
+):
+    rid, token = await _open(client, participant_headers, assigned_video.id)
+    response = await _complete(
+        client,
+        rid,
+        token,
+        audio_status=audio_status,
+        audio_error="encoder interrupted" if audio_status == "failed" else None,
+    )
+    assert response.status_code == 200, response.text
+    row = await db.get(ScreenRecording, rid)
+    assert row.status == "stored"
+    assert row.audio_status == audio_status
+    assert row.audio_error == ("encoder interrupted" if audio_status == "failed" else None)
+    assert row.storage_path == f"screens/T-001/{rid}.mp4"
+    assert row.epoch_ms == EPOCH
+
+
+async def test_bucket_completion_rejects_invalid_audio_health(
+    client, assigned_video, participant_headers, bucket, landed
+):
+    rid, token = await _open(client, participant_headers, assigned_video.id)
+    response = await _complete(client, rid, token, audio_status="uploaded")
+    assert response.status_code == 422
+    assert landed["checked"] == []
 
 
 async def test_completing_a_file_that_is_not_a_video_leaves_the_row_open(

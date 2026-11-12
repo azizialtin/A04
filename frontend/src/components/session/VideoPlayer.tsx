@@ -1,10 +1,25 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ChangeEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import apiClient from '../../api/client'
 import { participantApi } from '../../api/participant'
 import { useScreenRecording } from '../../hooks/useScreenRecording'
 import { enqueue } from '../../lib/outbox'
+import {
+  audioWarning,
+  subscribeAudioWarning,
+  connectStimulusAudio,
+  prepareStimulusAudio,
+  failStimulusAudio,
+  resetStimulusAudioSource,
+} from '../../lib/stimulusAudio'
 
 interface Props {
   videoId: number
@@ -37,8 +52,23 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   const scrubRef = useRef<HTMLInputElement>(null)
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
+  const [nativePlayback, setNativePlayback] = useState(false)
+  const retryPosition = useRef(0)
+  const retryVolume = useRef(1)
+  const retryMuted = useRef(false)
   const [playing, setPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
+  const audioIssue = useSyncExternalStore(subscribeAudioWarning, audioWarning)
+  const retryNative = useCallback((video: HTMLMediaElement) => {
+    retryPosition.current = video.currentTime
+    retryVolume.current = video.volume
+    retryMuted.current = video.muted
+    video.pause()
+    setPlaying(false)
+    setNativePlayback(true)
+  }, [])
+
+  useEffect(() => resetStimulusAudioSource(), [videoId])
 
   // The case's display capture is the background for its think-aloud replay.
   useScreenRecording(videoId)
@@ -67,6 +97,13 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
       cancelled = true
     }
   }, [videoId])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (url && !nativePlayback && video) {
+      return connectStimulusAudio(video, () => retryNative(video))
+    }
+  }, [url, nativePlayback, retryNative])
 
   // Follow the playhead at screen rate rather than off `timeupdate`, which
   // fires about four times a second and leaves the handle visibly stuttering.
@@ -133,8 +170,10 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   const toggle = () => {
     const v = videoRef.current
     if (!v) return
-    if (v.paused) void v.play().catch(() => {})
-    else v.pause()
+    if (v.paused) {
+      void prepareStimulusAudio()
+      void v.play().catch(() => {})
+    } else v.pause()
   }
 
   const scrubTo = (e: ChangeEvent<HTMLInputElement>) => {
@@ -150,17 +189,39 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
 
   return (
     <div className="case-video">
+      {audioIssue ? (
+        <p role="status" className="is-danger">
+          {t(`recording_audio.${audioIssue}`)}
+        </p>
+      ) : null}
       <video
+        key={nativePlayback ? 'native' : 'capture'}
         ref={videoRef}
         data-gaze-video
         data-aoi="video"
+        crossOrigin={nativePlayback ? undefined : 'anonymous'}
         src={url}
         className="case-video__el"
         // No `controls`: the two below are the whole surface.
         controlsList="nodownload"
         disablePictureInPicture
         onContextMenu={(e) => e.preventDefault()}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+        onError={(e) => {
+          failStimulusAudio('The stimulus could not be captured; check media access and CORS')
+          if (nativePlayback) setFailed(true)
+          else retryNative(e.currentTarget)
+        }}
+        onLoadedMetadata={(e) => {
+          setDuration(e.currentTarget.duration || 0)
+          if (nativePlayback) {
+            e.currentTarget.volume = retryVolume.current
+            e.currentTarget.muted = retryMuted.current
+            if (retryPosition.current > 0) {
+              e.currentTarget.currentTime = retryPosition.current
+              retryPosition.current = 0
+            }
+          }
+        }}
         onPlay={onPlay}
         onPause={() => {
           setPlaying(false)

@@ -1,3 +1,4 @@
+import type { AudioCaptureMeta } from './screen'
 import apiClient from './client'
 import type { Question } from '../lib/questionnaire'
 
@@ -22,8 +23,9 @@ export interface ReplayPoint {
   y: number
 }
 
-export interface ReplayData {
+export interface ReplayData extends Partial<AudioCaptureMeta> {
   video_url: string
+  screen_recording_pending?: boolean
   // "screen" — the capture of the whole display, cursor and all. "clip" — the
   // stimulus on its own, for a case whose capture failed or predates it.
   source: 'screen' | 'clip'

@@ -56,7 +56,9 @@ async def _open(client, headers, video_id):
     return await client.post("/screen/recordings", json={"video_id": video_id}, headers=headers)
 
 
-async def _upload(client, recording_id, token, *, epoch_ms=EPOCH, duration_ms=60_000, body=None):
+async def _upload(
+    client, recording_id, token, *, epoch_ms=EPOCH, duration_ms=60_000, body=None, **over
+):
     return await client.post(
         f"/screen/recordings/{recording_id}/upload",
         headers={"Authorization": f"Bearer {token}"},
@@ -67,6 +69,7 @@ async def _upload(client, recording_id, token, *, epoch_ms=EPOCH, duration_ms=60
             "width": "1920",
             "height": "1080",
             "fps": "30",
+            **over,
         },
     )
 
@@ -282,6 +285,81 @@ async def test_replay_prefers_the_screen_recording(client, assigned_video, parti
     assert data["points"] == [{"t": 2000, "x": 0.3, "y": 0.7}]
 
 
+@pytest.mark.parametrize("audio_status", ["captured", "silent", "failed", "unknown"])
+async def test_admin_gaze_replay_preserves_audio_and_sample_clock(
+    client, assigned_video, participant_headers, admin_headers, audio_status
+):
+    gaze_id = await _record_gaze(
+        client,
+        participant_headers,
+        assigned_video.id,
+        [{"ts": EPOCH + 2_000, "lx": 0.3, "ly": 0.7, "rx": 0.3, "ry": 0.7, "lv": True, "rv": True}],
+    )
+    opened = (await _open(client, participant_headers, assigned_video.id)).json()
+    rid = opened["recording_id"]
+    error = "audio interrupted" if audio_status == "failed" else ""
+    response = await _upload(
+        client, rid, opened["upload_token"], audio_status=audio_status, audio_error=error
+    )
+    assert response.status_code == 200
+    participant = (
+        await client.get(f"/gaze/videos/{assigned_video.id}/replay", headers=participant_headers)
+    ).json()
+    response = await client.get(f"/admin/gaze/recordings/{gaze_id}/replay", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    admin = response.json()
+    for key in (
+        "video_url",
+        "epoch_ms",
+        "duration_ms",
+        "source",
+        "points",
+        "audio_status",
+        "audio_error",
+    ):
+        assert admin[key] == participant[key]
+    assert admin["audio_status"] == audio_status
+    assert admin["points"] == [{"t": 2000, "x": 0.3, "y": 0.7}]
+    download = (
+        await client.get(f"/admin/screen-recordings/{rid}/download-url", headers=admin_headers)
+    ).json()
+    assert (await client.get(download["url"])).content == _mp4()
+    # Listing filters must retain the capture's health alongside the gaze row.
+    listing = (
+        await client.get("/admin/gaze/recordings?participant_id=T-001", headers=admin_headers)
+    ).json()
+    assert listing["items"][0]["screen"]["audio_status"] == audio_status
+
+
+async def test_admin_gaze_replay_does_not_apply_failed_capture_audio_to_clip_fallback(
+    client, assigned_video, participant_headers, admin_headers, monkeypatch
+):
+    gaze_id = await _record_gaze(
+        client,
+        participant_headers,
+        assigned_video.id,
+        [
+            {"ts": EPOCH + 2_000, "lx": 0.3, "ly": 0.7, "rx": 0.3, "ry": 0.7},
+        ],
+    )
+    opened = (await _open(client, participant_headers, assigned_video.id)).json()
+    await _upload(
+        client,
+        opened["recording_id"],
+        opened["upload_token"],
+        audio_status="failed",
+        audio_error="audio interrupted",
+    )
+    monkeypatch.setattr("app.api.admin.gaze.resolve_screen_url", lambda *_: None)
+    response = await client.get(f"/admin/gaze/recordings/{gaze_id}/replay", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["source"] == "clip"
+    assert data["video_url"].endswith("v.mp4")
+    assert data["audio_status"] == "unknown"
+    assert data["audio_error"] is None
+
+
 async def test_replay_falls_back_to_the_clip_when_the_capture_failed(
     client, assigned_video, participant_headers
 ):
@@ -294,6 +372,55 @@ async def test_replay_falls_back_to_the_clip_when_the_capture_failed(
     r = await client.get(f"/gaze/videos/{assigned_video.id}/replay", headers=participant_headers)
     assert r.json()["source"] == "clip"
     assert r.json()["video_url"].endswith("v.mp4")
+    assert r.json()["screen_recording_pending"] is False
+
+
+@pytest.mark.parametrize("with_gaze", [False, True])
+async def test_replay_reports_pending_until_bridge_upload_arrives(
+    client, assigned_video, participant_headers, with_gaze
+):
+    if with_gaze:
+        await _record_gaze(
+            client,
+            participant_headers,
+            assigned_video.id,
+            [{"ts": EPOCH + 500, "lx": 0.3, "ly": 0.7, "rx": 0.3, "ry": 0.7}],
+        )
+    opened = (await _open(client, participant_headers, assigned_video.id)).json()
+    url = f"/gaze/videos/{assigned_video.id}/replay"
+    before = (await client.get(url, headers=participant_headers)).json()
+    assert before["source"] == "clip"
+    assert before["screen_recording_pending"] is True
+    await _upload(client, opened["recording_id"], opened["upload_token"], audio_status="captured")
+    after = (await client.get(url, headers=participant_headers)).json()
+    assert after["source"] == "screen"
+    assert after["audio_status"] == "captured"
+    assert after["screen_recording_pending"] is False
+
+
+async def test_replay_waits_only_for_latest_capture_attempt(
+    client, assigned_video, participant_headers
+):
+    # An abandoned attempt must not keep a later successful one waiting.
+    await _open(client, participant_headers, assigned_video.id)
+    stored = (await _open(client, participant_headers, assigned_video.id)).json()
+    await _upload(client, stored["recording_id"], stored["upload_token"])
+    url = f"/gaze/videos/{assigned_video.id}/replay"
+    data = (await client.get(url, headers=participant_headers)).json()
+    assert data["source"] == "screen"
+    assert data["screen_recording_pending"] is False
+    newest = (await _open(client, participant_headers, assigned_video.id)).json()
+    data = (await client.get(url, headers=participant_headers)).json()
+    assert data["source"] == "screen"  # Existing replay selection is retained.
+    assert data["screen_recording_pending"] is True
+    assert data["video_url"].endswith(f"{stored['recording_id']}.mp4")
+    await client.patch(
+        f"/screen/recordings/{newest['recording_id']}/failed",
+        json={"error": "encoding failed"},
+        headers=participant_headers,
+    )
+    data = (await client.get(url, headers=participant_headers)).json()
+    assert data["screen_recording_pending"] is False
 
 
 async def test_a_screen_recording_replays_without_any_gaze(
@@ -309,6 +436,47 @@ async def test_a_screen_recording_replays_without_any_gaze(
     assert data["source"] == "screen"
     assert data["points"] == []
     assert data["sampling_rate_hz"] == 0
+    assert data["audio_status"] == "unknown"
+
+
+@pytest.mark.parametrize("audio_status", ["captured", "silent", "failed", "unavailable"])
+async def test_audio_health_survives_upload_and_both_replays(
+    client, assigned_video, participant_headers, admin_headers, audio_status, db
+):
+    opened = (await _open(client, participant_headers, assigned_video.id)).json()
+    rid = opened["recording_id"]
+    error = "audio capture interrupted" if audio_status == "failed" else ""
+    response = await _upload(
+        client, rid, opened["upload_token"], audio_status=audio_status, audio_error=error
+    )
+    assert response.status_code == 200, response.text
+    row = await db.get(ScreenRecording, rid)
+    assert row.status == "stored"
+    assert row.audio_status == audio_status
+    assert row.epoch_ms == EPOCH
+    for url, headers in [
+        (f"/gaze/videos/{assigned_video.id}/replay", participant_headers),
+        (f"/admin/screen-recordings/{rid}/replay", admin_headers),
+    ]:
+        replay = (await client.get(url, headers=headers)).json()
+        assert replay["source"] == "screen"
+        assert replay["audio_status"] == audio_status
+        assert replay["audio_error"] == (error or None)
+        assert replay["epoch_ms"] == EPOCH
+        assert replay["video_url"].endswith(f"{rid}.mp4")
+    listing = (await client.get("/admin/screen-recordings", headers=admin_headers)).json()
+    assert listing["items"][0]["audio_status"] == audio_status
+    assert listing["items"][0]["audio_error"] == (error or None)
+
+
+async def test_upload_rejects_unrecognised_audio_status(
+    client, assigned_video, participant_headers
+):
+    opened = (await _open(client, participant_headers, assigned_video.id)).json()
+    response = await _upload(
+        client, opened["recording_id"], opened["upload_token"], audio_status="uploaded"
+    )
+    assert response.status_code == 422
 
 
 async def test_a_browser_capture_keeps_its_own_format(

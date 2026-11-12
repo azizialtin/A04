@@ -50,36 +50,60 @@ export default function ThinkAloudScreen({ videoId, position, heading, body, onC
   const { t } = useTranslation()
   // A capture the page recorded itself may still be on its way up; asking for
   // the replay before it lands would get the clip instead.
-  const [uploaded, setUploaded] = useState(false)
+  const [captureWait, setCaptureWait] = useState({ videoId, uploaded: false, pending: true })
+  const [selection, setSelection] = useState<{ videoId: number; data: ReplayData } | null>(null)
+  const uploaded = captureWait.videoId === videoId && captureWait.uploaded
+  const waitForPending = captureWait.videoId !== videoId || captureWait.pending
+  const selected = selection?.videoId === videoId ? selection.data : null
   useEffect(() => {
     let cancelled = false
-    // Reset when the case changes: a block of think-alouds renders this
-    // component several times in a row, and the second must wait for its own
-    // capture rather than inherit the first one's answer.
-    setUploaded(false)
+    setSelection(null)
+    setCaptureWait({ videoId, uploaded: false, pending: true })
     const go = () => {
-      if (!cancelled) setUploaded(true)
+      if (!cancelled) {
+        setCaptureWait((current) =>
+          current.videoId === videoId ? { ...current, uploaded: true } : current,
+        )
+      }
     }
-    // Capped, and never left to a rejection: an upload that stalls must cost
-    // the gaze overlay, not the participant's way forward.
-    const timer = window.setTimeout(go, UPLOAD_WAIT_MS)
+    const timer = window.setTimeout(() => {
+      if (!cancelled) setCaptureWait({ videoId, uploaded: true, pending: false })
+    }, UPLOAD_WAIT_MS)
     void uploadSettled(videoId).then(go, go)
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
   }, [videoId])
-  const replay = useVideoReplay(videoId, uploaded)
+  const replay = useVideoReplay(videoId, uploaded && !selected, waitForPending && !selected)
   const notes = useVideoNotes(videoId)
+  const pending = waitForPending && replay.data?.screen_recording_pending
 
-  if (!uploaded) {
-    return <div className="fullpage">{t('think_aloud.saving')}</div>
-  }
-  if (replay.isLoading || notes.isLoading) {
+  useEffect(() => {
+    if (selected || !uploaded || pending || notes.isLoading || !replay.data) return
+    if (waitForPending && replay.isFetching) return
+    // Once playback is exposed, a late upload or refetch must not replace its
+    // picture, clock anchor or gaze timeline underneath the participant.
+    setSelection({ videoId, data: replay.data })
+  }, [
+    videoId,
+    selected,
+    uploaded,
+    pending,
+    waitForPending,
+    notes.isLoading,
+    replay.data,
+    replay.isFetching,
+  ])
+
+  if (!selected) {
+    if (!uploaded || pending) {
+      return <div className="fullpage">{t('think_aloud.saving')}</div>
+    }
+    if (replay.isError && !replay.data) {
+      return <div className="fullpage is-danger">{t('session.error')}</div>
+    }
     return <div className="fullpage">{t('common.loading')}</div>
-  }
-  if (replay.isError || !replay.data) {
-    return <div className="fullpage is-danger">{t('session.error')}</div>
   }
 
   const batched = (position?.batchSize ?? 1) > 1
@@ -119,13 +143,18 @@ export default function ThinkAloudScreen({ videoId, position, heading, body, onC
         ) : null}
       </header>
 
-      <ReplayPlayer replay={replay.data} notes={notes.data ?? []} />
+      {selected.source === 'screen' && selected.audio_status !== 'captured' ? (
+        <p role="status" className="is-danger">
+          {t(`recording_audio.replay_${selected.audio_status ?? 'unknown'}`)}
+        </p>
+      ) : null}
+      <ReplayPlayer replay={selected} notes={notes.data ?? []} />
 
       <footer className="think-aloud__foot">
         <span className="muted">
-          {t('think_aloud.stats', { points: replay.data.plotted_points })}
-          {replay.data.source === 'clip' ? ` · ${t('think_aloud.clip_only')}` : ''}
-          {replay.data.recorder === 'browser' ? ` · ${t('think_aloud.browser_capture')}` : ''}
+          {t('think_aloud.stats', { points: selected.plotted_points })}
+          {selected.source === 'clip' ? ` · ${t('think_aloud.clip_only')}` : ''}
+          {selected.recorder === 'browser' ? ` · ${t('think_aloud.browser_capture')}` : ''}
         </span>
         <button type="button" className="btn btn-primary btn-lg" onClick={onComplete}>
           {t('think_aloud.next')}

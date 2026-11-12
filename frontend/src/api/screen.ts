@@ -7,7 +7,14 @@ export interface StartScreenRecording {
 
 export type ScreenRecorder = 'bridge' | 'browser'
 
-export interface ScreenRecordingMeta {
+export type AudioCaptureStatus = 'unknown' | 'captured' | 'silent' | 'failed' | 'unavailable'
+
+export interface AudioCaptureMeta {
+  audio_status: AudioCaptureStatus
+  audio_error: string | null
+}
+
+export interface ScreenRecordingMeta extends AudioCaptureMeta {
   epoch_ms: number
   duration_ms: number
   width: number | null
@@ -98,6 +105,8 @@ export const screenApi = {
     const form = new FormData()
     form.append('epoch_ms', String(meta.epoch_ms))
     form.append('duration_ms', String(meta.duration_ms))
+    form.append('audio_status', meta.audio_status)
+    if (meta.audio_error) form.append('audio_error', meta.audio_error)
     if (meta.width != null) form.append('width', String(meta.width))
     if (meta.height != null) form.append('height', String(meta.height))
     if (meta.fps != null) form.append('fps', String(meta.fps))

@@ -1245,6 +1245,8 @@ async def participant_stats(
                         "height": screen.height,
                         "fps": screen.fps,
                         "recorder": screen.recorder,
+                        "audio_status": screen.audio_status,
+                        "audio_error": screen.audio_error,
                     }
                     if screen
                     else None

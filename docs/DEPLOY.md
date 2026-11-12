@@ -13,6 +13,11 @@ docker build --build-arg VITE_API_BASE_URL=https://api.example.org -t a04-fronte
 ```
 
 `docker compose up` runs the whole stack locally (Postgres + backend + frontend).
+The frontend build argument `VITE_TOBII_WS_URL` defaults to
+`ws://127.0.0.1:8766`, matching the double-click Windows bridge. For LRZ, build
+with `VITE_API_BASE_URL=/api`; keep the same-origin API proxy and permit
+`ws://127.0.0.1:8766` in the deployed CSP. Changing runtime environment variables
+alone does not change a Vite bundle's compiled socket URL.
 
 ## Migrations
 
@@ -82,10 +87,10 @@ GCS urls — otherwise videos and the gaze bridge are blocked by the browser. Fo
 example:
 
 ```
-CSP_POLICY="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https://storage.googleapis.com; connect-src 'self' https://api.example.org ws://localhost:8765; frame-src https://www.soscisurvey.de; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+CSP_POLICY="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https://storage.googleapis.com; connect-src 'self' https://api.example.org ws://127.0.0.1:8766; frame-src https://www.soscisurvey.de; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 ```
 
-`ws://localhost:8765` stays in the policy even in production: the Tobii bridge
+`ws://127.0.0.1:8766` stays in the policy even in production: the Tobii bridge
 runs on the lab machine the browser is sitting at, not on the server.
 
 ## Cloud Run sketch
@@ -120,7 +125,12 @@ Two consequences:
   ```
 
   The bridge is a local process rather than a page, so it needs none of this —
-  only the browser half does.
+  only the browser half does. Stimulus audio capture also needs the GET/HEAD
+  rule: Web Audio cannot read a cross-origin video's sound without it. Include
+  the actual frontend origin (`https://a04.rdm.lab.lrz.de` for LRZ).
+
+Stimulus audio requires the matching frontend, backend migration, and rebuilt
+Windows bridge package. See [capture and lab acceptance](STIMULUS_AUDIO.md).
 
 Deployments with no bucket (`GAZE_STORAGE_MODE=local`) are unchanged: the file
 is posted to the backend and stored on its disk.

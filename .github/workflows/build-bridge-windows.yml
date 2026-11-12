@@ -1,0 +1,93 @@
+name: Build Windows bridge
+
+on:
+  push:
+    branches: [codex/a04-stimulus-audio-release]
+    paths:
+      - 'tobii-service/**'
+      - '.github/workflows/build-bridge-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-package:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: tobii-service
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: tobii-service/requirements-dev.txt
+
+      - name: Install bridge and native Tobii SDK
+        run: |
+          python -m pip install -r requirements-dev.txt "tobii-research @ https://files.pythonhosted.org/packages/98/13/b78b1985cbcedfdced1a37b3c24afbe58ae2bfa51f793c58b057a4132fce/tobii_research-2.1.0-cp310-cp310-win_amd64.whl#sha256=9b6a09cde04225a3fd63a0c6264810f65fa20192f98c6f318577ae5848a46bc3"
+          if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
+          python tobii_bridge.py --check-sdk
+          if ($LASTEXITCODE -ne 0) { throw "Native Tobii SDK could not load" }
+
+      - name: Download verified Windows media tools
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          Invoke-WebRequest 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip' -OutFile $archive
+          $expected = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {
+            throw 'FFmpeg archive checksum mismatch'
+          }
+          $tools = Join-Path $env:RUNNER_TEMP 'a04-media-tools'
+          Expand-Archive $archive -DestinationPath $tools
+          $binary = Get-ChildItem $tools -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          if (-not $binary) { throw 'FFmpeg archive contains no ffmpeg.exe' }
+          $binary.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Test bridge with real FFmpeg
+        run: python -m pytest -q -o asyncio_default_fixture_loop_scope=function --junitxml=bridge-tests.xml
+
+      - name: Build and exercise the frozen executable
+        run: python build_package.py
+
+      - name: Record artifact provenance and checksum
+        run: |
+          $manifest = [ordered]@{
+            commit = $env:GITHUB_SHA
+            workflow_run = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            python = (python --version)
+            packages = (python -m pip freeze)
+            ffmpeg = (ffmpeg -version | Select-Object -First 1)
+            ffmpeg_archive_sha256 = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
+            study_origin = 'https://a04.rdm.lab.lrz.de'
+            websocket = 'ws://127.0.0.1:8766'
+            checks = @('bridge pytest', 'H264/Opus/AAC encoding and probing', 'frozen native Tobii SDK', 'frozen default port and origin', 'frozen mock gaze')
+            hardware_tested = $false
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content dist/build-manifest.json -Encoding utf8
+          $hash = (Get-FileHash dist/A04Bridge-win64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  A04Bridge-win64.zip" | Set-Content dist/A04Bridge-win64.zip.sha256 -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: A04Bridge-win64
+          path: |
+            tobii-service/dist/A04Bridge-win64.zip
+            tobii-service/dist/A04Bridge-win64.zip.sha256
+            tobii-service/dist/build-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-bridge-test-results
+          path: tobii-service/bridge-tests.xml
+          if-no-files-found: ignore
+          retention-days: 30

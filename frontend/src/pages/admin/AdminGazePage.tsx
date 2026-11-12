@@ -15,9 +15,18 @@ function screenLabel(screen: ScreenSummary | null): string {
   const mb = screen.byte_size ? Math.round(screen.byte_size / 1024 / 1024) : null
   // Worth a word: a browser capture means no bridge was running for that case.
   const who = screen.recorder === 'browser' ? 'Browser' : null
+  const audio =
+    screen.audio_status === 'captured'
+      ? 'Videoton erfasst'
+      : screen.audio_status === 'silent'
+        ? 'kein Tonsignal'
+        : screen.audio_status === 'failed' || screen.audio_status === 'unavailable'
+          ? 'Ton fehlt/fehlerhaft'
+          : 'Ton ungeprüft'
   return (
-    [minutes ? `${minutes} min` : null, mb ? `${mb} MB` : null, who].filter(Boolean).join(' · ') ||
-    'ok'
+    [minutes ? `${minutes} min` : null, mb ? `${mb} MB` : null, who, audio]
+      .filter(Boolean)
+      .join(' · ') || 'ok'
   )
 }
 

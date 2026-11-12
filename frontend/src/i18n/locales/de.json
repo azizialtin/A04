@@ -188,5 +188,15 @@
     "finish_note": "Die bisherigen Eingaben dieser Seite werden gespeichert. Nicht bearbeitete Seiten bleiben ohne Antworten und Zeitstempel.",
     "finish_confirm": "Speichern und zu PCK",
     "intro_timer_note": "Die sieben Minuten beginnen erst mit der ersten Aufgabe."
+  },
+  "recording_audio": {
+    "unavailable": "Der Videoton kann hier nicht aufgezeichnet werden. Sie können fortfahren; bitte informieren Sie die Studienleitung.",
+    "failed": "Der Videoton ist möglicherweise unvollständig. Sie können fortfahren; bitte informieren Sie die Studienleitung.",
+    "silent": "Bisher wurde kein Videoton erkannt. Bitte prüfen Sie, ob die Schüler:innen zu hören sind, und informieren Sie bei Bedarf die Studienleitung.",
+    "bridge_update": "Das Aufnahmeprogramm benötigt ein Update für den Videoton. Sie können fortfahren; bitte informieren Sie die Studienleitung.",
+    "replay_unknown": "Der Ton dieser Aufzeichnung wurde nicht geprüft. Ältere Bildschirmaufzeichnungen können stumm sein.",
+    "replay_silent": "In dieser Aufzeichnung wurde kein hörbarer Videoton erkannt. Bitte prüfen Sie dies mit der Studienleitung.",
+    "replay_failed": "Der Videoton dieser Aufzeichnung fehlt möglicherweise oder ist unvollständig. Bitte informieren Sie die Studienleitung.",
+    "replay_unavailable": "Der Videoton konnte nicht aufgezeichnet werden. Bitte informieren Sie die Studienleitung."
   }
 }

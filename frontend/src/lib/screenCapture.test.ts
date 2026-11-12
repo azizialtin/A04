@@ -21,6 +21,17 @@ vi.mock('../api/screen', () => ({
   },
 }))
 
+const audio = vi.hoisted(() => ({
+  stream: null as MediaStream | null,
+  finish: vi.fn(() => ({ audio_status: 'captured', audio_error: null })),
+  snapshot: vi.fn(() => ({ audio_status: 'captured', audio_error: null })),
+  fail: vi.fn(),
+}))
+vi.mock('./stimulusAudio', () => ({
+  prepareStimulusAudio: vi.fn(),
+  beginStimulusAudio: () => audio,
+}))
+
 const start = vi.mocked(screenApi.start)
 const markFailed = vi.mocked(screenApi.markFailed)
 const deliver = vi.mocked(screenApi.deliver)
@@ -47,9 +58,13 @@ class FakeSocket {
 }
 
 class FakeTrack extends EventTarget {
+  kind = 'video'
   readyState: 'live' | 'ended' = 'live'
   getSettings() {
     return { width: 1920, height: 1080 }
+  }
+  stop() {
+    this.readyState = 'ended'
   }
   end() {
     this.readyState = 'ended'
@@ -58,8 +73,11 @@ class FakeTrack extends EventTarget {
 }
 
 class FakeStream {
-  tracks = [new FakeTrack()]
+  constructor(public tracks = [new FakeTrack()]) {}
   getVideoTracks() {
+    return this.tracks
+  }
+  getTracks() {
     return this.tracks
   }
 }
@@ -96,10 +114,14 @@ let getDisplayMedia: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   _reset()
+  audio.stream = null
+  audio.finish.mockClear()
+  audio.fail.mockClear()
   FakeSocket.last = null
   FakeRecorder.instances = []
   vi.stubGlobal('WebSocket', FakeSocket)
   vi.stubGlobal('MediaRecorder', FakeRecorder)
+  vi.stubGlobal('MediaStream', FakeStream)
   getDisplayMedia = vi.fn()
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
@@ -110,7 +132,11 @@ beforeEach(() => {
   deliver.mockReset().mockResolvedValue(undefined)
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+})
 
 test('the bridge is asked whether it will record', async () => {
   const answer = bridgeCanRecord()
@@ -188,7 +214,7 @@ test('a browser recording is opened as such and delivered when stopped', async (
   const recording = startBrowserRecording(42, stream)!
   expect(recording).not.toBeNull()
   expect(start).toHaveBeenCalledWith(42, 'browser')
-  expect(FakeRecorder.instances[0].mimeType).toBe('video/webm;codecs=vp9')
+  expect(FakeRecorder.instances[0].mimeType).toBe('video/webm;codecs=vp9,opus')
 
   const settled = uploadSettled(42)
   await recording.stop()
@@ -214,4 +240,202 @@ test('a delivery that fails marks the row failed', async () => {
 
 test('nothing waits on a case that was never recorded', async () => {
   await expect(uploadSettled(99)).resolves.toBeUndefined()
+})
+
+test('records only stimulus audio alongside display video and keeps the held tracks alive', async () => {
+  const videoTrack = Object.assign(new EventTarget(), {
+    kind: 'video',
+    stop: vi.fn(),
+    getSettings: () => ({}),
+  })
+  const systemTrack = { kind: 'audio', stop: vi.fn() }
+  const stimulusTrack = { kind: 'audio', stop: vi.fn() }
+  const display = {
+    getVideoTracks: () => [videoTrack],
+    getAudioTracks: () => [systemTrack],
+  } as unknown as MediaStream
+  audio.stream = { getAudioTracks: () => [stimulusTrack] } as unknown as MediaStream
+  vi.stubGlobal(
+    'MediaStream',
+    class {
+      constructor(public tracks: unknown[]) {}
+    },
+  )
+  const recording = startBrowserRecording(42, display)!
+  expect(FakeRecorder.instances[0].stream).toEqual({ tracks: [videoTrack, stimulusTrack] })
+  await recording.stop()
+  expect(deliver.mock.calls[0][3]).toMatchObject({ audio_status: 'captured', audio_error: null })
+  expect(videoTrack.stop).not.toHaveBeenCalled()
+  expect(stimulusTrack.stop).not.toHaveBeenCalled()
+})
+
+test('reports encoder failure separately from video upload success', async () => {
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  FakeRecorder.instances[0].onerror?.()
+  await recording.stop()
+  expect(audio.fail).toHaveBeenCalledWith('MediaRecorder reported a capture error')
+  expect(audio.finish).toHaveBeenCalled()
+})
+
+test('an asynchronous encoder error waits for its final data and stop event', async () => {
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  const recorder = FakeRecorder.instances[0]
+  recorder.stop = () => {
+    recorder.state = 'inactive'
+  }
+  recorder.onerror?.()
+  const stopped = recording.stop()
+  await Promise.resolve()
+  expect(deliver).not.toHaveBeenCalled()
+  recorder.ondataavailable?.({ data: new Blob(['final-packet']) })
+  recorder.onstop?.()
+  await stopped
+  expect(deliver.mock.calls[0][2].size).toBe('framesfinal-packet'.length)
+})
+
+test('a stopped display is flagged and cannot extend the recording through audio alone', async () => {
+  const stream = new FakeStream()
+  const recording = startBrowserRecording(42, stream as unknown as MediaStream)!
+  stream.tracks[0].end()
+  expect(FakeRecorder.instances[0].state).toBe('inactive')
+  expect(audio.fail).toHaveBeenCalledWith('Display sharing ended before the case was complete')
+  await recording.stop()
+  expect(deliver).toHaveBeenCalledOnce()
+})
+
+test('a recorder that never flushes fails within a bound instead of hanging replay', async () => {
+  vi.useFakeTimers()
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  FakeRecorder.instances[0].stop = () => {
+    FakeRecorder.instances[0].state = 'inactive'
+  }
+  const stopped = recording.stop()
+  await vi.advanceTimersByTimeAsync(10_001)
+  await stopped
+  expect(markFailed).toHaveBeenCalledWith(7, expect.stringContaining('10 seconds'))
+  expect(deliver).not.toHaveBeenCalled()
+  await expect(uploadSettled(42)).resolves.toBeUndefined()
+})
+
+test('a stop exception marks the unfinished file failed', async () => {
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  FakeRecorder.instances[0].stop = () => {
+    throw new Error('encoder lost')
+  }
+  await recording.stop()
+  expect(markFailed).toHaveBeenCalledWith(7, expect.stringContaining('could not finish'))
+  expect(deliver).not.toHaveBeenCalled()
+})
+
+test('synchronous start failures tolerate a failed status-report request', async () => {
+  vi.spyOn(FakeRecorder.prototype, 'start').mockImplementation(() => {
+    throw new Error('permission lost')
+  })
+  markFailed.mockRejectedValue(new Error('offline'))
+  expect(startBrowserRecording(42, new FakeStream() as unknown as MediaStream)).toBeNull()
+  await vi.waitFor(() => expect(markFailed).toHaveBeenCalled())
+  expect(audio.fail).toHaveBeenCalledWith('MediaRecorder would not start')
+})
+
+test.each(['video/mp4', 'video/x-matroska'])(
+  'preserves a supported container family (%s) at upload',
+  async (mimeType) => {
+    const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+    FakeRecorder.instances[0].mimeType = mimeType
+    await recording.stop()
+    expect(deliver.mock.calls[0][2].type).toBe(
+      mimeType === 'video/mp4' ? 'video/mp4' : 'video/webm',
+    )
+  },
+)
+
+test('does not disguise an unknown container as WebM', async () => {
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  FakeRecorder.instances[0].mimeType = 'video/unsupported'
+  await recording.stop()
+  expect(markFailed).toHaveBeenCalledWith(
+    7,
+    expect.stringContaining('Unsupported recording format'),
+  )
+  expect(deliver).not.toHaveBeenCalled()
+})
+
+test('refuses an ended display without creating a server recording', () => {
+  const stream = new FakeStream()
+  stream.tracks[0].end()
+  expect(startBrowserRecording(42, stream as unknown as MediaStream)).toBeNull()
+  expect(start).not.toHaveBeenCalled()
+  expect(audio.finish).toHaveBeenCalled()
+})
+
+test('stops idempotently while an upload is in flight', async () => {
+  let deliverDone!: () => void
+  deliver.mockReturnValue(
+    new Promise<void>((resolve) => {
+      deliverDone = resolve
+    }),
+  )
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  const first = recording.stop()
+  const second = recording.stop()
+  expect(first).toBe(second)
+  await vi.waitFor(() => expect(deliver).toHaveBeenCalledOnce())
+  deliverDone()
+  await first
+})
+
+test('screen permission excludes all computer audio', async () => {
+  getDisplayMedia.mockResolvedValue(new FakeStream())
+  await ensureDisplayStream()
+  expect(getDisplayMedia.mock.calls[0][0]).toMatchObject({
+    audio: false,
+    video: { displaySurface: 'monitor' },
+  })
+})
+
+test('a wrong surface is released and can be corrected at the next intro', async () => {
+  const wrong = new FakeStream()
+  wrong.tracks[0].getSettings = () => ({ width: 100, height: 100, displaySurface: 'window' })
+  getDisplayMedia.mockResolvedValueOnce(wrong).mockResolvedValueOnce(new FakeStream())
+  expect(await ensureDisplayStream()).toBeNull()
+  expect(wrong.tracks[0].readyState).toBe('ended')
+  expect(await ensureDisplayStream()).not.toBeNull()
+  expect(getDisplayMedia).toHaveBeenCalledTimes(2)
+})
+
+test('a late permission grant after timeout is released instead of leaking screen sharing', async () => {
+  vi.useFakeTimers()
+  let grant!: (stream: FakeStream) => void
+  getDisplayMedia.mockReturnValue(
+    new Promise((resolve) => {
+      grant = resolve
+    }),
+  )
+  const pending = ensureDisplayStream()
+  await vi.advanceTimersByTimeAsync(90_001)
+  expect(await pending).toBeNull()
+  const late = new FakeStream()
+  grant(late)
+  await Promise.resolve()
+  expect(late.tracks[0].readyState).toBe('ended')
+  expect(heldStream()).toBeNull()
+})
+
+test('a delayed encoder start event cannot shift gaze timestamps or recording duration', async () => {
+  vi.useFakeTimers()
+  let monotonic = 0
+  vi.spyOn(performance, 'now').mockImplementation(() => monotonic)
+  vi.setSystemTime(new Date(1700000000000))
+  vi.spyOn(FakeRecorder.prototype, 'start').mockImplementation(function (this: FakeRecorder) {
+    this.state = 'recording'
+    window.setTimeout(() => {
+      this.onstart?.()
+      this.ondataavailable?.({ data: new Blob(['frames'], { type: 'video/webm' }) })
+    }, 300)
+  })
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  await vi.advanceTimersByTimeAsync(1000)
+  monotonic = 1000
+  await recording.stop()
+  expect(deliver.mock.calls[0][3]).toMatchObject({ epoch_ms: 1700000000000, duration_ms: 1000 })
 })

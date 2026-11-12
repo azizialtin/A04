@@ -72,6 +72,8 @@ async def list_screen_recordings(
                 "duration_ms": screen.duration_ms,
                 "byte_size": screen.byte_size,
                 "recorder": screen.recorder,
+                "audio_status": screen.audio_status,
+                "audio_error": screen.audio_error,
                 "epoch_ms": screen.epoch_ms,
                 "started_at": screen.started_at.isoformat(),
             }
@@ -185,6 +187,8 @@ async def _screen_only_rows(
                     "duration_ms": s.duration_ms,
                     "byte_size": s.byte_size,
                     "recorder": s.recorder,
+                    "audio_status": s.audio_status,
+                    "audio_error": s.audio_error,
                 },
             }
         )
@@ -220,6 +224,8 @@ async def _screens_for(
             "duration_ms": s.duration_ms,
             "byte_size": s.byte_size,
             "recorder": s.recorder,
+            "audio_status": s.audio_status,
+            "audio_error": s.audio_error,
         }
         for s in rows
     }
@@ -275,6 +281,8 @@ async def admin_screen_replay(
         "epoch_ms": screen.epoch_ms,
         "duration_ms": screen.duration_ms,
         "recorder": screen.recorder,
+        "audio_status": screen.audio_status,
+        "audio_error": screen.audio_error,
         "sampling_rate_hz": 0,
         "plotted_points": data["mapped_samples"],
         "invalid_samples": data["invalid_samples"],
@@ -332,6 +340,8 @@ async def admin_gaze_replay(
         "epoch_ms": epoch_ms,
         "duration_ms": duration_ms,
         "recorder": recorder,
+        "audio_status": screen.audio_status if source == "screen" and screen else "unknown",
+        "audio_error": screen.audio_error if source == "screen" and screen else None,
         "sampling_rate_hz": rec.sampling_rate_hz,
         "plotted_points": data["mapped_samples"],
         "invalid_samples": data["invalid_samples"],

@@ -23,7 +23,7 @@ from typing import Literal
 
 import jwt
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/screen", tags=["screen"])
 
 UPLOAD_ROLE = "screen_upload"
+AudioStatus = Literal["unknown", "captured", "silent", "failed", "unavailable"]
 
 
 class StartRequest(BaseModel):
@@ -87,6 +88,8 @@ class CompleteRequest(BaseModel):
     fps: float | None = None
     # Has to match what `upload-url` was asked for: it names the object.
     content_type: str = "video/mp4"
+    audio_status: AudioStatus = "unknown"
+    audio_error: str | None = Field(None, max_length=500)
 
 
 class FailedRequest(BaseModel):
@@ -152,6 +155,8 @@ def _mark_stored(
     width: int | None,
     height: int | None,
     fps: float | None,
+    audio_status: AudioStatus = "unknown",
+    audio_error: str | None = None,
 ) -> None:
     recording.status = "stored"
     recording.storage_mode = storage_mode
@@ -162,6 +167,8 @@ def _mark_stored(
     recording.height = height
     recording.fps = fps
     recording.byte_size = size
+    recording.audio_status = audio_status
+    recording.audio_error = audio_error or None
     recording.completed_at = datetime.now(UTC)
 
 
@@ -295,6 +302,8 @@ async def complete_screen_recording(
         width=body.width,
         height=body.height,
         fps=body.fps,
+        audio_status=body.audio_status,
+        audio_error=body.audio_error,
     )
     await db.commit()
     return {"status": "ok", "bytes": size}
@@ -309,6 +318,8 @@ async def upload_screen_recording_file(
     width: int | None = Form(None),
     height: int | None = Form(None),
     fps: float | None = Form(None),
+    audio_status: AudioStatus = Form("unknown"),
+    audio_error: str | None = Form(None, max_length=500),
     claims: dict = Depends(_upload_claims),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
@@ -362,6 +373,8 @@ async def upload_screen_recording_file(
         width=width,
         height=height,
         fps=fps,
+        audio_status=audio_status,
+        audio_error=audio_error,
     )
     await db.commit()
     return {"status": "ok", "bytes": written}

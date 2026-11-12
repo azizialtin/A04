@@ -188,5 +188,15 @@
     "finish_note": "Your current answers will be saved. Unvisited pages will have no answers or timestamps.",
     "finish_confirm": "Save and continue to PCK",
     "intro_timer_note": "The seven minutes start with the first task."
+  },
+  "recording_audio": {
+    "unavailable": "The video soundtrack cannot be recorded here. You can continue; please tell the supervisor.",
+    "failed": "The video soundtrack may be incomplete. You can continue; please tell the supervisor.",
+    "silent": "No video sound has been detected. Please check that the students can be heard and tell the supervisor if needed.",
+    "bridge_update": "The recording program needs an update to include video sound. You can continue; please tell the supervisor.",
+    "replay_unknown": "Sound was not verified for this recording. Older screen recordings may be silent.",
+    "replay_silent": "No audible video sound was detected in this recording. Please check it with the supervisor.",
+    "replay_failed": "Video sound may be missing or incomplete in this recording. Please tell the supervisor.",
+    "replay_unavailable": "Video sound could not be recorded. Please tell the supervisor."
   }
 }

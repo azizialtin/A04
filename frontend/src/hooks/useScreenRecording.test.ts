@@ -1,8 +1,9 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { screenApi } from '../api/screen'
 import { useScreenRecording } from './useScreenRecording'
+import { audioWarning, setAudioWarning } from '../lib/stimulusAudio'
 
 vi.mock('../api/screen', () => ({
   screenApi: {
@@ -33,6 +34,13 @@ vi.mock('../lib/screenCapture', () => ({
   startBrowserRecording: (videoId: number, stream: unknown) =>
     startBrowserRecording(videoId, stream),
 }))
+
+const bridgeAudio = vi.hoisted(() => ({
+  beginSending: vi.fn(),
+  fail: vi.fn(),
+  stop: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+}))
+vi.mock('../lib/bridgeAudio', () => ({ startBridgeAudio: () => bridgeAudio }))
 
 const start = vi.mocked(screenApi.start)
 const markFailed = vi.mocked(screenApi.markFailed)
@@ -70,6 +78,10 @@ class FakeSocket {
 
 beforeEach(() => {
   FakeSocket.last = null
+  setAudioWarning(null)
+  bridgeAudio.beginSending.mockClear()
+  bridgeAudio.fail.mockClear()
+  bridgeAudio.stop.mockReset().mockResolvedValue(undefined)
   held = null
   bridgeFailed = false
   noteBridgeCaptureFailed.mockClear()
@@ -80,7 +92,12 @@ beforeEach(() => {
   markFailed.mockReset().mockResolvedValue({} as never)
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+})
 
 test('asks the bridge to record once it says it can', async () => {
   renderHook(() => useScreenRecording(42))
@@ -219,4 +236,111 @@ test('stays out of the way when there is no bridge and no display', () => {
   expect(() => renderHook(() => useScreenRecording(42))).not.toThrow()
   expect(start).not.toHaveBeenCalled()
   expect(startBrowserRecording).not.toHaveBeenCalled()
+})
+
+test('finishes audio before stopping the screen and closing its socket', async () => {
+  let finish!: () => void
+  bridgeAudio.stop.mockReturnValue(
+    new Promise<void>((resolve) => {
+      finish = resolve
+    }),
+  )
+  const { unmount } = renderHook(() => useScreenRecording(42))
+  FakeSocket.last!.say({ type: 'status', screen_recording: true, stimulus_audio: true })
+  await waitFor(() => expect(FakeSocket.last!.sent).toHaveLength(1))
+  const socket = FakeSocket.last!
+  socket.say({ type: 'screen_recording_started', ok: true })
+  expect(bridgeAudio.beginSending).toHaveBeenCalledOnce()
+  unmount()
+  expect(socket.closed).toBe(false)
+  expect(socket.sent).toHaveLength(1)
+  finish()
+  await waitFor(() => expect(socket.closed).toBe(true))
+  expect(socket.sent[1]).toEqual({ type: 'stop_screen_recording' })
+})
+
+test('old bridges report a visible audio update warning', async () => {
+  renderHook(() => useScreenRecording(42))
+  FakeSocket.last!.say({ type: 'status', screen_recording: true })
+  await waitFor(() => expect(audioWarning()).toBe('bridge_update'))
+})
+
+test('a rejected audio stream is marked failed while the case can continue', async () => {
+  renderHook(() => useScreenRecording(42))
+  FakeSocket.last!.say({ type: 'status', screen_recording: true, stimulus_audio: true })
+  await waitFor(() => expect(FakeSocket.last!.sent).toHaveLength(1))
+  FakeSocket.last!.say({ type: 'stimulus_audio_error', error: 'corrupt audio' })
+  expect(bridgeAudio.fail).toHaveBeenCalledWith('corrupt audio')
+})
+
+test('times out bridge startup, warns and releases the audio encoder', async () => {
+  vi.useFakeTimers()
+  renderHook(() => useScreenRecording(42))
+  const socket = FakeSocket.last!
+  await act(async () => {
+    socket.say({ type: 'status', screen_recording: true, stimulus_audio: true })
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(12_001)
+  })
+  expect(markFailed).toHaveBeenCalledWith(7, expect.stringContaining('acknowledge'))
+  expect(bridgeAudio.fail).toHaveBeenCalledWith(expect.stringContaining('acknowledge'))
+  expect(bridgeAudio.stop).toHaveBeenCalled()
+  expect(socket.closed).toBe(true)
+  expect(audioWarning()).toBe('failed')
+})
+
+test('a connection lost while the server creates a row never starts a new audio encoder', async () => {
+  let opened!: (value: { recording_id: number; upload_token: string }) => void
+  start.mockReturnValue(
+    new Promise((resolve) => {
+      opened = resolve
+    }),
+  )
+  renderHook(() => useScreenRecording(42))
+  const socket = FakeSocket.last!
+  socket.say({ type: 'status', screen_recording: true, stimulus_audio: true })
+  socket.readyState = FakeSocket.CLOSED
+  socket.onclose?.()
+  opened({ recording_id: 7, upload_token: 'tok' })
+  await waitFor(() => expect(markFailed).toHaveBeenCalledWith(7, expect.stringContaining('closed')))
+  expect(socket.sent).toEqual([])
+  expect(bridgeAudio.beginSending).not.toHaveBeenCalled()
+})
+
+test('a backend failure completing after unmount cannot replace the next case warning', async () => {
+  let reject!: (error: Error) => void
+  start.mockReturnValue(
+    new Promise((_resolve, no) => {
+      reject = no
+    }),
+  )
+  const { unmount } = renderHook(() => useScreenRecording(42))
+  FakeSocket.last!.say({ type: 'status', screen_recording: true })
+  unmount()
+  setAudioWarning('silent')
+  reject(new Error('offline'))
+  await Promise.resolve()
+  expect(audioWarning()).toBe('silent')
+})
+
+test('a throwing websocket send still closes the socket and marks its row failed', async () => {
+  renderHook(() => useScreenRecording(42))
+  const socket = FakeSocket.last!
+  vi.spyOn(socket, 'send').mockImplementation(() => {
+    throw new Error('disconnected')
+  })
+  socket.say({ type: 'status', screen_recording: true, stimulus_audio: true })
+  await waitFor(() => expect(socket.closed).toBe(true))
+  expect(markFailed).toHaveBeenCalledWith(7, expect.stringContaining('closed'))
+  expect(bridgeAudio.stop).toHaveBeenCalled()
+})
+
+test('a late status cannot create a recording after the case was unmounted', async () => {
+  const { unmount } = renderHook(() => useScreenRecording(42))
+  const socket = FakeSocket.last!
+  unmount()
+  socket.say({ type: 'status', screen_recording: true, stimulus_audio: true })
+  await Promise.resolve()
+  expect(start).not.toHaveBeenCalled()
 })

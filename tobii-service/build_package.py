@@ -15,12 +15,18 @@ mistake that survives all the way to a lab PC reporting "no tracker".
 
 from __future__ import annotations
 
+import asyncio
+import json
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import zipfile
 from importlib.util import find_spec
 from pathlib import Path
+
+from tobii_bridge import DEFAULT_PORT
 
 HERE = Path(__file__).parent
 DIST = HERE / "dist"
@@ -33,12 +39,15 @@ README = """A04 eye-tracking bridge
 =======================
 
 Double-click A04Bridge.exe before the participant sits down, and leave the
-window open for the whole session. Closing it stops gaze and screen recording.
+window open for the whole session.
+Closing it stops gaze and screen recording.
 
 What it does
 ------------
 Streams gaze from the Tobii tracker to the study page in the browser, and
-records the screen while a case video is playing. Everything is sent to the
+records the screen and the case video's soundtrack during the case. The
+browser supplies only the student's video sound; the bridge does not record
+the microphone or other applications' audio. Everything is sent to the
 study server; nothing is kept on this PC except recordings the server refused,
 which land in the unsent-recordings folder next to the .exe.
 
@@ -46,19 +55,40 @@ What this PC needs
 ------------------
 - A Tobii Pro tracker, plugged in and calibrated in Tobii Pro Eye Tracker
   Manager. Calibration does not happen inside the study app.
-- Nothing else. Python, the Tobii SDK and ffmpeg are all inside this folder.
+- Chrome or Edge with permission to connect to the local bridge. The study
+  site is https://a04.rdm.lab.lrz.de.
+- Python, the Tobii SDK, ffmpeg and ffprobe are all inside this folder.
+
+Matching the study's port
+-------------------------
+The bridge listens on ws://127.0.0.1:8766 by default, matching
+https://a04.rdm.lab.lrz.de. No shortcut arguments are needed.
 
 Checking it works
 -----------------
 The window should print:
 
-    [bridge] listening on ws://127.0.0.1:8765 (tobii)
+    [bridge] listening on ws://127.0.0.1:8766 (tobii)
     [bridge] screen recording enabled (ffmpeg found)
 
-"(mock)" instead of "(tobii)" means it found no tracker: check the cable and
-that Eye Tracker Manager sees it, then start the bridge again.
+"(mock)" means the bridge was explicitly launched with --mock, which produces
+synthetic gaze. "(tobii)" does not prove that a tracker was found. Check live
+gaze in the study and a nonzero gaze sample count after a short test case.
+If no tracker is found, check the cable and Eye Tracker Manager, then restart
+the bridge. A tracker attached after launch is not discovered automatically.
 
-"port 8765 is already in use" means it is running in another window already.
+If the window refuses a connection from the study origin, check that this is
+the current package. Allow the browser's local-network permission when asked.
+
+Before collecting data, play a short case with a delay, a pause and a rewind.
+Check that the participant replay, admin replay and downloaded MP4 all contain
+the same synchronized sound. An audio warning must be investigated; a stored
+screen recording alone does not prove that audio was captured.
+
+Replace the whole A04Bridge folder when updating. A website deployment does
+not update this executable, and old silent recordings remain silent.
+
+"port ... is already in use" means another process is listening on that port.
 
 Do not move A04Bridge.exe out of this folder -- it needs what sits next to it.
 """
@@ -84,6 +114,8 @@ def _fail(message: str) -> None:
 
 
 def check_environment() -> None:
+    if sys.platform != "win32":
+        _fail("build the Windows executable on Windows; cross-compiling is not supported.")
     if sys.version_info[:2] != (3, 10):
         _fail(
             f"running on Python {sys.version_info.major}.{sys.version_info.minor}; "
@@ -101,17 +133,25 @@ def check_environment() -> None:
 def freeze() -> Path:
     subprocess.run(
         [
-            sys.executable, "-m", "PyInstaller",
-            "--noconfirm", "--clean",
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--clean",
             "--onedir",  # one file would unpack to a temp dir on every start
             "--console",
-            "--name", NAME,
+            "--name",
+            NAME,
             # The SDK's interop DLLs are loaded by filename at runtime, so
             # import analysis alone does not see them.
-            "--collect-all", "tobiiresearch",
-            "--distpath", str(DIST),
-            "--workpath", str(HERE / "build"),
-            "--specpath", str(HERE / "build"),
+            "--collect-all",
+            "tobiiresearch",
+            "--distpath",
+            str(DIST),
+            "--workpath",
+            str(HERE / "build"),
+            "--specpath",
+            str(HERE / "build"),
             str(HERE / "tobii_bridge.py"),
         ],
         check=True,
@@ -133,6 +173,151 @@ def add_tools(folder: Path) -> None:
             )
         # PATHEXT hands back FFMPEG.EXE on some machines; keep the name tidy.
         shutil.copy2(found, folder / Path(found).name.lower())
+    check_media_tools(folder)
+
+
+def check_media_tools(folder: Path) -> None:
+    """Exercise the shipped encoders and probe, not a different PATH install."""
+    ffmpeg = folder / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+    ffprobe = folder / ("ffprobe.exe" if sys.platform == "win32" else "ffprobe")
+
+    def run(*args: str) -> bytes:
+        try:
+            return subprocess.check_output(args, stderr=subprocess.STDOUT, timeout=30)
+        except (OSError, subprocess.SubprocessError) as exc:
+            _fail(f"bundled media tools failed their audio/video self-test: {exc}")
+
+    with tempfile.TemporaryDirectory(prefix="a04-package-check-") as temp:
+        audio = Path(temp) / "stimulus.webm"
+        output = Path(temp) / "screen.mp4"
+        run(
+            str(ffmpeg),
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.3",
+            "-c:a",
+            "libopus",
+            str(audio),
+        )
+        run(
+            str(ffmpeg),
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:size=160x90:rate=10:duration=0.3",
+            "-i",
+            str(audio),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-af",
+            "adelay=10:all=1,apad,atrim=duration=0.3",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            str(output),
+        )
+        report = json.loads(
+            run(
+                str(ffprobe),
+                "-v",
+                "error",
+                "-count_packets",
+                "-show_entries",
+                "stream=codec_name,nb_read_packets",
+                "-of",
+                "json",
+                str(output),
+            )
+        )
+        streams = {stream.get("codec_name"): stream for stream in report.get("streams", [])}
+        if any(
+            int(streams.get(codec, {}).get("nb_read_packets", 0)) <= 0 for codec in ("h264", "aac")
+        ):
+            _fail("bundled ffmpeg/ffprobe did not produce both H.264 and AAC packets.")
+
+
+async def _probe_executable(proc, port: int, timeout: float = 15) -> None:
+    import websockets
+
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError("the packaged executable exited before its handshake")
+        try:
+            async with websockets.connect(
+                f"ws://127.0.0.1:{port}",
+                origin="https://a04.rdm.lab.lrz.de",
+                open_timeout=1,
+                close_timeout=1,
+            ) as ws:
+                status = json.loads(await asyncio.wait_for(ws.recv(), 2))
+                if (
+                    status.get("type") != "status"
+                    or not status.get("connected")
+                    or status.get("stimulus_audio") is not False
+                ):
+                    raise RuntimeError(
+                        "the packaged executable sent an unexpected capability handshake"
+                    )
+                await ws.send(json.dumps({"type": "start_gaze"}))
+                gaze = json.loads(await asyncio.wait_for(ws.recv(), 2))
+                if gaze.get("type") != "gaze" or not gaze.get("ts"):
+                    raise RuntimeError("the packaged executable did not stream mock gaze")
+                return
+        except OSError:
+            await asyncio.sleep(0.1)
+    raise RuntimeError("the packaged executable did not open its local WebSocket in time")
+
+
+def check_executable(folder: Path) -> None:
+    """Exercise imports, the default LRZ origin and gaze in the frozen program."""
+    executable = str(folder / f"{NAME}.exe")
+    try:
+        sdk = json.loads(
+            subprocess.check_output([executable, "--check-sdk"], cwd=folder, timeout=30)
+        )
+        if not sdk.get("sdk_version") or not isinstance(sdk.get("trackers"), int):
+            _fail("packaged executable returned no native Tobii SDK version.")
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        _fail(f"packaged executable could not load the native Tobii SDK: {exc}")
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", DEFAULT_PORT))
+    proc = subprocess.Popen(
+        [executable, "--mock", "--no-screen-recording"],
+        cwd=folder,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    failure = None
+    try:
+        asyncio.run(_probe_executable(proc, DEFAULT_PORT))
+    except Exception as exc:
+        failure = str(exc)
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+        try:
+            output, _ = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            output, _ = proc.communicate(timeout=5)
+    if failure:
+        detail = output.decode(errors="replace")[-500:]
+        _fail(f"packaged executable self-test failed: {failure}; {detail}")
 
 
 def zip_folder(folder: Path) -> Path:
@@ -149,6 +334,7 @@ def main() -> None:
     check_environment()
     folder = freeze()
     add_tools(folder)
+    check_executable(folder)
     (folder / "README.txt").write_text(README, encoding="utf-8")
     (folder / "NOTICE.txt").write_text(NOTICE, encoding="utf-8")
     archive = zip_folder(folder)

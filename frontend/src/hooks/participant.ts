@@ -17,11 +17,13 @@ export function useVideoNotes(videoId: number) {
   })
 }
 
-export function useVideoReplay(videoId: number, enabled = true) {
+export function useVideoReplay(videoId: number, enabled = true, pollPending = false) {
   return useQuery({
     queryKey: ['replay', videoId],
     queryFn: () => participantApi.getVideoReplay(videoId),
     enabled,
+    refetchInterval: (query) =>
+      pollPending && query.state.data?.screen_recording_pending ? 1000 : false,
   })
 }
 

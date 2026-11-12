@@ -1,6 +1,6 @@
 // The lab machine's Tobii bridge. Override per machine with VITE_TOBII_WS_URL.
 export const TOBII_WS_URL =
-  (import.meta.env.VITE_TOBII_WS_URL as string | undefined) ?? 'ws://localhost:8765'
+  (import.meta.env.VITE_TOBII_WS_URL as string | undefined) ?? 'ws://127.0.0.1:8766'
 
 export interface BridgeStatus {
   connected: boolean

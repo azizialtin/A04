@@ -2,6 +2,12 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import VideoPlayer from './VideoPlayer'
+import { connectStimulusAudio, failStimulusAudio } from '../../lib/stimulusAudio'
+
+vi.mock('../../lib/stimulusAudio', async (original) => ({
+  ...(await original<typeof import('../../lib/stimulusAudio')>()),
+  connectStimulusAudio: vi.fn(() => () => {}),
+}))
 
 vi.mock('../../api/participant', () => ({
   participantApi: { getVideoUrl: vi.fn(async () => ({ signed_url: 'https://cdn.test/clip.mp4' })) },
@@ -27,6 +33,9 @@ let pause: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
   enqueue.mockClear()
+  vi.mocked(connectStimulusAudio)
+    .mockReset()
+    .mockImplementation(() => () => {})
   // jsdom has no media stack: play() rejects and pause() is a no-op. Spy on
   // both, and drive the element's own events by hand.
   play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
@@ -53,6 +62,7 @@ test('offers only a play/pause button and the position bar', async () => {
 
   // No native control bar, and so none of what it would have carried with it:
   // volume, playback rate, picture-in-picture, fullscreen.
+  expect(video).toHaveAttribute('crossorigin', 'anonymous')
   expect(video).not.toHaveAttribute('controls')
   expect(video).toHaveAttribute('disablepictureinpicture')
 
@@ -115,4 +125,36 @@ test('reaching the end completes the case rather than pausing it', async () => {
 
   expect(onEnded).toHaveBeenCalled()
   expect(fired()).toEqual(['video_completed'])
+})
+
+test('retries a CORS failure with a new native player, preserves position and warns about audio', async () => {
+  const video = await mount()
+  video.currentTime = 12
+  video.volume = 0.3
+  video.muted = true
+  fireEvent.error(video)
+  const retry = screen.getByLabelText('Fallvideo') as HTMLVideoElement
+  expect(retry).not.toBe(video)
+  expect(retry).not.toHaveAttribute('crossorigin')
+  fireEvent.loadedMetadata(retry)
+  expect(retry.currentTime).toBe(12)
+  expect(retry.volume).toBe(0.3)
+  expect(retry.muted).toBe(true)
+  expect(screen.getByRole('status')).toHaveTextContent('Videoton')
+  expect(screen.getByRole('button', { name: 'Abspielen' })).toBeInTheDocument()
+  fireEvent.error(retry)
+  expect(screen.getByText(/Video konnte nicht geladen/)).toBeInTheDocument()
+})
+
+test('unsupported source capture falls back to native video without losing the warning', async () => {
+  vi.mocked(connectStimulusAudio).mockImplementation((_video, onFailure) => {
+    failStimulusAudio('Media source capture unsupported')
+    onFailure?.()
+    return () => {}
+  })
+  const video = await mount()
+  expect(video).not.toHaveAttribute('crossorigin')
+  expect(screen.getByRole('status')).toHaveTextContent('Videoton')
+  fireEvent.click(screen.getByRole('button', { name: 'Abspielen' }))
+  expect(play).toHaveBeenCalled()
 })

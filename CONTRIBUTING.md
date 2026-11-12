@@ -93,6 +93,12 @@ variable name from that data dictionary.
   intro), stamped `recorder = "browser"` so the analysis can tell — the clock
   anchor is the browser's and a frame or two less exact. The clip-only replay
   remains the last fallback when neither capture happened.
+- **Stimulus sound follows the recorded case timeline.** Web Audio captures only
+  the case element's live output, with its pauses, buffering, seeks and volume.
+  Browser capture combines that track with the display; the Windows bridge
+  muxes the same live soundtrack using the existing screen clock. Audio health
+  is stored separately from upload success. No microphone or system audio is
+  recorded. See `docs/STIMULUS_AUDIO.md` for limitations and release checks.
 - **Gaze data only means something with its geometry and its clock.** The
   tracker reports gaze against the *whole display*. The screen recording is the
   whole display, so nothing has to be undone to draw on it — but each gaze

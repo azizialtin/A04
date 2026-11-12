@@ -186,6 +186,11 @@ class ReplayResponse(BaseModel):
     duration_ms: int | None = None
     # "bridge" or "browser" for a screen replay; None on the clip.
     recorder: str | None = None
+    audio_status: str = "unknown"
+    audio_error: str | None = None
+    # A bridge upload can still be encoding when the participant arrives here.
+    # Let the page wait for it rather than permanently choosing the clip.
+    screen_recording_pending: bool = False
 
 
 async def _require_assigned(db: AsyncSession, participant: Participant, video_id: int) -> None:
@@ -524,6 +529,16 @@ async def get_replay(
         )
         .order_by(ScreenRecording.started_at.desc())
     )
+    latest_screen = await db.scalar(
+        select(ScreenRecording)
+        .where(
+            ScreenRecording.participant_id == participant.id,
+            ScreenRecording.video_id == video_id,
+        )
+        .order_by(ScreenRecording.started_at.desc(), ScreenRecording.id.desc())
+        .limit(1)
+    )
+    pending = latest_screen is not None and latest_screen.status == "recording"
     if screen is not None:
         try:
             screen_url = resolve_screen_url(screen, settings)
@@ -545,6 +560,9 @@ async def get_replay(
                 epoch_ms=screen.epoch_ms,
                 duration_ms=screen.duration_ms,
                 recorder=screen.recorder,
+                audio_status=screen.audio_status,
+                audio_error=screen.audio_error,
+                screen_recording_pending=pending,
             )
 
     try:
@@ -562,6 +580,7 @@ async def get_replay(
             offscreen_samples=0,
             has_geometry=False,
             points=[],
+            screen_recording_pending=pending,
         )
 
     data = await compute_replay(db, recording, settings)
@@ -574,4 +593,5 @@ async def get_replay(
         offscreen_samples=data["offscreen_samples"],
         has_geometry=data["has_geometry"],
         points=data["points"],
+        screen_recording_pending=pending,
     )

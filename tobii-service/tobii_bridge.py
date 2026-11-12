@@ -1,6 +1,6 @@
 """WebSocket bridge between a Tobii eye tracker and the A04 frontend.
 
-Runs on the lab machine. The browser connects to ws://localhost:8765, waits for
+Runs on the lab machine. The browser connects to ws://localhost:8766, waits for
 a `status` message, then sends `start_gaze` / `stop_gaze` to control streaming.
 Every gaze frame is one JSON object:
 
@@ -42,6 +42,7 @@ import os
 import shutil
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,6 +58,7 @@ from screen_recorder import (
 )
 
 MOCK_HZ = 120
+DEFAULT_PORT = 8766
 
 # Where the study is served from. Anything else is refused, so a page the
 # participant happens to have open cannot read their gaze. The deployed
@@ -64,6 +66,7 @@ MOCK_HZ = 120
 # machine: a run there is one double-click, and a wrong origin looks exactly
 # like a missing tracker.
 DEFAULT_ORIGINS = (
+    "https://a04.rdm.lab.lrz.de",
     "https://a04-frontend-356217033010.europe-west3.run.app",
     "http://localhost:5175",
     "http://127.0.0.1:5175",
@@ -335,10 +338,33 @@ class ScreenSession:
         self.owner = None
         self.destination = Destination()
         self.uploads: set[asyncio.Task] = set()
+        self._starting = False
+        self._stopping = False
 
     @property
     def available(self) -> bool:
         return self.enabled and shutil.which("ffmpeg") is not None
+
+    @property
+    def audio_available(self) -> bool:
+        return self.available and shutil.which("ffprobe") is not None
+
+    def audio_message(self, ws, kind: str, msg: dict | bytes) -> str | None:
+        if self.recorder is None or self.owner is not ws:
+            return "Only the browser recording this screen may send stimulus audio."
+        audio = self.recorder.audio
+        if audio is None:
+            return "Stimulus audio is unavailable for this capture."
+        if not self.audio_available:
+            return audio.fail("ffprobe is missing; install the updated Windows bridge package.")
+        if kind == "chunk" and isinstance(msg, bytes):
+            return audio.append(msg)
+        if isinstance(msg, dict):
+            if kind == "start_stimulus_audio":
+                return audio.start(msg)
+            if kind == "finish_stimulus_audio":
+                return audio.finish(msg)
+        return audio.fail("Invalid stimulus audio message.")
 
     async def start(self, ws, msg: dict) -> tuple[bool, str | None]:
         if not self.available:
@@ -356,32 +382,50 @@ class ScreenSession:
             return False, "upload_url and token are required"
 
         recorder = ScreenRecorder(**self.options)
+        # Reserve before awaiting FFmpeg: another socket can arrive meanwhile.
+        self.recorder, self.owner = recorder, ws
+        self.destination = destination
+        self._starting = True
         try:
             await recorder.start()
+        except asyncio.CancelledError:
+            self.recorder, self.owner = None, None
+            recorder.discard()
+            raise
         except Exception as exc:
             # Anything at all — the study is not stopping because ffmpeg is not
             # happy, and this socket is also carrying the gaze stream.
             print(f"[bridge] screen recording did not start: {exc}")
+            self.recorder, self.owner = None, None
             recorder.discard()
             return False, str(exc)
+        finally:
+            self._starting = False
 
-        self.recorder, self.owner = recorder, ws
-        self.destination = destination
         return True, None
 
     async def stop(self, ws) -> tuple[bool, str | None]:
         if self.recorder is None or (ws is not None and self.owner is not ws):
             return False, "no screen recording is running"
-        recorder, self.recorder, self.owner = self.recorder, None, None
+        if self._starting or self._stopping:
+            return False, "the screen recorder is still starting or stopping"
+        recorder = self.recorder
         destination = self.destination
+        self._stopping = True
+        error = None
 
         try:
             recording = await recorder.stop()
         except Exception as exc:
             print(f"[bridge] screen recording failed: {exc}")
             recorder.discard()
-            await self._report(destination, str(exc))
-            return False, str(exc)
+            error = str(exc)
+        finally:
+            self.recorder, self.owner = None, None
+            self._stopping = False
+        if error is not None:
+            await self._report(destination, error)
+            return False, error
 
         # The browser is already on the next screen; nothing is waiting for the
         # upload, so let it run on its own and keep the socket responsive.
@@ -396,6 +440,11 @@ class ScreenSession:
 
     async def _deliver(self, recorder, recording, destination: Destination) -> None:
         try:
+            if recorder.audio is not None:
+                await recorder.audio.attach(recording)
+            if recording.audio_status != "captured":
+                detail = recording.audio_error or "no audible signal detected"
+                print(f"[bridge] stimulus audio {recording.audio_status}: {detail}")
             await upload_recording(
                 recording,
                 destination.upload_url,
@@ -411,15 +460,18 @@ class ScreenSession:
 
         # A session cannot be repeated, so a lost upload must leave the file
         # where a person can still find it.
-        self.keep_dir.mkdir(parents=True, exist_ok=True)
-        kept = self.keep_dir / f"screen-{recording.epoch_ms}.mp4"
+        kept = self.keep_dir / f"screen-{recording.epoch_ms}-{uuid.uuid4().hex[:8]}.mp4"
         try:
+            self.keep_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(recording.path), kept)
+            recorder.discard()
             print(f"[bridge] upload failed ({error}); kept the recording at {kept}")
             error = f"{error} — the file is on the lab machine at {kept}"
-        except Exception:
-            print(f"[bridge] upload failed ({error}) and the file could not be kept either")
-            recorder.discard()
+        except Exception as exc:
+            # The temporary file may be the only copy left. Do not delete it
+            # merely because the configured recovery folder is unwritable.
+            error = f"{error}; recovery failed ({exc}); original retained at {recording.path}"
+            print(f"[bridge] {error}")
         await self._report(destination, error)
 
     async def release(self, ws) -> None:
@@ -442,6 +494,10 @@ async def _handle_screen(ws, screen: ScreenSession, msg: dict) -> bool:
     elif kind == "stop_screen_recording":
         ok, error = await screen.stop(ws)
         await ws.send(json.dumps({"type": "screen_recording_stopped", "ok": ok, "error": error}))
+    elif kind in ("start_stimulus_audio", "finish_stimulus_audio"):
+        error = screen.audio_message(ws, kind, msg)
+        if error:
+            await ws.send(json.dumps({"type": "stimulus_audio_error", "error": error}))
     else:
         return False
     return True
@@ -476,10 +532,16 @@ async def _serve(
     source = build_source(mock)
 
     async def handler(ws) -> None:
-        origin = ws.request.headers.get("Origin") if hasattr(ws, "request") else None
+        # websockets 12/13 expose request_headers; 14+ expose request.headers.
+        headers = ws.request.headers if hasattr(ws, "request") else getattr(ws, "request_headers", {})
+        origin = headers.get("Origin")
         if allowed_origins and origin not in allowed_origins:
             # A participant's live gaze is not for any page that asks.
-            print(f"[bridge] refused a connection from origin {origin!r}")
+            print(
+                f"[bridge] refused a connection from origin {origin!r}; "
+                "install the current A04Bridge package, or ask the study administrator "
+                "to allow the exact study origin with --allow-origin."
+            )
             await ws.close(code=4403, reason="origin not allowed")
             return
 
@@ -495,15 +557,23 @@ async def _serve(
                     # So the browser knows whether to expect a screen recording
                     # at all, rather than asking and reporting a failure.
                     "screen_recording": screen.available,
+                    "stimulus_audio": screen.audio_available,
                 }
             )
         )
         producer: asyncio.Task | None = None
         try:
             async for raw in ws:
+                if isinstance(raw, bytes):
+                    error = screen.audio_message(ws, "chunk", raw)
+                    if error:
+                        await ws.send(json.dumps({"type": "stimulus_audio_error", "error": error}))
+                    continue
                 try:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
+                    continue
+                if not isinstance(msg, dict):
                     continue
                 if await _handle_calibration(ws, source, msg):
                     continue
@@ -515,6 +585,9 @@ async def _serve(
                 elif kind == "stop_gaze" and producer is not None:
                     producer.cancel()
                     producer = None
+        except websockets.exceptions.ConnectionClosed:
+            # Navigation closes after enqueueing stop, before FFmpeg can reply.
+            pass
         finally:
             if producer is not None:
                 producer.cancel()
@@ -550,7 +623,8 @@ def wants_test_pattern(screen_source: str, mock: bool) -> bool:
 def main() -> None:
     use_bundled_tools()
     ap = argparse.ArgumentParser(description="A04 Tobii → WebSocket bridge")
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--check-sdk", action="store_true", help="verify the Tobii native SDK and exit")
     # The browser is on this machine, so there is no reason to offer a
     # participant's live gaze to the rest of the network.
     ap.add_argument("--host", default="127.0.0.1", help="interface to bind (default: loopback)")
@@ -583,6 +657,13 @@ def main() -> None:
         help="where to leave a recording the backend would not take (default: ./unsent-recordings)",
     )
     args = ap.parse_args()
+    if args.check_sdk:
+        import tobii_research as tr
+
+        print(json.dumps({
+            "sdk_version": tr.get_sdk_version(), "trackers": len(tr.find_all_eyetrackers()),
+        }))
+        return
     origins = set(args.allow_origin) if args.allow_origin is not None else set(DEFAULT_ORIGINS)
     origins.discard("")
 
