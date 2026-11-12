@@ -92,7 +92,7 @@ def test_sdk_diagnostic_loads_native_binding_without_starting_server(monkeypatch
         sys.modules,
         "tobii_research",
         SimpleNamespace(
-            get_sdk_version=lambda: "2.1.0",
+            __version__="2.1.0",
             find_all_eyetrackers=lambda: [],
         ),
     )

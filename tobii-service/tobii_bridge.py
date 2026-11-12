@@ -661,7 +661,7 @@ def main() -> None:
         import tobii_research as tr
 
         print(json.dumps({
-            "sdk_version": tr.get_sdk_version(), "trackers": len(tr.find_all_eyetrackers()),
+            "sdk_version": tr.__version__, "trackers": len(tr.find_all_eyetrackers()),
         }))
         return
     origins = set(args.allow_origin) if args.allow_origin is not None else set(DEFAULT_ORIGINS)
