@@ -53,7 +53,7 @@ from app.services.section_timing import (
     timing_response,
 )
 from app.services.session_script import build_steps, describe_step, video_in_run
-from app.services.video_url import sign_blob_url
+from app.services.video_url import resolve_video_url, sign_blob_url
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -421,7 +421,10 @@ async def get_video_url(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "Could not generate video URL."
             ) from exc
 
-    return VideoUrlResponse(signed_url=f"/uploads/videos/{video.gcp_filename}")
+    local_url = resolve_video_url(video, settings)
+    if local_url is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No file uploaded for this video yet.")
+    return VideoUrlResponse(signed_url=local_url)
 
 
 @router.get("/videos/{video_id}/notes", response_model=list[NoteResponse])

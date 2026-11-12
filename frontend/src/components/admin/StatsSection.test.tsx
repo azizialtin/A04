@@ -87,6 +87,18 @@ const data: StudyStats = {
 
 const scrollIntoView = vi.fn()
 
+test('the completed roster entry does not show an unfinished step fraction', () => {
+  const completed = { ...participant('DONE'), status: 'completed', progress: 100, step: 53 }
+  useStudyStats.mockReturnValue({
+    data: { ...data, roster: [completed] },
+    isLoading: false,
+    isError: false,
+  })
+  render(<StatsSection studyId={8} />)
+  expect(screen.getByText('Alle Schritte abgeschlossen')).toBeInTheDocument()
+  expect(screen.queryByText('Schritt 53/54')).not.toBeInTheDocument()
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   HTMLElement.prototype.scrollIntoView = scrollIntoView

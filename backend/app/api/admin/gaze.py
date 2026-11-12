@@ -23,6 +23,7 @@ from app.models.screen_recording import ScreenRecording
 from app.models.video import Video
 from app.services.gaze_replay import compute_replay, compute_screen_replay
 from app.services.media_download import issue_download
+from app.services.screen_lifecycle import expire_browser_recordings
 from app.services.video_url import resolve_screen_url, resolve_video_url
 
 router = APIRouter()
@@ -49,6 +50,7 @@ async def list_screen_recordings(
     admin: Researcher = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
+    await expire_browser_recordings(db)
     query = (
         select(ScreenRecording, Video.title)
         .join(Video, Video.id == ScreenRecording.video_id)

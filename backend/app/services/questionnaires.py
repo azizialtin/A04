@@ -198,6 +198,31 @@ def _answered(value: Any) -> bool:
     return True  # numbers, booleans
 
 
+def valid_scalar_answer(question: Question, value: Any) -> bool:
+    kind = question.get("type")
+    if kind == "free_text":
+        return isinstance(value, str)
+    if kind == "multiple_choice":
+        options = [
+            option.get("value") if isinstance(option, dict) else option
+            for option in question.get("options", [])
+        ]
+        return _option_value(value) and value in options
+    if kind in {"number", "slider", "likert"}:
+        if not _finite_number(value):
+            return False
+        if kind == "likert":
+            lower, upper = question.get("scale_min", 1), question.get("scale_max", 5)
+            if value % 1 != 0:
+                return False
+        elif kind == "slider":
+            lower, upper = question.get("min", 0), question.get("max", 9)
+        else:
+            lower, upper = question.get("min"), question.get("max")
+        return (lower is None or value >= lower) and (upper is None or value <= upper)
+    return True
+
+
 def missing_required_answers(questions: list[Question], answers: dict[str, Any]) -> list[str]:
     visible = visible_question_ids(questions, answers)
     missing = []
@@ -223,7 +248,9 @@ def missing_required_answers(questions: list[Question], answers: dict[str, Any])
         elif q.get("type") == "ranking" and value is not None:
             if not valid_ranking(q, value):
                 missing.append(qid)
-        elif not _answered(value) and q.get("required", True) is not False:
+        elif (value is not None and not valid_scalar_answer(q, value)) or (
+            not _answered(value) and q.get("required", True) is not False
+        ):
             missing.append(qid)
     return missing
 
@@ -336,7 +363,7 @@ def invalid_partial_answers(questions: list[Question], answers: dict[str, Any]) 
             if not _valid_partial_lines(question, lines):
                 invalid.append(qid)
         elif (kind == "ranking" and not valid_ranking(question, value)) or (
-            kind == "free_text" and not isinstance(value, str)
+            not valid_scalar_answer(question, value)
         ):
             invalid.append(qid)
     return invalid

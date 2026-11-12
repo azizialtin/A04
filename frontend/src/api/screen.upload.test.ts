@@ -23,6 +23,30 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+test('browser heartbeat uses the same-origin recording endpoint and its restricted upload token', async () => {
+  requests.mockResolvedValueOnce(json({ status: 'ok' }))
+  await screenApi.heartbeat(7, 'recording-token')
+  expect(requests.mock.calls[0][0]).toBe(screenApi.uploadUrl(7).replace('/upload', '/heartbeat'))
+  expect(requests.mock.calls[0][1]).toMatchObject({
+    method: 'POST',
+    headers: { Authorization: 'Bearer recording-token' },
+  })
+})
+
+test('page-close abandonment keeps its restricted request alive after navigation', async () => {
+  requests.mockResolvedValueOnce(json({ status: 'ok' }))
+  await screenApi.abandon(7, 'recording-token')
+  expect(requests.mock.calls[0][0]).toBe(screenApi.failedUrl(7))
+  expect(requests.mock.calls[0][1]).toMatchObject({
+    method: 'PATCH',
+    keepalive: true,
+    headers: { Authorization: 'Bearer recording-token', 'Content-Type': 'application/json' },
+  })
+  expect(JSON.parse(requests.mock.calls[0][1]!.body as string)).toEqual({
+    error: 'Browser page closed before the capture was delivered.',
+  })
+})
+
 test('proxy uploads retain clock, soundtrack health and the native container filename', async () => {
   requests
     .mockResolvedValueOnce(json({ mode: 'proxy' }))

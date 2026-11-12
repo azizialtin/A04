@@ -51,8 +51,10 @@ async def participant_login(
         "Too many attempts. Wait a minute, then ask the study team for help.",
     )
     pid = body.participant_id.strip()
+    # Serialize the registered/active check as well as session creation. A study
+    # lock alone leaves simultaneous logins with an outdated participant status.
     participant = await db.scalar(
-        select(Participant).where(func.lower(Participant.id) == pid.lower())
+        select(Participant).where(func.lower(Participant.id) == pid.lower()).with_for_update()
     )
     if participant is None:
         # Only ids an admin pre-registered may log in — no self sign-up.
@@ -78,7 +80,9 @@ async def participant_login(
         participant.think_aloud_batch_size = study.think_aloud_batch_size if study else 1
         db.add(Session(participant_id=participant.id))
         participant.status = ParticipantStatus.active
-        await db.commit()
+    # The background login event uses another transaction with a participant FK.
+    # Release the row lock before it runs, including on repeat logins.
+    await db.commit()
 
     # A run is one sitting, so the token does not need to outlive the day it
     # was issued on — a laptop left open is a much smaller window than 24 h.

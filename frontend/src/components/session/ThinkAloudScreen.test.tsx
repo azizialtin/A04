@@ -39,6 +39,33 @@ beforeEach(() => {
   vi.clearAllMocks()
   replay.source = 'screen'
   replay.audio_status = 'unknown'
+  replay.recording_pending = false
+})
+
+test('pending signed URL refreshes remain hidden until the complete recording is selected', async () => {
+  const saved = { ...replay }
+  Object.assign(replay, {
+    source: 'clip',
+    epoch_ms: null,
+    recording_pending: true,
+    video_url: '/clip?token=one',
+  })
+  try {
+    const { container, rerender } = render(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
+    await screen.findByText('Die Bildschirmaufzeichnung wird gespeichert…')
+    expect(container.querySelector('video')).toBeNull()
+    Object.assign(replay, { video_url: '/clip?token=two' })
+    rerender(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
+    expect(container.querySelector('video')).toBeNull()
+    Object.assign(replay, saved, { recording_pending: false, audio_status: 'captured' })
+    rerender(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
+    await waitFor(() =>
+      expect(container.querySelector('video')?.getAttribute('src')).toContain(saved.video_url),
+    )
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  } finally {
+    Object.assign(replay, saved, { recording_pending: false })
+  }
 })
 
 test('says which case is playing, so a recording is never a guess', async () => {

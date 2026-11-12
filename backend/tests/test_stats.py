@@ -7,9 +7,11 @@ every participant's script.
 """
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from app.models.enums import ParticipantStatus, PhaseType, QuestionnairePlacement
 from app.models.gaze_calibration import GazeCalibration
@@ -25,7 +27,7 @@ from app.models.session import Session
 from app.models.text_entry import TextEntry
 from app.models.video import Video
 from app.services.session_script import build_steps, count_steps
-from app.services.stats import median, rate, summarise_case
+from app.services.stats import median, rate, recording_coverage, summarise_case
 
 T0 = 1_700_000_000_000  # a round epoch-ms to hang the event clock off
 
@@ -361,6 +363,116 @@ async def test_the_roster_says_how_far_each_participant_has_got(client, run, adm
     assert row["assigned_sequence"] is True
     assert row["notes"] == 1
     assert row["watch_seconds"] == 60.0
+
+
+@pytest.mark.parametrize("completion_signal", ["status", "timestamp", "both"])
+async def test_completed_progress_is_full_in_participant_and_study_stats(
+    client, db, run, admin_headers, completion_signal
+):
+    p = run["participant"]
+    session = await db.scalar(select(Session).where(Session.participant_id == p.id))
+    steps = await build_steps(db, p)
+    session.current_step_index = len(steps) - 1
+    if completion_signal in ("status", "both"):
+        p.status = ParticipantStatus.completed
+    if completion_signal in ("timestamp", "both"):
+        session.completed_at = datetime.now(UTC)
+    await db.flush()
+
+    participant = (
+        await client.get(f"/admin/participants/{p.id}/stats", headers=admin_headers)
+    ).json()
+    study = (await client.get(f"/admin/studies/{p.study_id}/stats", headers=admin_headers)).json()
+    assert participant["session"]["progress"] == 100
+    assert study["roster"][0]["progress"] == 100
+    assert study["participants"]["avg_progress"] == 100
+
+
+async def test_case_gaze_uses_capture_intervals_and_keeps_other_screens_in_totals(
+    client, db, run, admin_headers
+):
+    p = run["participant"]
+    first = await db.scalar(select(GazeRecording).where(GazeRecording.participant_id == p.id))
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    first.started_at = start
+    first.completed_at = start + timedelta(seconds=100)
+    # 9,000 / 12,000 plus a resumed attempt at a different frequency: 10,800 / 14,400.
+    db.add_all(
+        [
+            GazeRecording(
+                participant_id=p.id,
+                video_id=first.video_id,
+                step_kind="case_video",
+                sample_count=1800,
+                sampling_rate_hz=60,
+                started_at=start + timedelta(hours=1),
+                completed_at=start + timedelta(hours=1, seconds=40),
+            ),
+            GazeRecording(
+                participant_id=p.id,
+                video_id=first.video_id,
+                step_kind="diagnosis",
+                sample_count=90000,
+                sampling_rate_hz=120,
+            ),
+            GazeRecording(
+                participant_id=p.id,
+                video_id=None,
+                step_kind="questionnaire",
+                sample_count=500,
+                sampling_rate_hz=120,
+            ),
+        ]
+    )
+    await db.flush()
+    participant = (
+        await client.get(f"/admin/participants/{p.id}/stats", headers=admin_headers)
+    ).json()
+    study = (await client.get(f"/admin/studies/{p.study_id}/stats", headers=admin_headers)).json()
+    case = participant["cases"][0]["gaze"]
+    assert case["samples"] == 10800
+    assert case["recordings"] == 2
+    assert case["expected_samples"] == 14400
+    assert case["yield"] == 75
+    assert case["sampling_rate_hz"] is None
+    assert participant["totals"]["gaze_samples"] == 101300
+    assert study["cases"][0]["gaze_samples"] == 10800
+    assert study["roster"][0]["gaze_samples"] == 101300
+
+
+@pytest.mark.parametrize(
+    "seconds,hz,samples", [(None, 120, 10), (0, 120, 10), (-1, 120, 10), (10, 0, 10), (1, 120, 121)]
+)
+def test_gaze_coverage_is_unknown_for_unfinished_or_inconsistent_captures(seconds, hz, samples):
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    bad = SimpleNamespace(
+        started_at=start,
+        completed_at=None if seconds is None else start + timedelta(seconds=seconds),
+        sampling_rate_hz=hz,
+        sample_count=samples,
+    )
+    good = SimpleNamespace(
+        started_at=start,
+        completed_at=start + timedelta(seconds=100),
+        sampling_rate_hz=120,
+        sample_count=100,
+    )
+    result = recording_coverage([bad, good])
+    assert result["yield"] is None
+    assert result["expected_samples"] is None
+    assert result["samples"] == samples + 100
+
+
+def test_empty_and_zero_sample_gaze_coverage_are_different():
+    assert recording_coverage([])["yield"] is None
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    empty = SimpleNamespace(
+        started_at=start,
+        completed_at=start + timedelta(seconds=10),
+        sampling_rate_hz=120,
+        sample_count=0,
+    )
+    assert recording_coverage([empty])["yield"] == 0
 
 
 async def test_participant_stats_break_the_run_down_case_by_case(client, run, admin_headers):

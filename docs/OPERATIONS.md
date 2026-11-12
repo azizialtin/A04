@@ -149,6 +149,20 @@ willing to lose.
 
 ## Gaze data and analysis
 
+Participant progress reaches 100% when the participant or session is completed,
+including runs whose saved pointer is on the final thank-you screen. The saved
+zero-based pointer remains unchanged.
+
+Case-level gaze statistics count only `case_video` recordings; participant and
+study totals still include questionnaire samples. The displayed Erfassungsquote
+is an estimate of sample delivery, not eye validity or calibration accuracy.
+Its denominator sums each completed recording's server-clock duration multiplied
+by that recording's nominal sampling rate, so resumed attempts, gaps and mixed
+rates are handled separately. Upload delays can lower this estimate. Open or
+inconsistent recordings (including impossible sample counts) show no percentage;
+they are never silently clamped to 100%. Historical records without usable timing
+also show no percentage. Raw gaze data and CSV exports are unchanged.
+
 `gaze.csv` is one row per stored sample, including invalid samples. It preserves
 `ts`, `device_ts`, left/right coordinates, validity and pupil diameters. It also
 includes participant/recording ids, case columns where applicable, `step_kind`,
@@ -241,6 +255,8 @@ time measurements.
 - **The think-aloud shows the clip instead of the screen recording.** A usable
   screen recording was not available when replay loaded. Capture may have
   failed, its upload may still be pending, or its playback URL may be unavailable.
+  While an upload is pending, the page says so and checks again automatically;
+  the screen recording replaces the fallback as soon as it is available.
   Check the Bildschirm column in the admin's gaze list and server logs. Missing
   ffmpeg on the lab machine's PATH is one possible cause, reported by the bridge
   at startup. When bridge capture is unavailable, the page can record the display
@@ -256,8 +272,15 @@ time measurements.
 - **A row stuck at "läuft…" in that column** is a capture whose upload never
   arrived. Look in `tobii-service/unsent-recordings/` on the lab machine: a file
   the backend would not take is kept there rather than deleted.
+  Browser captures send a heartbeat every 30 seconds until delivery finishes.
+  Closing the page reports the interruption; if the tab crashes, the next
+  recording-list or replay request marks it failed after three minutes without
+  a heartbeat. Stored captures and bridge captures are not expired this way.
+  A valid late upload can still recover an interrupted capture.
 - **A participant cannot log in.** After too many attempts the login is refused
   for a minute — wait, then check the id in the admin.
+  Completed participants see a thank-you message explaining that the study has
+  already been completed; they cannot start a second run with the same ID.
 
 ## Between two participants
 

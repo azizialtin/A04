@@ -151,7 +151,7 @@ No existing recording gains audio from these changes. Deploying the website does
 not update a distributed `.exe`. Use the release steps in
 [STIMULUS_AUDIO.md](STIMULUS_AUDIO.md) before collecting research sessions.
 
-## Production hostname follow-up
+## Initial production hostname inspection (before release integration)
 
 The user confirmed `https://a04.rdm.lab.lrz.de/` (`rdm`, not the initially misread
 `drm`). A read-only HTTPS request returned 200 on 12 November 2026. The bridge
@@ -172,6 +172,28 @@ from this checkout's `screen_recording_pending` field. Its public
 `/api/health/ready` endpoint returned 200 with status `ok`. Public inspection
 does not verify authenticated stimulus media or hardware. No live configuration
 was changed and no release was deployed during this follow-up.
+
+## Integrated LRZ release verification
+
+The release merges the preserved production source at `a88d051`, including
+private signed media, browser recording heartbeats, validation, login and
+statistics fixes. It uses the existing `recording_pending` field throughout;
+the temporary alternate field described above is removed. The audio migration
+follows production revision `f6a8c0e2b4d6`.
+
+- Backend: **1,038 tests passed** under Python 3.11/PostgreSQL; Ruff, formatting,
+  mypy and actual Alembic upgrade/schema checks passed.
+- Frontend: **681 tests passed** across 52 files; typecheck, build, formatting
+  and lint passed (two pre-existing lint warnings).
+- Bridge: **83 tests passed** locally, including Python 3.10 in Docker.
+- The source and frozen bridge now default to **8766**, matching the production
+  frontend and CSP. The exact allowlisted origin is `https://a04.rdm.lab.lrz.de`.
+- Windows CI builds with the native Tobii SDK and pinned media binaries and
+  checks the frozen executable without a `--port` override. Its result and
+  artifact provenance must be verified before distribution.
+
+These checks do not certify physical trackers or Windows lab permissions.
+Deployment and artifact delivery are recorded separately after they occur.
 
 ## Reproducing and reviewing evidence
 

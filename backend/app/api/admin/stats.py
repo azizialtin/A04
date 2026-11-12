@@ -55,6 +55,7 @@ from app.services.stats import (
     mean,
     median,
     rate,
+    recording_coverage,
     summarise_case,
 )
 
@@ -98,6 +99,13 @@ def _total(column, as_type: Any = BigInteger) -> Any:
 def _tally(condition) -> Any:
     """How many rows match, as an aggregate that can sit beside other counts."""
     return cast(func.coalesce(func.sum(case((condition, 1), else_=0)), 0), BigInteger)
+
+
+def _progress(participant: Participant, session: Session | None, total: int) -> float | None:
+    if participant.status == ParticipantStatus.completed or (session and session.completed_at):
+        return 100.0
+    step = session.current_step_index if session else 0
+    return rate(max(0, min(step, total)), total)
 
 
 async def _grouped(db: AsyncSession, key, *aggregates, where=None) -> dict[Any, tuple]:
@@ -626,7 +634,7 @@ async def study_stats(
                 "video_set": set_names.get(p.video_set_id) if p.video_set_id else None,
                 "step": step,
                 "total_steps": total_steps,
-                "progress": rate(step, total_steps),
+                "progress": _progress(p, session, total_steps),
                 "started_at": _iso(session.created_at) if session else None,
                 "completed_at": _iso(session.completed_at) if session else None,
                 "session_minutes": _minutes(session),
@@ -687,7 +695,7 @@ async def study_stats(
         func.count(),
         _total(GazeRecording.sample_count),
         func.count(distinct(GazeRecording.participant_id)),
-        where=GazeRecording.participant_id.in_(ids),
+        where=GazeRecording.participant_id.in_(ids) & (GazeRecording.step_kind == "case_video"),
     )
     v_screens = await _grouped(
         db,
@@ -1132,16 +1140,15 @@ async def participant_stats(
             )
         ).scalars()
     }
-    gaze = await _grouped(
-        db,
-        GazeRecording.video_id,
-        func.count(),
-        _total(GazeRecording.sample_count),
-        func.min(GazeRecording.started_at),
-        func.max(GazeRecording.completed_at),
-        func.max(GazeRecording.sampling_rate_hz),
-        where=GazeRecording.participant_id == p.id,
+    gaze_recordings = (
+        (await db.execute(select(GazeRecording).where(GazeRecording.participant_id == p.id)))
+        .scalars()
+        .all()
     )
+    gaze_by_case: dict[int, list[GazeRecording]] = defaultdict(list)
+    for recording in gaze_recordings:
+        if recording.step_kind == "case_video" and recording.video_id is not None:
+            gaze_by_case[recording.video_id].append(recording)
     screens: dict[int, ScreenRecording] = {
         # Ascending, so the last write per case is the newest capture of it.
         recording.video_id: recording
@@ -1173,15 +1180,9 @@ async def participant_stats(
         span = spans.get(video.id, EMPTY_CASE)
         count = per_video.get
         note_count, note_chars, last_note, deepest_note = _got(notes, video.id, (0, 0, None, None))
-        recordings, samples, gaze_start, gaze_end, hz = _got(
-            gaze, video.id, (0, 0, None, None, None)
-        )
+        gaze = recording_coverage(gaze_by_case[video.id])
         screen = screens.get(video.id)
         entry = diagnoses.get(video.id)
-        # A rate of samples against the time the screen was being recorded says
-        # whether the tracker was actually seeing the participant's eyes.
-        expected = (span["on_screen_seconds"] or 0) * (hz or 0)
-
         cases.append(
             {
                 "slot_index": slot,
@@ -1226,13 +1227,9 @@ async def participant_stats(
                 "outro_answered": (video.id, "case_outro") in answered_cases,
                 "ratings_answered": (video.id, "diagnosis") in answered_cases,
                 "gaze": {
-                    "recordings": recordings,
-                    "samples": samples,
-                    "sampling_rate_hz": hz or None,
-                    "expected_samples": int(expected) or None,
-                    "yield": rate(samples, expected) if expected else None,
-                    "started_at": _iso(gaze_start),
-                    "completed_at": _iso(gaze_end),
+                    **gaze,
+                    "started_at": _iso(gaze["started_at"]),
+                    "completed_at": _iso(gaze["completed_at"]),
                 },
                 "screen": (
                     {
@@ -1285,7 +1282,7 @@ async def participant_stats(
             "minutes": _minutes(session),
             "step": step_index,
             "total_steps": len(steps),
-            "progress": rate(step_index, len(steps)),
+            "progress": _progress(p, session, len(steps)),
             "current_step": current["kind"] if current else None,
             "assigned_sequence": bool(sequence),
             "video_set": video_set.name if video_set else None,
@@ -1311,7 +1308,7 @@ async def participant_stats(
             "diagnoses": sum(1 for c in cases if c["diagnosis"]),
             "diagnosis_words": sum(c["diagnosis"]["words"] for c in cases if c["diagnosis"]),
             "responses": len(responses),
-            "gaze_samples": sum(c["gaze"]["samples"] for c in cases),
+            "gaze_samples": sum(r.sample_count for r in gaze_recordings),
             "screens_stored": sum(
                 1 for c in cases if c["screen"] and c["screen"]["status"] == "stored"
             ),

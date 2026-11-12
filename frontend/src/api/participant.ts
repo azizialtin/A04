@@ -25,10 +25,10 @@ export interface ReplayPoint {
 
 export interface ReplayData extends Partial<AudioCaptureMeta> {
   video_url: string
-  screen_recording_pending?: boolean
   // "screen" — the capture of the whole display, cursor and all. "clip" — the
   // stimulus on its own, for a case whose capture failed or predates it.
   source: 'screen' | 'clip'
+  recording_pending?: boolean
   sampling_rate_hz: number
   plotted_points: number
   invalid_samples: number

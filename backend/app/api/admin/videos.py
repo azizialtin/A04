@@ -30,7 +30,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_admin
 from app.models.researcher import Researcher
 from app.models.video import Video
-from app.schemas.admin import VideoResponse, VideoUpdate
+from app.schemas.admin import MetadataTitle, VideoResponse, VideoTimeLimit, VideoUpdate
 from app.services.media_download import issue_download
 from app.services.storage import (
     ALLOWED_VIDEO_EXTENSIONS,
@@ -103,12 +103,12 @@ class VideoUploadUrlResponse(BaseModel):
 
 class VideoFinalizeRequest(BaseModel):
     object_name: str
-    title: str
+    title: MetadataTitle
     phase_type: str = "training"
     task_description: str = ""
     info_text: str = ""
     student_task_text: str = ""
-    time_limit_seconds: int | None = None
+    time_limit_seconds: VideoTimeLimit | None = None
     # Follow the study's default text rather than carrying one of its own.
     use_default_task: bool = False
     use_default_info: bool = False
@@ -270,12 +270,12 @@ async def finalize_video(
 async def upload_video(
     study_id: int,
     background_tasks: BackgroundTasks,
-    title: str = Form(...),
+    title: str = Form(..., min_length=1, max_length=255),
     phase_type: str = Form("training"),
     task_description: str = Form(""),
     info_text: str = Form(""),
     student_task_text: str = Form(""),
-    time_limit_seconds: int | None = Form(None),
+    time_limit_seconds: int | None = Form(None, ge=0, le=2_147_483_647),
     use_default_task: bool = Form(False),
     use_default_info: bool = Form(False),
     file: UploadFile = File(...),
@@ -283,6 +283,9 @@ async def upload_video(
     db: AsyncSession = Depends(get_db),
 ) -> VideoResponse:
     await _study_or_404(db, study_id)
+    title = title.strip()
+    if not title:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "A video title is required.")
     phase = _phase(phase_type)
     settings = get_settings()
 

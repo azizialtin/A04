@@ -80,33 +80,62 @@ function DetailsSection({ study }: { study: Study }) {
   const [pre, setPre] = useState(study.sosci_pretest_url)
   const [post, setPost] = useState(study.sosci_posttest_url)
   const [idParam, setIdParam] = useState(study.sosci_id_param)
+  const nameError =
+    !name.trim() || name.trim().length > 255
+      ? 'Bitte einen Namen mit 1 bis 255 Zeichen eingeben.'
+      : ''
+  const invalid = !!nameError || pre.length > 1000 || post.length > 1000 || idParam.length > 64
 
   return (
     <div className="card form">
       <h2>Details</h2>
       <div className="form-row">
-        <label className="label">Name</label>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+        <label className="label" htmlFor="study-name">
+          Name
+        </label>
+        <input
+          id="study-name"
+          maxLength={255}
+          aria-invalid={!!nameError}
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
       </div>
       <div className="form-row">
         <label className="label">SoSci-Link (Vortest)</label>
-        <input className="input" value={pre} onChange={(e) => setPre(e.target.value)} />
+        <input
+          maxLength={1000}
+          className="input"
+          value={pre}
+          onChange={(e) => setPre(e.target.value)}
+        />
       </div>
       <div className="form-row">
         <label className="label">SoSci-Link (Nachtest)</label>
-        <input className="input" value={post} onChange={(e) => setPost(e.target.value)} />
+        <input
+          maxLength={1000}
+          className="input"
+          value={post}
+          onChange={(e) => setPost(e.target.value)}
+        />
       </div>
       <div className="form-row">
         <label className="label">ID-Parameter</label>
-        <input className="input" value={idParam} onChange={(e) => setIdParam(e.target.value)} />
+        <input
+          maxLength={64}
+          className="input"
+          value={idParam}
+          onChange={(e) => setIdParam(e.target.value)}
+        />
       </div>
       <button
         type="button"
         className="btn btn-primary"
-        disabled={update.isPending}
+        disabled={update.isPending || invalid}
         onClick={() =>
           update.mutate({
-            name,
+            name: name.trim(),
             sosci_pretest_url: pre,
             sosci_posttest_url: post,
             sosci_id_param: idParam,
@@ -115,6 +144,16 @@ function DetailsSection({ study }: { study: Study }) {
       >
         Speichern
       </button>
+      {nameError && (
+        <p className="error-text" role="alert">
+          {nameError}
+        </p>
+      )}
+      {update.isError && (
+        <p className="error-text" role="alert">
+          Speichern fehlgeschlagen. Bitte Eingaben prüfen und erneut versuchen.
+        </p>
+      )}
       {update.isSuccess && (
         <span className="muted" style={{ marginLeft: 12 }}>
           Gespeichert.

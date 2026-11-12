@@ -259,6 +259,30 @@ function answered(v: unknown): boolean {
   return true
 }
 
+function validScalarAnswer(question: Question, value: unknown): boolean {
+  if (question.type === 'free_text') return typeof value === 'string'
+  if (question.type === 'multiple_choice') {
+    return (
+      (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))) &&
+      (question.options ?? []).some((option) => normaliseOption(option).value === value)
+    )
+  }
+  if (['number', 'slider', 'likert'].includes(question.type)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return false
+    if (question.type === 'likert') {
+      return (
+        Number.isInteger(value) &&
+        value >= (question.scale_min ?? 1) &&
+        value <= (question.scale_max ?? 5)
+      )
+    }
+    const min = question.min ?? (question.type === 'slider' ? 0 : undefined)
+    const max = question.max ?? (question.type === 'slider' ? 9 : undefined)
+    return (min === undefined || value >= min) && (max === undefined || value <= max)
+  }
+  return true
+}
+
 export function missingRequired(questions: Question[], answers: Answers): string[] {
   const visible = visibleQuestionIds(questions, answers)
   return questions
@@ -279,6 +303,7 @@ export function missingRequired(questions: Question[], answers: Answers): string
       if (q.type === 'ranking') {
         return value == null ? q.required !== false : !validRanking(q, value)
       }
+      if (value != null && !validScalarAnswer(q, value)) return true
       if (!answered(value)) return q.required !== false
       return false
     })
@@ -380,8 +405,7 @@ export function invalidPartialAnswers(questions: Question[], answers: Answers): 
       }
       if (question.type === 'line_numbers') return !partialLines(question, value)
       if (question.type === 'ranking') return !validRanking(question, value)
-      if (question.type === 'free_text') return typeof value !== 'string'
-      return false
+      return !validScalarAnswer(question, value)
     })
     .map((question) => question.id)
 }

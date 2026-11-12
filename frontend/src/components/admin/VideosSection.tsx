@@ -65,6 +65,18 @@ export default function VideosSection({ studyId }: { studyId: number }) {
       setErr('Titel und Videodatei sind erforderlich.')
       return
     }
+    const seconds = limit.trim() ? Number(limit.trim()) : null
+    if (title.trim().length > 255) {
+      setErr('Bitte einen Titel mit 1 bis 255 Zeichen eingeben.')
+      return
+    }
+    if (
+      seconds !== null &&
+      (!Number.isInteger(seconds) || seconds < 0 || seconds > 2_147_483_647)
+    ) {
+      setErr('Bitte ganze Sekunden zwischen 0 und 2147483647 eingeben oder das Feld leeren.')
+      return
+    }
     setErr('')
     upload.mutate(
       {
@@ -73,7 +85,7 @@ export default function VideosSection({ studyId }: { studyId: number }) {
         task_description: useDefaultTask ? '' : task,
         info_text: useDefaultInfo ? '' : info,
         student_task_text: studentTask,
-        time_limit_seconds: limit.trim() ? Number(limit.trim()) : null,
+        time_limit_seconds: seconds,
         use_default_task: useDefaultTask,
         use_default_info: useDefaultInfo,
         file,
@@ -110,6 +122,7 @@ export default function VideosSection({ studyId }: { studyId: number }) {
           </label>
           <input
             id="video-title"
+            maxLength={255}
             className="input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -180,6 +193,9 @@ export default function VideosSection({ studyId }: { studyId: number }) {
           </label>
           <input
             id="video-limit"
+            min={0}
+            max={2_147_483_647}
+            step={1}
             className="input"
             type="number"
             value={limit}

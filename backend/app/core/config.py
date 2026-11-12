@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +43,11 @@ class Settings(BaseSettings):
     # Allowed browser origins for CORS, comma separated.
     FRONTEND_URL: str = "http://localhost:5175,http://localhost:5173"
     ENVIRONMENT: str = "development"
+
+    # Cloud deployments retain the existing bucket requirements. LRZ opts in
+    # explicitly and must mount durable storage at this absolute path.
+    STORAGE_BACKEND: Literal["cloud", "persistent_local"] = "cloud"
+    LOCAL_STORAGE_ROOT: str = ""
 
     # Video storage. Bucket empty in dev -> files are served off local disk.
     GCP_BUCKET_NAME: str = ""
@@ -122,6 +130,22 @@ def production_problems(s: Settings) -> list[str]:
             f"JWT_SECRET is {len(s.JWT_SECRET.encode())} bytes; HS256 wants at least "
             f"{MIN_JWT_SECRET_BYTES}. Generate one with `openssl rand -hex 32`."
         )
+    if s.STORAGE_BACKEND == "persistent_local":
+        root = Path(s.LOCAL_STORAGE_ROOT)
+        if not s.LOCAL_STORAGE_ROOT or not root.is_absolute():
+            problems.append("LOCAL_STORAGE_ROOT must be an absolute persistent mount path.")
+        elif not root.is_dir() or not root.is_mount():
+            problems.append("LOCAL_STORAGE_ROOT must be a mounted persistent directory.")
+        elif not os.access(root, os.W_OK | os.X_OK):
+            problems.append("LOCAL_STORAGE_ROOT must be writable by the application user.")
+        if s.GCP_BUCKET_NAME:
+            problems.append("Persistent local storage requires an empty GCP_BUCKET_NAME.")
+        if s.GAZE_STORAGE_MODE != "local" or s.SCREEN_STORAGE_MODE != "local":
+            problems.append("Persistent local storage requires local gaze and screen storage.")
+        if s.DEV_PLACEHOLDER_VIDEO_URL:
+            problems.append("DEV_PLACEHOLDER_VIDEO_URL must be empty in production.")
+        return problems
+
     if not s.GCP_BUCKET_NAME:
         problems.append(
             "GCP_BUCKET_NAME is empty — uploaded videos would go to local disk instead of the bucket."

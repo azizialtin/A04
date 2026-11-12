@@ -24,7 +24,7 @@ const clip: ReplayData = {
   points: [],
   epoch_ms: null,
   duration_ms: null,
-  screen_recording_pending: false,
+  recording_pending: false,
 }
 const stored: ReplayData = {
   ...clip,
@@ -33,7 +33,7 @@ const stored: ReplayData = {
   recorder: 'bridge',
   epoch_ms: 1700000000123,
   audio_status: 'captured',
-  screen_recording_pending: false,
+  recording_pending: false,
 }
 const getReplay = vi.mocked(participantApi.getVideoReplay)
 let client: QueryClient
@@ -72,9 +72,7 @@ async function advance(ms: number) {
 }
 
 test('waits for a pending bridge upload instead of sticking to the original-video fallback', async () => {
-  getReplay
-    .mockResolvedValueOnce({ ...clip, screen_recording_pending: true })
-    .mockResolvedValue(stored)
+  getReplay.mockResolvedValueOnce({ ...clip, recording_pending: true }).mockResolvedValue(stored)
   const { container } = await mount()
   expect(container.querySelector('video')).toBeNull()
   expect(screen.queryByRole('heading')).toBeNull()
@@ -87,7 +85,7 @@ test('waits for a pending bridge upload instead of sticking to the original-vide
 
 test('a newer pending capture delays replay of an older stored one', async () => {
   getReplay
-    .mockResolvedValueOnce({ ...stored, video_url: '/older.mp4', screen_recording_pending: true })
+    .mockResolvedValueOnce({ ...stored, video_url: '/older.mp4', recording_pending: true })
     .mockResolvedValue(stored)
   const { container } = await mount()
   expect(container.querySelector('video')).toBeNull()
@@ -104,9 +102,7 @@ test('historical clip fallback with no pending upload does not incur a delay or 
 })
 
 test('a failed pending upload returns to the available fallback', async () => {
-  getReplay
-    .mockResolvedValueOnce({ ...clip, screen_recording_pending: true })
-    .mockResolvedValue(clip)
+  getReplay.mockResolvedValueOnce({ ...clip, recording_pending: true }).mockResolvedValue(clip)
   const { container } = await mount()
   await advance(1100)
   expect(container.querySelector('video')?.getAttribute('src')).toContain('/original.mp4')
@@ -119,7 +115,7 @@ test('browser delivery and bridge polling share the same total sixty-second wait
       finishBrowser = resolve
     }),
   )
-  getReplay.mockResolvedValue({ ...clip, screen_recording_pending: true })
+  getReplay.mockResolvedValue({ ...clip, recording_pending: true })
   const { container } = await mount()
   await advance(50_000)
   expect(getReplay).not.toHaveBeenCalled()
@@ -135,7 +131,7 @@ test('browser delivery and bridge polling share the same total sixty-second wait
 
 test('a poll resolving after the wait cap cannot replace the already exposed fallback', async () => {
   let finishPoll!: (value: ReplayData) => void
-  getReplay.mockResolvedValueOnce({ ...clip, screen_recording_pending: true }).mockReturnValueOnce(
+  getReplay.mockResolvedValueOnce({ ...clip, recording_pending: true }).mockReturnValueOnce(
     new Promise<ReplayData>((resolve) => {
       finishPoll = resolve
     }),
@@ -170,7 +166,7 @@ test('window focus cannot refetch and replace a selected replay', async () => {
 
 test('a failed pending poll still exposes available fallback when the wait budget ends', async () => {
   getReplay
-    .mockResolvedValueOnce({ ...clip, screen_recording_pending: true })
+    .mockResolvedValueOnce({ ...clip, recording_pending: true })
     .mockRejectedValue(new Error('Temporary connection failure'))
   const { container } = await mount()
   await advance(60_100)

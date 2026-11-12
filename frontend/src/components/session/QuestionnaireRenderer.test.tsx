@@ -555,3 +555,35 @@ test('continued line references restore and submit the displayed numbers with au
   expect(snippets[1].code_start_line).toBeUndefined()
   expect(snippets[1]).toMatchObject({ min: 3, max: 4 })
 })
+
+test('numeric bounds block Continue for required and optional questions', () => {
+  const onSubmit = vi.fn()
+  const question: Question = { id: 'number', type: 'number', text: 'Range', min: 1, max: 5 }
+  const { rerender } = render(
+    <QuestionnaireRenderer title="Range" questions={[question]} onSubmit={onSubmit} />,
+  )
+  const field = screen.getByRole('spinbutton')
+  const submit = screen.getByRole('button', { name: 'Weiter' })
+  for (const invalid of ['0', '999']) {
+    fireEvent.change(field, { target: { value: invalid } })
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    expect(onSubmit).not.toHaveBeenCalled()
+  }
+  rerender(
+    <QuestionnaireRenderer
+      title="Range"
+      questions={[{ ...question, required: false }]}
+      onSubmit={onSubmit}
+    />,
+  )
+  expect(submit).toBeDisabled()
+  for (const valid of ['1', '2.5', '5']) {
+    fireEvent.change(field, { target: { value: valid } })
+    expect(submit).toBeEnabled()
+    fireEvent.click(submit)
+    expect(onSubmit).toHaveBeenLastCalledWith({ number: Number(valid) }, expect.any(Number))
+  }
+  fireEvent.change(field, { target: { value: '' } })
+  expect(submit).toBeEnabled()
+})

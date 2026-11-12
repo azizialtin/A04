@@ -1,0 +1,89 @@
+x-logging: &logging
+  driver: json-file
+  options: {max-size: '10m', max-file: '3'}
+x-api-environment: &api-environment
+  DATABASE_URL: ${DATABASE_URL:?Configure the private A04 database URL}
+  JWT_SECRET: ${JWT_SECRET:?Configure an independent A04 JWT secret}
+  ENVIRONMENT: production
+  FRONTEND_URL: ${A04_ORIGIN:?Configure the A04 HTTPS origin}
+  STORAGE_BACKEND: persistent_local
+  LOCAL_STORAGE_ROOT: /app/uploads
+  GCP_BUCKET_NAME: ''
+  GCP_PROJECT_ID: ''
+  GAZE_STORAGE_MODE: local
+  SCREEN_STORAGE_MODE: local
+  SCREEN_RECORDING_ENABLED: 'true'
+  CALIBRATION_ENABLED: 'false'
+  DB_POOL_SIZE: '4'
+  DB_MAX_OVERFLOW: '2'
+  TRUSTED_PROXY_HOPS: '2'
+  PYTHONDONTWRITEBYTECODE: '1'
+  TMPDIR: /app/tmp
+x-api-volumes: &api-volumes
+  - ${DATA_ROOT:?Configure A04 storage}/uploads:/app/uploads
+  - ${DATA_ROOT}/tmp:/app/tmp
+services:
+  api:
+    image: a04/api:${RELEASE_ID:?Configure an immutable release ID}
+    build: {context: ../../backend}
+    command: [uvicorn, 'main:app', --host, 0.0.0.0, --port, '8000', --root-path, /api, --proxy-headers, --forwarded-allow-ips, '*', --no-access-log]
+    environment: *api-environment
+    user: '10002:10002'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes: *api-volumes
+    networks: [app, database]
+    restart: unless-stopped
+    logging: *logging
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+  web:
+    image: a04/web:${RELEASE_ID}
+    build:
+      context: ../../frontend
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_TOBII_WS_URL: ws://127.0.0.1:8766
+    volumes:
+      - ./web.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./api-proxy.conf:/etc/nginx/a04-api-proxy.conf:ro
+    entrypoint: [nginx, -g, 'daemon off;']
+    # Private staging and SSH forwarding only. Public TLS terminates in the
+    # existing host proxy after A04 DNS and its certificate are installed.
+    ports: ['127.0.0.1:${PRIVATE_PORT:-18044}:80']
+    networks:
+      app:
+      proxy:
+        aliases: [a04-web]
+    depends_on:
+      api: {condition: service_healthy}
+    restart: unless-stopped
+    logging: *logging
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1/healthz']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  migrate:
+    image: a04/api:${RELEASE_ID}
+    profiles: [tools]
+    command: [alembic, upgrade, head]
+    environment: *api-environment
+    user: '10002:10002'
+    read_only: true
+    volumes: *api-volumes
+    networks: [database]
+    logging: *logging
+networks:
+  app:
+  database:
+    external: true
+    name: sharp-production_database
+  proxy:
+    external: true
+    name: sharp-production_emma

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import VideoPlayer from './VideoPlayer'
@@ -152,8 +152,10 @@ test('unsupported source capture falls back to native video without losing the w
     onFailure?.()
     return () => {}
   })
-  const video = await mount()
-  expect(video).not.toHaveAttribute('crossorigin')
+  await mount()
+  // The capture source can fail in an effect after the first element appeared.
+  // Assert against the active replacement rather than retaining that old node.
+  await waitFor(() => expect(screen.getByLabelText('Fallvideo')).not.toHaveAttribute('crossorigin'))
   expect(screen.getByRole('status')).toHaveTextContent('Videoton')
   fireEvent.click(screen.getByRole('button', { name: 'Abspielen' }))
   expect(play).toHaveBeenCalled()

@@ -1,0 +1,23 @@
+# Append to the existing TLS proxy template only after DNS/certificate checks.
+# The proxy already has access to the external network with alias a04-web.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${A04_HOST};
+    ssl_certificate /etc/nginx/tls/a04-fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/a04-key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security 'max-age=31536000' always;
+    set $a04_web a04-web:80;
+    client_max_body_size 1030m;
+    location / {
+        proxy_pass http://$a04_web;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+}

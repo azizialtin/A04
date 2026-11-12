@@ -9,7 +9,10 @@
     "id_placeholder": "e.g. TN-042",
     "hint": "Please enter the ID you received from the study team.",
     "submit": "Sign in",
-    "error_unknown": "Unknown participant ID. Please contact the study team."
+    "error_unknown": "Unknown participant ID. Please contact the study team.",
+    "error_completed": "You have already completed this study. Thank you for participating!",
+    "error_rate_limit": "Too many login attempts. Please wait a minute and try again.",
+    "error_connection": "Unable to sign in right now. Please check your connection and try again."
   },
   "welcome": {
     "title": "Welcome",
@@ -112,7 +115,8 @@
     "saving": "Saving the screen recording…",
     "browser_capture": "recorded by the browser",
     "numbered": "{{title}} {{current}} of {{total}}",
-    "batch_hint": "You will now go through the recordings of the last {{total}} cases, one after another."
+    "batch_hint": "You will now go through the recordings of the last {{total}} cases, one after another.",
+    "upload_pending": "The screen recording is still uploading. The replay will update automatically."
   },
   "questionnaire": {
     "submit": "Continue",

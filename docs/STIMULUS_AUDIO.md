@@ -124,10 +124,10 @@ collection.
    and zero gaze recording headers, but this is not a confirmed hardware diagnosis.
    `(tobii)` in the title alone does not prove
    that a tracker was discovered. Confirm gaze samples and saved counts.
-   The live site checked on 12 November 2026 connects to `ws://127.0.0.1:8766`,
-   while the bridge defaults to 8765. Start it with `--port 8766` for that
-   deployment, or rebuild the frontend and its CSP consistently for 8765.
-   The compiled socket URL, CSP and bridge listening port must agree.
+   The rebuilt package defaults to port **8766**, matching the LRZ frontend
+   and its CSP. Extract the complete ZIP and double-click `A04Bridge.exe`;
+   no command-line port override is required. The frozen-package smoke test
+   verifies that default port and the exact LRZ origin.
 5. In current Windows Chrome and Edge, test both the bridge and browser fallback.
    Include a delayed start, 0–15 s playback, 20 s pause, rewind to 5 s, replayed
    passage, forward seek, mute/volume changes, stimulus end, and further notes.

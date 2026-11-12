@@ -18,6 +18,8 @@ vi.mock('../api/screen', () => ({
     start: vi.fn(),
     markFailed: vi.fn(),
     deliver: vi.fn(),
+    heartbeat: vi.fn(),
+    abandon: vi.fn(),
   },
 }))
 
@@ -130,12 +132,92 @@ beforeEach(() => {
   start.mockReset().mockResolvedValue({ recording_id: 7, upload_token: 'tok' })
   markFailed.mockReset().mockResolvedValue({} as never)
   deliver.mockReset().mockResolvedValue(undefined)
+  vi.mocked(screenApi.heartbeat)
+    .mockReset()
+    .mockResolvedValue({} as Response)
+  vi.mocked(screenApi.abandon)
+    .mockReset()
+    .mockResolvedValue({} as Response)
 })
 
 afterEach(() => {
+  _reset()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  vi.useRealTimers()
+})
+
+test('keeps a browser capture alive through a slow upload and stops heartbeats afterwards', async () => {
+  vi.useFakeTimers()
+  let uploaded!: () => void
+  deliver.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        uploaded = resolve
+      }),
+  )
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(screenApi.heartbeat).toHaveBeenCalledWith(7, 'tok')
+  const done = recording.stop()
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(screenApi.heartbeat).toHaveBeenCalledTimes(2)
+  uploaded()
+  await done
+  expect(deliver.mock.calls[0][3]).toMatchObject({
+    audio_status: 'captured',
+    audio_error: null,
+  })
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(screenApi.heartbeat).toHaveBeenCalledTimes(2)
+  window.dispatchEvent(new Event('pagehide'))
+  expect(screenApi.abandon).not.toHaveBeenCalled()
+})
+
+test('reports an interrupted capture when the page unloads, even if opening was slow', async () => {
+  vi.useFakeTimers()
+  let opened!: (value: { recording_id: number; upload_token: string }) => void
+  start.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        opened = resolve
+      }),
+  )
+  startBrowserRecording(42, new FakeStream() as unknown as MediaStream)
+  window.dispatchEvent(new Event('pagehide'))
+  opened({ recording_id: 7, upload_token: 'tok' })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(screenApi.abandon).toHaveBeenCalledWith(7, 'tok')
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(screenApi.heartbeat).not.toHaveBeenCalled()
+})
+
+test('an encoder startup failure cannot leave a live browser lease or pagehide listener', async () => {
+  vi.useFakeTimers()
+  vi.spyOn(FakeRecorder.prototype, 'start').mockImplementation(() => {
+    throw new Error('encoder unavailable')
+  })
+  expect(startBrowserRecording(42, new FakeStream() as unknown as MediaStream)).toBeNull()
+  await vi.advanceTimersByTimeAsync(60_000)
+  window.dispatchEvent(new Event('pagehide'))
+  expect(markFailed).toHaveBeenCalledWith(7, 'MediaRecorder would not start')
+  expect(screenApi.heartbeat).not.toHaveBeenCalled()
+  expect(screenApi.abandon).not.toHaveBeenCalled()
+})
+
+test('a failed upload releases its browser lease and pagehide listener', async () => {
+  vi.useFakeTimers()
+  deliver.mockRejectedValue(new Error('upload disconnected'))
+  const recording = startBrowserRecording(42, new FakeStream() as unknown as MediaStream)!
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(screenApi.heartbeat).toHaveBeenCalledTimes(1)
+  await recording.stop()
+  await vi.advanceTimersByTimeAsync(60_000)
+  window.dispatchEvent(new Event('pagehide'))
+  expect(screenApi.heartbeat).toHaveBeenCalledTimes(1)
+  expect(screenApi.abandon).not.toHaveBeenCalled()
+  expect(markFailed).toHaveBeenCalledWith(7, expect.stringContaining('upload disconnected'))
 })
 
 test('the bridge is asked whether it will record', async () => {

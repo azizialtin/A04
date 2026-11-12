@@ -77,7 +77,7 @@ export default function ThinkAloudScreen({ videoId, position, heading, body, onC
   }, [videoId])
   const replay = useVideoReplay(videoId, uploaded && !selected, waitForPending && !selected)
   const notes = useVideoNotes(videoId)
-  const pending = waitForPending && replay.data?.screen_recording_pending
+  const pending = waitForPending && replay.data?.recording_pending
 
   useEffect(() => {
     if (selected || !uploaded || pending || notes.isLoading || !replay.data) return

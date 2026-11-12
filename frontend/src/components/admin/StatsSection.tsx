@@ -478,7 +478,14 @@ function RosterLine({
         )}
       </td>
       <td style={{ minWidth: 130 }}>
-        <Meter value={row.progress} label={`Schritt ${row.step}/${row.total_steps}`} />
+        <Meter
+          value={row.progress}
+          label={
+            row.status === 'completed' || row.completed_at
+              ? 'Alle Schritte abgeschlossen'
+              : `Schritt ${row.step}/${row.total_steps}`
+          }
+        />
       </td>
       <td className="num">{minutes(row.session_minutes)}</td>
       <td className="num">{duration(row.watch_seconds)}</td>

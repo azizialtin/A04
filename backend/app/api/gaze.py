@@ -25,6 +25,7 @@ from app.models.questionnaire import Questionnaire
 from app.models.screen_recording import ScreenRecording
 from app.models.video import Video
 from app.services.gaze_replay import compute_replay, compute_screen_replay
+from app.services.screen_lifecycle import expire_browser_recordings
 from app.services.session_script import video_in_run
 from app.services.storage import gaze_dir
 from app.services.video_url import resolve_screen_url, resolve_video_url
@@ -171,6 +172,9 @@ class ReplayResponse(BaseModel):
     # the think-aloud is for. "clip" — the stimulus on its own, the fallback for
     # a case whose capture failed.
     source: Literal["screen", "clip"] = "clip"
+    # A bridge upload can still be encoding when the participant arrives here.
+    # Let the page wait for the latest attempt before choosing the clip.
+    recording_pending: bool = False
     sampling_rate_hz: int
     # plotted_points is what was captured; `points` is the thinned set the
     # player draws.
@@ -188,9 +192,6 @@ class ReplayResponse(BaseModel):
     recorder: str | None = None
     audio_status: str = "unknown"
     audio_error: str | None = None
-    # A bridge upload can still be encoding when the participant arrives here.
-    # Let the page wait for it rather than permanently choosing the clip.
-    screen_recording_pending: bool = False
 
 
 async def _require_assigned(db: AsyncSession, participant: Participant, video_id: int) -> None:
@@ -501,6 +502,7 @@ async def get_replay(
     db: AsyncSession = Depends(get_db),
 ) -> ReplayResponse:
     await _require_assigned(db, participant, video_id)
+    await expire_browser_recordings(db)
     video = await db.get(Video, video_id)
     if video is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Video not found.")
@@ -524,22 +526,11 @@ async def get_replay(
         .where(
             ScreenRecording.participant_id == participant.id,
             ScreenRecording.video_id == video_id,
-            ScreenRecording.status == "stored",
-            ScreenRecording.epoch_ms.is_not(None),
-        )
-        .order_by(ScreenRecording.started_at.desc())
-    )
-    latest_screen = await db.scalar(
-        select(ScreenRecording)
-        .where(
-            ScreenRecording.participant_id == participant.id,
-            ScreenRecording.video_id == video_id,
         )
         .order_by(ScreenRecording.started_at.desc(), ScreenRecording.id.desc())
-        .limit(1)
     )
-    pending = latest_screen is not None and latest_screen.status == "recording"
-    if screen is not None:
+    pending = screen is not None and screen.status == "recording"
+    if screen is not None and screen.status == "stored" and screen.epoch_ms is not None:
         try:
             screen_url = resolve_screen_url(screen, settings)
         except Exception:
@@ -562,7 +553,7 @@ async def get_replay(
                 recorder=screen.recorder,
                 audio_status=screen.audio_status,
                 audio_error=screen.audio_error,
-                screen_recording_pending=pending,
+                recording_pending=pending,
             )
 
     try:
@@ -573,6 +564,7 @@ async def get_replay(
     if recording is None:
         return ReplayResponse(
             video_url=video_url or "",
+            recording_pending=pending,
             sampling_rate_hz=0,
             plotted_points=0,
             invalid_samples=0,
@@ -580,12 +572,12 @@ async def get_replay(
             offscreen_samples=0,
             has_geometry=False,
             points=[],
-            screen_recording_pending=pending,
         )
 
     data = await compute_replay(db, recording, settings)
     return ReplayResponse(
         video_url=video_url or "",
+        recording_pending=pending,
         sampling_rate_hz=recording.sampling_rate_hz,
         plotted_points=data["mapped_samples"],
         invalid_samples=data["invalid_samples"],
@@ -593,5 +585,4 @@ async def get_replay(
         offscreen_samples=data["offscreen_samples"],
         has_geometry=data["has_geometry"],
         points=data["points"],
-        screen_recording_pending=pending,
     )

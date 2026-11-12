@@ -17,9 +17,15 @@ import re
 import shutil
 from pathlib import Path
 
+from app.core.config import get_settings
+
 logger = logging.getLogger(__name__)
 
-UPLOADS = Path(__file__).resolve().parents[2] / "uploads"
+UPLOADS = (
+    Path(get_settings().LOCAL_STORAGE_ROOT)
+    if get_settings().LOCAL_STORAGE_ROOT
+    else Path(__file__).resolve().parents[2] / "uploads"
+)
 
 # Participant ids become directory names, so they are held to a charset that
 # cannot escape the uploads tree. The charset alone is not enough — "." and

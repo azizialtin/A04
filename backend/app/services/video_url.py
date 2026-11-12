@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
+from app.core.security import create_access_token
 from app.models.video import Video
+
+
+def local_playback_url(kind: str, media_id: int) -> str:
+    """One-hour bearer link scoped to a single media row; never a disk path."""
+    token = create_access_token(
+        {"role": "media_playback", "kind": kind, "media_id": media_id},
+        expires=timedelta(hours=1),
+    )
+    return f"/media/{kind}/{media_id}?token={token}"
 
 
 def sign_blob_url(blob, expiration: int = 3600, *, response_disposition: str | None = None) -> str:
@@ -59,6 +70,8 @@ def resolve_video_url(video: Video, settings) -> str | None:
         blob = storage.Client().bucket(settings.GCP_BUCKET_NAME).blob(video.gcp_filename)
         return sign_blob_url(blob)
 
+    if getattr(settings, "is_production", False):
+        return local_playback_url("video", video.id)
     return f"/uploads/videos/{video.gcp_filename}"
 
 
@@ -76,4 +89,6 @@ def resolve_screen_url(recording, settings) -> str | None:
         blob = storage.Client().bucket(settings.GCP_BUCKET_NAME).blob(recording.storage_path)
         return sign_blob_url(blob)
 
+    if getattr(settings, "is_production", False):
+        return local_playback_url("screen", recording.id)
     return f"/uploads/screens/{recording.participant_id}/{Path(recording.storage_path).name}"

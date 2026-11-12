@@ -122,3 +122,37 @@ def rate(part: float, whole: float) -> float | None:
     """`part` as a percentage of `whole`, or None when there is no whole to be
     a fraction of — which is not the same fact as 0%."""
     return round(part / whole * 100, 1) if whole else None
+
+
+def recording_coverage(recordings: Sequence[Any]) -> dict[str, Any]:
+    """Estimate sample delivery from each capture's own server-clock interval."""
+    expected = 0.0
+    usable = bool(recordings)
+    rates = {r.sampling_rate_hz for r in recordings}
+    for recording in recordings:
+        if (
+            recording.completed_at is None
+            or recording.started_at is None
+            or not recording.sampling_rate_hz
+            or recording.sampling_rate_hz < 0
+        ):
+            usable = False
+            continue
+        seconds = (recording.completed_at - recording.started_at).total_seconds()
+        capacity = seconds * recording.sampling_rate_hz
+        if capacity <= 0 or not 0 <= recording.sample_count <= capacity:
+            usable = False
+        expected += max(0.0, capacity)
+
+    samples = sum(r.sample_count for r in recordings)
+    return {
+        "recordings": len(recordings),
+        "samples": samples,
+        "sampling_rate_hz": next(iter(rates)) if len(rates) == 1 and min(rates) > 0 else None,
+        "expected_samples": round(expected) if usable else None,
+        "yield": rate(samples, expected) if usable else None,
+        "started_at": min((r.started_at for r in recordings), default=None),
+        "completed_at": max(
+            (r.completed_at for r in recordings if r.completed_at is not None), default=None
+        ),
+    }
