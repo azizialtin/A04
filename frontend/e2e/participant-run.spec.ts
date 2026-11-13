@@ -91,10 +91,18 @@ test('a participant works through their cases and reaches the end', async ({ pag
     await inspectScreen(`case-${caseNumber}-01-phase-intro`)
     await page.getByRole('button', { name: 'Weiter' }).click()
 
-    // Nothing is asked before a case any more — the intro is text only.
+    // No tracker is available in this walkthrough: continuing must acknowledge it.
     await expect(page.getByRole('heading', { name: 'Neuer Fall' })).toBeVisible()
+    const gazeHealth = page.locator('.panel > .gaze-health')
+    await expect(gazeHealth).toContainText('0 empfangen · 0 mit gültiger Augenposition')
+    await expect(gazeHealth).toContainText(
+      'Ohne bestätigte Blickdaten fehlen später möglicherweise die Blickpunkte.',
+    )
+    await expect(
+      gazeHealth.getByRole('button', { name: 'Eye-Tracker erneut prüfen', exact: true }),
+    ).toBeVisible()
     await inspectScreen(`case-${caseNumber}-02-case-intro`)
-    await page.getByRole('button', { name: 'Weiter' }).click()
+    await page.getByRole('button', { name: 'Ohne Blickdaten fortfahren', exact: true }).click()
 
     // The case screen: task on the rail, the two panels, and the notes box.
     await expect(page.getByText(`Diagnostizieren Sie Fall ${caseNumber}`)).toBeVisible()
