@@ -1097,6 +1097,10 @@ h3 {
   max-width: 70ch;
 }
 
+.think-aloud > p[role='status'] {
+  margin: 0;
+}
+
 .replay {
   flex: 1;
   display: flex;
