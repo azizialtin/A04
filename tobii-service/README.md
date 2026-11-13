@@ -234,6 +234,35 @@ python tobii_bridge.py --allow-origin https://a04.example.org
 One tracker is shared across connections, so a second tab does not fight the
 first for the subscription or for calibration mode.
 
+## Checking missing gaze
+
+The bridge reports tracker discovery separately from live gaze. It retries
+discovery and failed subscriptions while a page requests gaze, including a
+tracker connected after launch. Authorized gaze clients share one SDK
+subscription; closing one client does not stop another client's gaze. Screen
+and stimulus audio capture remain available while the SDK is unavailable.
+
+The console prints the SDK version, selected model, subscription changes and
+first-sample delay. It reports no callbacks separately from callbacks with no
+valid eyes. These messages contain counts, not gaze positions. A `gaze_status`
+WebSocket message carries the same state, total/valid sample counts and an
+actionable error. `source_mode: "mock"` explicitly identifies synthetic gaze.
+
+Close the normal bridge window and run `Check-eye-tracker.cmd` from the package,
+or `python tobii_bridge.py --diagnose`. Look at the calibrated display during
+the eight-second check. The package command saves `tracker-diagnostic.txt`
+with SDK version, model, frequency and sample counts. A zero valid-sample result
+is a failed check, even if the SDK successfully found or subscribed to a device.
+
+Discovery can only find models supported by the packaged SDK. SDK 2.1 supports
+Spectrum, Fusion, Nano and Spark. Older models such as X2, X3, TX300, T60/T120
+and X60/X120 need a different compatible SDK build; reconnecting cannot change that. Spectrum
+also needs the Tobii Pro network runtime installed through Eye Tracker Manager.
+Check the model against the vendor's SDK compatibility documentation before
+changing SDK versions: https://developer.tobiipro.com/tobiiprosdk/eyetrackercompatibility.html.
+Browser local-network permission is a separate check:
+an incomplete HTTP/WebSocket handshake does not establish a tracker fault.
+
 ## Clocks
 
 Gaze samples are stamped with this machine's wall clock, and so are the

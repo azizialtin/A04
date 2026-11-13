@@ -74,8 +74,18 @@ The window should print:
 "(mock)" means the bridge was explicitly launched with --mock, which produces
 synthetic gaze. "(tobii)" does not prove that a tracker was found. Check live
 gaze in the study and a nonzero gaze sample count after a short test case.
-If no tracker is found, check the cable and Eye Tracker Manager, then restart
-the bridge. A tracker attached after launch is not discovered automatically.
+If no tracker is found, check the cable and Eye Tracker Manager. While gaze is
+requested, the bridge retries discovery and reports subscription/sample errors.
+Run Check-eye-tracker.cmd with the normal bridge window closed to test the
+tracker independently of browser permissions. Look at the calibrated display.
+It writes tracker-diagnostic.txt with SDK version, model and sample counts,
+never gaze positions. Send that report when requesting technical support.
+
+This package uses Tobii Pro SDK 2.1: Spectrum, Fusion, Nano and Spark are
+supported. Older models such as X2, X3, TX300, T60/T120 and X60/X120 need a
+different compatible SDK build. Spectrum also needs the network runtime from
+Eye Tracker Manager. See the vendor compatibility guide:
+https://developer.tobiipro.com/tobiiprosdk/eyetrackercompatibility.html
 
 If the window refuses a connection from the study origin, check that this is
 the current package. Allow the browser's local-network permission when asked.
@@ -106,6 +116,17 @@ tobiiresearch / tobii_research
   Pro hardware.
 
 The bridge itself is part of the A04 study platform.
+"""
+
+DIAGNOSTIC_COMMAND = r"""@echo off
+cd /d "%~dp0"
+echo Close the normal A04Bridge window before this check.
+echo Look at the calibrated display for eight seconds.
+"%~dp0A04Bridge.exe" --diagnose --diagnostic-seconds 8 > "%~dp0tracker-diagnostic.txt" 2>&1
+type "%~dp0tracker-diagnostic.txt"
+echo.
+echo Report saved as tracker-diagnostic.txt. No gaze positions are included.
+pause
 """
 
 
@@ -294,6 +315,32 @@ def check_executable(folder: Path) -> None:
             _fail("packaged executable returned no native Tobii SDK version.")
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         _fail(f"packaged executable could not load the native Tobii SDK: {exc}")
+    try:
+        diagnostic = subprocess.run(
+            [executable, "--diagnose", "--diagnostic-seconds", "8"],
+            cwd=folder,
+            capture_output=True,
+            timeout=25,
+        )
+        output = diagnostic.stdout.decode(errors="replace")
+        report = json.loads(output[output.rfind("\n{") + 1 :])
+        if (
+            diagnostic.returncode not in (0, 1)
+            or report.get("sdk_version") != sdk["sdk_version"]
+            or report.get("source_mode") != "tobii"
+            or report.get("error_code") not in (None, "tracker_missing", "invalid_samples")
+            or not isinstance(report.get("sample_count"), int)
+            or not isinstance(report.get("valid_sample_count"), int)
+            or not 0 <= report["valid_sample_count"] <= report["sample_count"]
+            or report.get("ok") != (report["valid_sample_count"] > 0)
+        ):
+            _fail("packaged tracker diagnostic failed its native SDK/sample-count check.")
+        print(
+            f"build: frozen tracker diagnostic: model={report.get('model') or 'none'}, "
+            f"samples={report['sample_count']}, valid={report['valid_sample_count']}"
+        )
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        _fail(f"packaged tracker diagnostic did not complete correctly: {exc}")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", DEFAULT_PORT))
     proc = subprocess.Popen(
@@ -337,6 +384,7 @@ def main() -> None:
     check_executable(folder)
     (folder / "README.txt").write_text(README, encoding="utf-8")
     (folder / "NOTICE.txt").write_text(NOTICE, encoding="utf-8")
+    (folder / "Check-eye-tracker.cmd").write_text(DIAGNOSTIC_COMMAND, encoding="ascii")
     archive = zip_folder(folder)
     size_mb = archive.stat().st_size / 1_000_000
     print(f"\nbuild: {archive} ({size_mb:.0f} MB)")

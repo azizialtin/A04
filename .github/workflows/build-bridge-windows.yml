@@ -2,7 +2,7 @@ name: Build Windows bridge
 
 on:
   push:
-    branches: [codex/a04-stimulus-audio-release]
+    branches: [codex/a04-stimulus-audio-release, codex/a04-gaze-recovery]
     paths:
       - 'tobii-service/**'
       - '.github/workflows/build-bridge-windows.yml'

@@ -35,8 +35,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import errno
 import json
+import logging
 import math
 import os
 import shutil
@@ -47,6 +49,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import websockets
+
+from gaze_source import TobiiSource
+from connection_logging import install_incomplete_handshake_filter
 
 from screen_recorder import (
     DEFAULT_CRF,
@@ -122,6 +127,9 @@ class MockSource:
     """Synthetic gaze that drifts around the screen with an occasional blink."""
 
     connected = True
+    source_mode = "mock"
+    sdk_version = None
+    model = "synthetic"
     display_area_mm = (530.0, 300.0)  # a 24" 16:9 panel, so the maths is exercised
 
     def __init__(self, frequency: int = MOCK_HZ) -> None:
@@ -159,148 +167,15 @@ class MockSource:
             i += 1
             await asyncio.sleep(period)
 
-    def close(self) -> None:
+    async def refresh(self) -> None:
         pass
 
-
-def _eye_distance_mm(g) -> float | None:
-    """Eye-to-tracker distance, averaged over whichever eyes are being tracked.
-    The validation step needs it to express an offset in degrees."""
-    distances = []
-    for side in ("left", "right"):
-        if g.get(f"{side}_gaze_origin_validity") != 1:
-            continue
-        origin = g.get(f"{side}_gaze_origin_in_user_coordinate_system")
-        if origin and len(origin) == 3 and not math.isnan(origin[2]):
-            distances.append(float(origin[2]))
-    return round(sum(distances) / len(distances), 1) if distances else None
-
-
-class TobiiSource:
-    """A real Tobii Pro tracker via the vendor SDK (Python 3.10 only)."""
-
-    def __init__(self) -> None:
-        import tobii_research as tr
-
-        self._tr = tr
-        trackers = tr.find_all_eyetrackers()
-        self._tracker = trackers[0] if trackers else None
-        self.connected = self._tracker is not None
-        self.frequency = int(self._tracker.get_gaze_output_frequency()) if self._tracker else 0
-        self._calibration = None
-
-    @property
-    def display_area_mm(self) -> tuple[float, float] | None:
-        """Physical screen size, which is what turns a gaze offset into degrees."""
-        if not self._tracker:
-            return None
-        try:
-            area = self._tracker.get_display_area()
-            return (float(area.width), float(area.height))
-        except Exception:
-            return None
-
-    # The SDK's calibration calls block; keep them off the event loop.
-
-    async def calibration_start(self) -> bool:
-        if not self._tracker:
-            return False
-        self._calibration = self._tr.ScreenBasedCalibration(self._tracker)
-        await asyncio.to_thread(self._calibration.enter_calibration_mode)
-        return True
-
-    async def calibration_collect(self, x: float, y: float) -> bool:
-        if self._calibration is None:
-            return False
-        status = await asyncio.to_thread(self._calibration.collect_data, x, y)
-        return status == self._tr.CALIBRATION_STATUS_SUCCESS
-
-    async def calibration_compute(self) -> bool:
-        if self._calibration is None:
-            return False
-        result = await asyncio.to_thread(self._calibration.compute_and_apply)
-        await self.calibration_abort()
-        return result.status == self._tr.CALIBRATION_STATUS_SUCCESS
-
-    async def calibration_abort(self) -> None:
-        if self._calibration is None:
-            return
-        calibration, self._calibration = self._calibration, None
-        try:
-            await asyncio.to_thread(calibration.leave_calibration_mode)
-        except Exception:
-            pass
-
-    async def stream(self, ws) -> None:
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[str] = asyncio.Queue()
-
-        def on_gaze(g) -> None:
-            lv = g["left_gaze_point_validity"] == 1
-            rv = g["right_gaze_point_validity"] == 1
-            lx, ly = g["left_gaze_point_on_display_area"]
-            rx, ry = g["right_gaze_point_on_display_area"]
-            frame = json.dumps(
-                {
-                    "type": "gaze",
-                    "ts": _now_ms(),
-                    "lx": lx if lv else None,
-                    "ly": ly if lv else None,
-                    "rx": rx if rv else None,
-                    "ry": ry if rv else None,
-                    "lv": lv,
-                    "rv": rv,
-                    "dz": _eye_distance_mm(g),
-                    "device_ts": g.get("device_time_stamp"),
-                }
-            )
-            # The SDK calls us on its own thread; hop back onto the loop.
-            loop.call_soon_threadsafe(queue.put_nowait, frame)
-
-        self._tracker.subscribe_to(self._tr.EYETRACKER_GAZE_DATA, on_gaze, as_dictionary=True)
-        self._on_gaze = on_gaze
-        try:
-            while True:
-                await ws.send(await queue.get())
-        finally:
-            self._tracker.unsubscribe_from(self._tr.EYETRACKER_GAZE_DATA, on_gaze)
-
-    def close(self) -> None:
+    async def close(self) -> None:
         pass
 
 
 def build_source(mock: bool):
-    if mock:
-        return MockSource()
-    try:
-        return TobiiSource()
-    except Exception as exc:  # SDK missing, wrong Python, no tracker
-        print(f"[bridge] no real tracker ({exc}); pass --mock for synthetic data")
-
-        class _Absent:
-            connected = False
-            frequency = 0
-            display_area_mm = None
-
-            async def stream(self, ws):
-                return
-
-            async def calibration_start(self):
-                return False
-
-            async def calibration_collect(self, x, y):
-                return False
-
-            async def calibration_compute(self):
-                return False
-
-            async def calibration_abort(self):
-                return None
-
-            def close(self):
-                pass
-
-        return _Absent()
+    return MockSource() if mock else TobiiSource()
 
 
 @dataclass
@@ -524,12 +399,27 @@ async def _handle_calibration(ws, source, msg: dict) -> bool:
     return True
 
 
+async def _stream_gaze(source, ws):
+    try:
+        await source.stream(ws)
+    except websockets.exceptions.ConnectionClosed:
+        return
+    except Exception as exc:
+        print(f"[gaze] stream failed ({type(exc).__name__}); run Check-eye-tracker.cmd", flush=True)
+        with contextlib.suppress(websockets.exceptions.ConnectionClosed):
+            await ws.send(json.dumps({"type": "gaze_status", "state": "error",
+                "source_mode": source.source_mode, "connected": source.connected,
+                "subscribed": False, "error_code": "stream_failed",
+                "error": f"Gaze streaming failed ({type(exc).__name__}). Run Check-eye-tracker.cmd."}))
+
+
 async def _serve(
     port: int, host: str, mock: bool, allowed_origins: set[str], screen: ScreenSession
 ) -> None:
     # One tracker, shared. A source per connection meant a second tab fighting
     # the first for the subscription and for calibration mode.
     source = build_source(mock)
+    discovery = asyncio.create_task(source.refresh())
 
     async def handler(ws) -> None:
         # websockets 12/13 expose request_headers; 14+ expose request.headers.
@@ -545,22 +435,42 @@ async def _serve(
             await ws.close(code=4403, reason="origin not allowed")
             return
 
-        area = source.display_area_mm
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "status",
-                    "connected": source.connected,
-                    "frequency": source.frequency,
-                    "display_w_mm": area[0] if area else None,
-                    "display_h_mm": area[1] if area else None,
-                    # So the browser knows whether to expect a screen recording
-                    # at all, rather than asking and reporting a failure.
-                    "screen_recording": screen.available,
-                    "stimulus_audio": screen.audio_available,
-                }
+        async def send_status():
+            area = source.display_area_mm
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "status",
+                        "connected": source.connected,
+                        "source_mode": source.source_mode,
+                        "sdk_version": source.sdk_version,
+                        "model": source.model,
+                        "frequency": source.frequency,
+                        "display_w_mm": area[0] if area else None,
+                        "display_h_mm": area[1] if area else None,
+                        # So the browser knows whether to expect a screen recording
+                        # at all, rather than asking and reporting a failure.
+                        "screen_recording": screen.available,
+                        "stimulus_audio": screen.audio_available,
+                    }
+                )
             )
-        )
+
+        await send_status()
+
+        async def update_tracker_status():
+            try:
+                if discovery.done():
+                    if not source.connected:
+                        await source.refresh()
+                else:
+                    await asyncio.shield(discovery)
+                await send_status()
+                await ws.send(json.dumps(source.status()))
+            except websockets.exceptions.ConnectionClosed:
+                pass
+
+        tracker_update = None if mock else asyncio.create_task(update_tracker_status())
         producer: asyncio.Task | None = None
         try:
             async for raw in ws:
@@ -580,33 +490,54 @@ async def _serve(
                 if await _handle_screen(ws, screen, msg):
                     continue
                 kind = msg.get("type")
-                if kind == "start_gaze" and producer is None and source.connected:
-                    producer = asyncio.create_task(source.stream(ws))
-                elif kind == "stop_gaze" and producer is not None:
-                    producer.cancel()
-                    producer = None
+                if kind == "start_gaze" and (producer is None or producer.done()):
+                    producer = asyncio.create_task(_stream_gaze(source, ws))
+                elif kind == "stop_gaze":
+                    if producer is not None:
+                        producer.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await producer
+                        producer = None
+                    await ws.send(json.dumps({"type": "gaze_status", "state": "stopped",
+                        "source_mode": source.source_mode, "connected": source.connected,
+                        "subscribed": False, "sample_count": getattr(source, "sample_count", 0),
+                        "valid_sample_count": getattr(source, "valid_sample_count", 0),
+                        "frequency": source.frequency, "error": None, "error_code": None}))
         except websockets.exceptions.ConnectionClosed:
             # Navigation closes after enqueueing stop, before FFmpeg can reply.
             pass
         finally:
+            # A stalled SDK must not hold the completed screen/audio capture.
+            await screen.release(ws)
+            if tracker_update is not None:
+                tracker_update.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await tracker_update
             if producer is not None:
                 producer.cancel()
-            await screen.release(ws)
+                with contextlib.suppress(asyncio.CancelledError):
+                    await producer
             await source.calibration_abort()
 
     try:
-        async with websockets.serve(handler, host, port):
+        logger = logging.getLogger("a04.bridge.websocket")
+        install_incomplete_handshake_filter(logger)
+        async with websockets.serve(handler, host, port, logger=logger):
             print(f"[bridge] listening on ws://{host}:{port} ({'mock' if mock else 'tobii'})")
             print(f"[bridge] accepting origins: {', '.join(sorted(allowed_origins)) or 'any'}")
+            print("[bridge] Allow local-network access in the study browser. For a tracker-only check, close this window and run Check-eye-tracker.cmd.", flush=True)
             if screen.available:
                 print("[bridge] screen recording enabled (ffmpeg found)")
             elif screen.enabled:
                 print("[bridge] screen recording unavailable: ffmpeg is not on PATH")
             await asyncio.Future()  # run until interrupted
     finally:
+        discovery.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await discovery
         await screen.release(screen.owner)
         await screen.drain()
-        source.close()
+        await source.close()
 
 
 def wants_test_pattern(screen_source: str, mock: bool) -> bool:
@@ -625,6 +556,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="A04 Tobii → WebSocket bridge")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--check-sdk", action="store_true", help="verify the Tobii native SDK and exit")
+    ap.add_argument("--diagnose", action="store_true", help="check real tracker samples and print a report without gaze coordinates")
+    ap.add_argument("--diagnostic-seconds", type=float, default=8, help="hardware check duration, 2–30 seconds")
     # The browser is on this machine, so there is no reason to offer a
     # participant's live gaze to the rest of the network.
     ap.add_argument("--host", default="127.0.0.1", help="interface to bind (default: loopback)")
@@ -657,6 +590,14 @@ def main() -> None:
         help="where to leave a recording the backend would not take (default: ./unsent-recordings)",
     )
     args = ap.parse_args()
+    if args.diagnose:
+        if args.mock or not 2 <= args.diagnostic_seconds <= 30:
+            ap.error("--diagnose requires a real tracker and --diagnostic-seconds between 2 and 30")
+        from tracker_diagnostics import diagnose_tracker
+
+        report = asyncio.run(diagnose_tracker(args.diagnostic_seconds))
+        print(json.dumps(report, indent=2), flush=True)
+        raise SystemExit(0 if report["ok"] else 1)
     if args.check_sdk:
         import tobii_research as tr
 

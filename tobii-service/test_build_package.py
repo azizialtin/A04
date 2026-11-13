@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from build_package import _probe_executable, check_environment, check_executable, check_media_tools
 from tobii_bridge import DEFAULT_PORT, main
 
@@ -71,6 +70,20 @@ def test_frozen_smoke_uses_mock_without_capture_and_always_stops(
         return b'{"sdk_version":"2.1.0","trackers":0}'
 
     monkeypatch.setattr("build_package.subprocess.check_output", sdk_check)
+
+    def diagnostic_check(command, **kwargs):
+        assert command == [
+            str(tmp_path / "A04Bridge.exe"),
+            "--diagnose",
+            "--diagnostic-seconds",
+            "8",
+        ]
+        return SimpleNamespace(
+            returncode=1,
+            stdout=b'{"sdk_version":"2.1.0", "source_mode":"tobii", "error_code":"tracker_missing", "sample_count":0, "valid_sample_count":0, "ok":false}',
+        )
+
+    monkeypatch.setattr("build_package.subprocess.run", diagnostic_check)
     monkeypatch.setattr("build_package._probe_executable", probe)
     if probe_fails:
         with pytest.raises(SystemExit, match="missing frozen import"):
