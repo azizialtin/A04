@@ -812,6 +812,7 @@ try {
       await audio.resume()
       const analyser = audio.createAnalyser()
       analyser.fftSize = 4096
+      analyser.smoothingTimeConstant = 0
       audio.createMediaElementSource(video).connect(analyser)
       analyser.connect(audio.destination)
       const values = new Float32Array(analyser.fftSize)
@@ -823,8 +824,19 @@ try {
         )
         video.currentTime = check.time
         await seeked
+        const afterSeek = video.currentTime
         await video.play()
-        await new Promise((resolve) => setTimeout(resolve, 180))
+        const startedAt = performance.now()
+        const audioStartedAt = audio.currentTime
+        const analysisWindow = analyser.fftSize / audio.sampleRate
+        // Decoder startup and a JS timer do not advance on the media clock.
+        while (
+          (video.currentTime - afterSeek < 0.18 ||
+            audio.currentTime - audioStartedAt < analysisWindow) &&
+          performance.now() - startedAt < 3000
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
         analyser.getFloatTimeDomainData(values)
         analyser.getFloatFrequencyData(bins)
         const rms = Math.sqrt(values.reduce((sum, x) => sum + x * x, 0) / values.length)
@@ -833,9 +845,16 @@ try {
         const frequency = (peak * audio.sampleRate) / analyser.fftSize
         results.push({
           ...check,
+          afterSeek,
           rms,
           frequency,
           currentTime: video.currentTime,
+          elapsedMs: performance.now() - startedAt,
+          audioElapsed: audio.currentTime - audioStartedAt,
+          analysisWindow,
+          readyState: video.readyState,
+          audioState: audio.state,
+          mediaError: video.error?.message ?? null,
         })
         video.pause()
       }
@@ -847,34 +866,42 @@ try {
         {
           name: 'seek into paused interval',
           time: times.pause + 0.35,
+          endTime: times.repeat - 0.05,
           frequency: 0,
         },
         {
           name: 'seek into repeated passage',
           time: times.repeat + 0.2,
+          endTime: times.forward_seek - 0.05,
           frequency: 440,
         },
         {
           name: 'seek into forward passage',
           time: times.forward_seek + 0.15,
+          endTime: times.quiet - 0.05,
           frequency: 880,
         },
         {
           name: 'seek into final notes',
           time: times.ended + 0.35,
+          endTime: times.end_notes - 0.05,
           frequency: 0,
         },
       ],
     },
   )
+  await writeFile(path.join(output, 'replay-audio.json'), JSON.stringify(replayAudio, null, 2) + '\n')
   for (const [i, check] of replayAudio.entries()) {
+    assert(Math.abs(check.afterSeek - check.time) < 0.05, `${check.name}: replay seek position`)
+    assert(check.currentTime - check.afterSeek >= 0.18, `${check.name}: replay stalled`)
+    assert(check.audioElapsed >= check.analysisWindow, `${check.name}: audio rendering stalled`)
+    assert(check.currentTime < check.endTime, `${check.name}: replay left the expected passage`)
     const expected = silentSource ? 0 : [0, 440, 880, 0][i]
     if (expected === 0) assert(check.rms < 0.004, `${check.name}: silent replay`)
     else {
       assert(check.rms > 0.015, `${check.name}: audible replay`)
       assert(Math.abs(check.frequency - expected) < 30, `${check.name}: correct replay passage`)
     }
-    assert(Math.abs(check.currentTime - check.time - 0.18) < 0.15, `${check.name}: replay position`)
   }
   const report = {
     ...result,
