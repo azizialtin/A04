@@ -521,3 +521,19 @@ test('a delayed encoder start event cannot shift gaze timestamps or recording du
   await recording.stop()
   expect(deliver.mock.calls[0][3]).toMatchObject({ epoch_ms: 1700000000000, duration_ms: 1000 })
 })
+
+test('a failed warm probe cannot request browser sharing after the bridge recovers', async () => {
+  const warm = bridgeCanRecord()
+  const unavailable = FakeSocket.last!
+  unavailable.onerror?.()
+  expect(await warm).toBe(false)
+
+  const prepared = prepareCapture()
+  const recovered = FakeSocket.last!
+  expect(recovered).not.toBe(unavailable)
+  recovered.say({ type: 'status', screen_recording: true })
+  await prepared
+  expect(getDisplayMedia).not.toHaveBeenCalled()
+  expect(await bridgeCanRecord()).toBe(true)
+  expect(FakeSocket.last).toBe(recovered)
+})

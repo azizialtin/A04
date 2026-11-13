@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next'
 
 import { bridgeCanRecord, prepareCapture } from '../../lib/screenCapture'
 import StudyText from '../StudyText'
+import { useGazePreflight } from '../../hooks/useGazePreflight'
+import GazeHealthStatus from './GazeHealthStatus'
+import { enqueue } from '../../lib/outbox'
 
 /**
  * Text only: nothing is asked before a case, so the clip is one click away.
@@ -17,14 +20,17 @@ import StudyText from '../StudyText'
 export default function CaseIntroScreen({
   title,
   body,
+  videoId,
   onContinue,
 }: {
   title?: string
+  videoId?: number
   body?: string
   onContinue: () => void
 }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
+  const gaze = useGazePreflight()
 
   // Warm the probe so the click does not spend its gesture waiting on it.
   useEffect(() => {
@@ -43,6 +49,19 @@ export default function CaseIntroScreen({
       // nothing to click.
       setBusy(false)
     }
+    if (gaze.state !== 'tracking')
+      enqueue('event', {
+        event_type: 'gaze_preflight_continue_without',
+        video_id: videoId ?? null,
+        client_ts: Date.now(),
+        payload: {
+          state: gaze.state,
+          received: gaze.received,
+          valid: gaze.valid,
+          mock: !!gaze.mock,
+        },
+      })
+    gaze.close()
     onContinue()
   }
 
@@ -50,6 +69,7 @@ export default function CaseIntroScreen({
     <div className="panel">
       <h2>{title || t('case_intro.title')}</h2>
       <StudyText text={body || t('case_intro.body')} className="lead" />
+      <GazeHealthStatus health={gaze} retry={gaze.retry} preflight />
       <div className="panel__actions">
         <button
           type="button"
@@ -57,7 +77,11 @@ export default function CaseIntroScreen({
           onClick={() => void proceed()}
           disabled={busy}
         >
-          {busy ? t('case_intro.preparing') : t('common.continue')}
+          {busy
+            ? t('case_intro.preparing')
+            : gaze.state === 'tracking'
+              ? t('common.continue')
+              : t('gaze_health.continue_without')}
         </button>
       </div>
     </div>

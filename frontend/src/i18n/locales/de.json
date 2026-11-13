@@ -116,7 +116,9 @@
     "browser_capture": "vom Browser aufgezeichnet",
     "numbered": "{{title}} {{current}} von {{total}}",
     "batch_hint": "Sie sehen nun nacheinander die Aufzeichnungen der letzten {{total}} Fälle.",
-    "upload_pending": "Die Bildschirmaufzeichnung wird noch hochgeladen. Die Wiedergabe aktualisiert sich automatisch."
+    "upload_pending": "Die Bildschirmaufzeichnung wird noch hochgeladen. Die Wiedergabe aktualisiert sich automatisch.",
+    "screen_capture_source": "Bildschirmaufnahme: {{source}}",
+    "bridge_capture": "A04Bridge"
   },
   "questionnaire": {
     "submit": "Weiter",
@@ -202,5 +204,30 @@
     "replay_silent": "In dieser Aufzeichnung wurde kein hörbarer Videoton erkannt. Bitte prüfen Sie dies mit der Studienleitung.",
     "replay_failed": "Der Videoton dieser Aufzeichnung fehlt möglicherweise oder ist unvollständig. Bitte informieren Sie die Studienleitung.",
     "replay_unavailable": "Der Videoton konnte nicht aufgezeichnet werden. Bitte informieren Sie die Studienleitung."
+  },
+  "gaze_health": {
+    "connecting": "Eye-Tracker wird geprüft…",
+    "bridge_unreachable": "Keine Verbindung zur A04Bridge.",
+    "tracker_missing": "Kein verfügbarer Eye-Tracker gemeldet.",
+    "stream_failed": "Blickdaten-Stream konnte nicht gestartet werden.",
+    "waiting_samples": "Warte auf Blickdaten…",
+    "no_samples": "Keine neuen Blickproben empfangen.",
+    "invalid_samples": "Blickproben empfangen, aber aktuell keine gültigen Augenpositionen.",
+    "tracking": "Blickdaten werden empfangen.",
+    "recording_failed": "Blickaufzeichnung konnte auf dem Server nicht angelegt werden.",
+    "upload_failed": "Blickdaten konnten noch nicht gespeichert werden. Erneuter Versuch läuft.",
+    "data_lost": "Ein Teil der Blickdaten konnte nicht gespeichert werden.",
+    "counts": "{{received}} empfangen · {{valid}} mit gültiger Augenposition",
+    "connection_help": "A04Bridge.exe starten. In den Website-Einstellungen den Zugriff auf das lokale Netzwerk erlauben und erneut prüfen. Eine Bildschirmaufnahme bestätigt keine Blickaufzeichnung.",
+    "permission_denied": "Der Browser meldet gesperrten Zugriff auf Loopback/das lokale Netzwerk. In den Website-Einstellungen erlauben und erneut prüfen.",
+    "tracker_help": "Verbindung, Eye Tracker Manager und Unterstützung des Tracker-Modells durch das installierte SDK prüfen.",
+    "retry": "Eye-Tracker erneut prüfen",
+    "continue_warning": "Weiter bleibt möglich. Ohne bestätigte Blickdaten fehlen später möglicherweise die Blickpunkte. Bitte das Studienteam informieren.",
+    "previous_empty": "Eine frühere Blickaufzeichnung enthält keine gespeicherten Proben. Bitte das Studienteam informieren.",
+    "previous_upload_failed": "Eine frühere Blickaufzeichnung konnte nicht vollständig gespeichert oder abgeschlossen werden. Bitte das Studienteam informieren.",
+    "dismiss": "Hinweis ausblenden",
+    "replay_empty": "Für diese Wiedergabe sind keine darstellbaren Blickpunkte verfügbar. Die Bildschirmaufnahme und ihr Ton bestätigen keine erfolgreiche Blickaufzeichnung.",
+    "mock": "Testmodus: synthetische Blickdaten, kein bestätigter Hardware-Test.",
+    "continue_without": "Ohne Blickdaten fortfahren"
   }
 }

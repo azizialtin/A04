@@ -21,9 +21,8 @@ import { beginStimulusAudio, prepareStimulusAudio } from './stimulusAudio'
  */
 
 const PROBE_TIMEOUT_MS = 2000
-// Short enough that a bridge started mid-session is noticed by the next case.
-// A participant who reads the intro for longer simply re-probes inside the
-// click, which costs 2 s at most — well within the gesture's lifetime.
+// Reuse successful capability checks briefly. Failed checks must be retried:
+// the bridge or browser's loopback permission can recover during this intro.
 const PROBE_CACHE_MS = 10_000
 const PICKER_TIMEOUT_MS = 90_000
 const TARGET_FPS = 30
@@ -55,7 +54,11 @@ const recordingCleanups = new Set<() => void>()
 export function bridgeCanRecord(timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
   if (probe && Date.now() - probe.at < PROBE_CACHE_MS) return probe.answer
   const answer = askBridge(timeoutMs)
-  probe = { at: Date.now(), answer }
+  const pending = { at: Date.now(), answer }
+  probe = pending
+  void answer.then((available) => {
+    if (!available && probe === pending) probe = null
+  })
   return answer
 }
 

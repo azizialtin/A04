@@ -4,6 +4,9 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { gazeApi, type GazeContext } from '../api/gaze'
 import type { GazeLayout } from '../lib/gazeGeometry'
 import { useGazeCapture } from './useGazeCapture'
+import { enqueue } from '../lib/outbox'
+import { gazeDeliveryWarning, resetGazeDeliverySession } from '../lib/gazeDelivery'
+vi.mock('../lib/outbox', () => ({ enqueue: vi.fn() }))
 
 vi.mock('../api/gaze', () => ({
   gazeApi: {
@@ -51,7 +54,7 @@ class FakeSocket {
   }
 
   say(message: Record<string, unknown>) {
-    this.onmessage?.({ data: JSON.stringify(message) })
+    act(() => this.onmessage?.({ data: JSON.stringify(message) }))
   }
 }
 
@@ -79,6 +82,8 @@ beforeEach(() => {
     toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'],
   })
   vi.setSystemTime(100_000)
+  vi.mocked(enqueue).mockClear()
+  resetGazeDeliverySession()
   FakeSocket.all = []
   observers.clear()
   vi.stubGlobal('WebSocket', FakeSocket)
@@ -403,4 +408,159 @@ test('unmeasured screens do not connect to the bridge', () => {
   renderHook(() => useGazeCapture(null))
   expect(FakeSocket.all).toHaveLength(0)
   expect(observers.size).toBe(0)
+})
+
+test('reconnection resumes the same screen row and preserves sample timestamps and offsets', async () => {
+  const { result, unmount } = renderHook(() => useGazeCapture(caseContext))
+  const first = await connect()
+  await act(async () => samples(first, 3, 100_010))
+  act(() => result.current.retry())
+  const second = await connect()
+  await act(async () => samples(second, 2, 104_000))
+  unmount()
+  await act(async () => {})
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(first.closed).toBe(true)
+  expect(second.sent).toContainEqual({ type: 'start_gaze' })
+  expect(upload.mock.calls.flatMap(([, batch]) => batch.map((s) => s.ts))).toEqual([
+    100010, 100011, 100012, 104000, 104001,
+  ])
+  expect(complete).toHaveBeenCalledWith(7, { sample_count: 5 })
+})
+
+test('recording creation failure is visible and can recover without leaving the measured screen', async () => {
+  start.mockRejectedValueOnce(new Error('offline'))
+  const { result } = renderHook(() => useGazeCapture(caseContext))
+  await connect()
+  expect(result.current.issue).toBe('recording_failed')
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000)
+  })
+  await connect()
+  expect(start).toHaveBeenCalledTimes(2)
+  expect(result.current.issue).toBeNull()
+  expect(FakeSocket.all[FakeSocket.all.length - 1]!.sent).toContainEqual({ type: 'start_gaze' })
+})
+
+test('receiving valid gaze does not conceal a failed sample upload', async () => {
+  upload.mockRejectedValueOnce(new Error('offline'))
+  const { result } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  await act(async () => samples(socket, 500, 100_010))
+  expect(result.current.state).toBe('tracking')
+  expect(result.current.issue).toBe('upload_failed')
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000)
+  })
+  expect(result.current.issue).toBeNull()
+})
+
+test('late tracker discovery buffers early samples with the layouts actually observed during slow row creation', async () => {
+  const pending = deferred<{ recording_id: number }>()
+  start.mockReturnValue(pending.promise)
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = FakeSocket.all[0]
+  await act(async () => socket.say({ type: 'status', connected: false }))
+  expect(start).not.toHaveBeenCalled()
+  await act(async () =>
+    socket.say({ type: 'gaze_status', state: 'subscribing', connected: true, frequency: 90 }),
+  )
+  socket.say({ type: 'gaze', ts: 99999, lx: 0.3, ly: 0.4, lv: true })
+  samples(socket, 1, 100010)
+  vi.setSystemTime(100100)
+  layout = { ...layout, active_modal: 'student_task' }
+  await act(async () => observers.forEach((notify) => notify()))
+  samples(socket, 1, 100110)
+  await act(async () => pending.resolve({ recording_id: 7 }))
+  unmount()
+  await act(async () => {})
+  expect(start.mock.calls[0][0].geometry?.ts).toBe(100000)
+  expect(
+    upload.mock.calls.flatMap(([, batch]) =>
+      batch.map(({ ts, geometry_ts }) => ({ ts, geometry_ts })),
+    ),
+  ).toEqual([
+    { ts: 99999, geometry_ts: null },
+    { ts: 100010, geometry_ts: 100000 },
+    { ts: 100110, geometry_ts: 100100 },
+  ])
+  expect(geometry.mock.calls.map(([, g]) => g.ts)).toEqual([100100])
+})
+
+test('logs health transitions once per state rather than once per sample or count update', async () => {
+  renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  await act(async () => samples(socket, 500, 100010))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  await act(async () => samples(socket, 120, 101010))
+  const transitions = vi
+    .mocked(enqueue)
+    .mock.calls.map(([, body]) => body.payload as Record<string, unknown>)
+  expect(transitions.map((p) => p.state)).toEqual(['connecting', 'waiting_samples', 'tracking'])
+  expect(transitions.every((p) => p.step_kind === 'case_video' && p.step_index === 12)).toBe(true)
+  expect(transitions.every((p) => !('lx' in p) && !('ly' in p))).toBe(true)
+})
+
+test('final completion failures remain visible and are recorded without sample coordinates', async () => {
+  complete.mockRejectedValueOnce(new Error('server offline'))
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  samples(socket, 2, 100010)
+  unmount()
+  await act(async () => {})
+  expect(gazeDeliveryWarning()).toBe('upload_failed')
+  expect(enqueue).toHaveBeenLastCalledWith(
+    'event',
+    expect.objectContaining({
+      event_type: 'gaze_capture_status',
+      payload: expect.objectContaining({
+        state: 'capture_finished',
+        issue: 'completion_failed',
+        saved: 2,
+        unsent: 0,
+      }),
+    }),
+  )
+})
+
+test('a previous participant finalizes without leaking warnings or telemetry to the next participant', async () => {
+  const pending = deferred<never>()
+  upload.mockReturnValue(pending.promise)
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  samples(socket, 2, 100010)
+  unmount()
+  resetGazeDeliverySession()
+  vi.mocked(enqueue).mockClear()
+  await act(async () => pending.resolve({} as never))
+  expect(complete).toHaveBeenCalledWith(7, { sample_count: 2 })
+  expect(gazeDeliveryWarning()).toBeNull()
+  expect(enqueue).not.toHaveBeenCalled()
+})
+
+test('late row creation after leaving saves already received discovery frames without restarting the stream', async () => {
+  const pending = deferred<{ recording_id: number }>()
+  start.mockReturnValue(pending.promise)
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = FakeSocket.all[0]
+  socket.say({ type: 'status', connected: false })
+  socket.say({ type: 'gaze_status', connected: true, state: 'subscribing', frequency: 90 })
+  samples(socket, 2, 100010)
+  unmount()
+  await act(async () => pending.resolve({ recording_id: 9 }))
+  expect(upload).toHaveBeenCalledWith(
+    9,
+    expect.arrayContaining([
+      expect.objectContaining({ ts: 100010, geometry_ts: 100000 }),
+      expect.objectContaining({ ts: 100011, geometry_ts: 100000 }),
+    ]),
+    0,
+  )
+  expect(complete).toHaveBeenCalledWith(9, { sample_count: 2 })
+  expect(
+    socket.sent.filter((message) => (message as { type: string }).type === 'start_gaze'),
+  ).toHaveLength(1)
+  expect(socket.closed).toBe(true)
 })

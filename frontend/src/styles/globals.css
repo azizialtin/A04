@@ -1799,3 +1799,35 @@ h3 {
   white-space: normal;
   text-align: left;
 }
+
+.gaze-health-stack {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  pointer-events: none;
+  z-index: 100;
+  max-width: min(34rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.4rem;
+}
+.gaze-health-stack button {
+  pointer-events: auto;
+}
+.gaze-health {
+  border: 1px solid #a37c25;
+  border-radius: 0.4rem;
+  background: #fff8e5;
+  color: #44340d;
+  padding: 0.65rem 0.8rem;
+  font-size: 0.85rem;
+}
+.gaze-health p {
+  margin: 0.4rem 0;
+}
+.gaze-health--ready {
+  background: #edf6f4;
+  border-color: #b9d6d1;
+  color: #2c625c;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.6rem;
+}

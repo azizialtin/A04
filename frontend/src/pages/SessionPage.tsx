@@ -294,7 +294,14 @@ export default function SessionPage() {
       content = <PhaseTransitionScreen phaseNumber={step.phase_number} onContinue={advance} />
       break
     case 'case_intro':
-      content = <CaseIntroScreen title={step.title} body={step.body} onContinue={advance} />
+      content = (
+        <CaseIntroScreen
+          title={step.title}
+          body={step.body}
+          videoId={step.video_id}
+          onContinue={advance}
+        />
+      )
       break
     case 'questionnaire': {
       const qStep = step

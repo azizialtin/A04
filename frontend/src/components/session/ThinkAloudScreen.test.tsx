@@ -151,3 +151,27 @@ test('clip fallback keeps its original sound without a screen-audio warning', as
   await screen.findByRole('heading')
   expect(screen.queryByRole('status')).toBeNull()
 })
+
+test.each([
+  { invalid_samples: 0, unmapped_samples: 0, offscreen_samples: 0 },
+  { invalid_samples: 20, unmapped_samples: 10, offscreen_samples: 5 },
+])(
+  'zero drawable points warn independently of successful browser audio capture: %j',
+  async (counts) => {
+    const saved = { ...replay }
+    Object.assign(replay, counts, {
+      plotted_points: 0,
+      audio_status: 'captured',
+      recorder: 'browser',
+    })
+    try {
+      render(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
+      expect(await screen.findByRole('status')).toHaveTextContent('keine darstellbaren Blickpunkte')
+      expect(screen.getByText('0 Blickpunkte')).toBeVisible()
+      expect(screen.getByText('Bildschirmaufnahme: vom Browser aufgezeichnet')).toBeVisible()
+      expect(screen.queryByText(/keine gespeicherten Proben/)).toBeNull()
+    } finally {
+      Object.assign(replay, saved)
+    }
+  },
+)

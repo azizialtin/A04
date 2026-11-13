@@ -143,6 +143,11 @@ export default function ThinkAloudScreen({ videoId, position, heading, body, onC
         ) : null}
       </header>
 
+      {selected.plotted_points === 0 ? (
+        <p role="status" className="is-danger">
+          {t('gaze_health.replay_empty')}
+        </p>
+      ) : null}
       {selected.source === 'screen' && selected.audio_status !== 'captured' ? (
         <p role="status" className="is-danger">
           {t(`recording_audio.replay_${selected.audio_status ?? 'unknown'}`)}
@@ -154,7 +159,16 @@ export default function ThinkAloudScreen({ videoId, position, heading, body, onC
         <span className="muted">
           {t('think_aloud.stats', { points: selected.plotted_points })}
           {selected.source === 'clip' ? ` · ${t('think_aloud.clip_only')}` : ''}
-          {selected.recorder === 'browser' ? ` · ${t('think_aloud.browser_capture')}` : ''}
+        </span>
+        <span className="muted">
+          {selected.source === 'screen'
+            ? t('think_aloud.screen_capture_source', {
+                source:
+                  selected.recorder === 'browser'
+                    ? t('think_aloud.browser_capture')
+                    : t('think_aloud.bridge_capture'),
+              })
+            : ''}
         </span>
         <button type="button" className="btn btn-primary btn-lg" onClick={onComplete}>
           {t('think_aloud.next')}

@@ -163,7 +163,9 @@ test('logs when a question page is entered and when its answers went in', async 
   view()
 
   // Entered on arrival, named for the page and its section, with the clock.
-  expect(logged).toHaveBeenCalledTimes(1)
+  expect(
+    logged.mock.calls.filter(([, event]) => event.event_type === 'questionnaire_page_entered'),
+  ).toHaveLength(1)
   expect(logged).toHaveBeenCalledWith(
     'event',
     expect.objectContaining({
@@ -214,8 +216,13 @@ test('the entry is logged once the outbox knows whose it is, not before', () => 
       </ToastProvider>
     </AuthProvider>,
   )
-  expect(logged).toHaveBeenCalledTimes(1)
-  expect(logged.mock.calls[0][1]).toMatchObject({ event_type: 'questionnaire_page_entered' })
+  expect(
+    logged.mock.calls.filter(([, event]) => event.event_type === 'questionnaire_page_entered'),
+  ).toHaveLength(1)
+  expect(logged).toHaveBeenCalledWith(
+    'event',
+    expect.objectContaining({ event_type: 'questionnaire_page_entered' }),
+  )
 })
 
 test('a closing screen with no questions on it logs no page events', () => {

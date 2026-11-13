@@ -116,7 +116,9 @@
     "browser_capture": "recorded by the browser",
     "numbered": "{{title}} {{current}} of {{total}}",
     "batch_hint": "You will now go through the recordings of the last {{total}} cases, one after another.",
-    "upload_pending": "The screen recording is still uploading. The replay will update automatically."
+    "upload_pending": "The screen recording is still uploading. The replay will update automatically.",
+    "screen_capture_source": "Screen recording: {{source}}",
+    "bridge_capture": "A04Bridge"
   },
   "questionnaire": {
     "submit": "Continue",
@@ -202,5 +204,30 @@
     "replay_silent": "No audible video sound was detected in this recording. Please check it with the supervisor.",
     "replay_failed": "Video sound may be missing or incomplete in this recording. Please tell the supervisor.",
     "replay_unavailable": "Video sound could not be recorded. Please tell the supervisor."
+  },
+  "gaze_health": {
+    "connecting": "Checking eye tracker…",
+    "bridge_unreachable": "Cannot connect to A04Bridge.",
+    "tracker_missing": "No available eye tracker reported.",
+    "stream_failed": "The gaze stream could not start.",
+    "waiting_samples": "Waiting for gaze samples…",
+    "no_samples": "No new gaze samples received.",
+    "invalid_samples": "Samples received, but no currently valid eye positions.",
+    "tracking": "Receiving gaze data.",
+    "recording_failed": "The server could not open a gaze recording.",
+    "upload_failed": "Gaze data could not yet be saved. Retrying.",
+    "data_lost": "Some gaze data could not be saved.",
+    "counts": "{{received}} received · {{valid}} with a valid eye position",
+    "connection_help": "Start A04Bridge.exe. Allow local network access in the website settings, then retry. A screen recording does not confirm gaze capture.",
+    "permission_denied": "The browser reports blocked loopback/local network access. Allow it in the website settings, then retry.",
+    "tracker_help": "Check the connection, Eye Tracker Manager, and whether the installed SDK supports this tracker model.",
+    "retry": "Check eye tracker again",
+    "continue_warning": "You may continue. Without confirmed gaze data, gaze points may be missing from replay. Please inform the study team.",
+    "previous_empty": "An earlier gaze recording has no saved samples. Please inform the study team.",
+    "previous_upload_failed": "An earlier gaze recording could not be fully saved or finalized. Please inform the study team.",
+    "dismiss": "Dismiss notice",
+    "replay_empty": "No displayable gaze points are available for this replay. A screen recording and its soundtrack do not confirm successful gaze capture.",
+    "mock": "Test mode: synthetic gaze, not a verified hardware test.",
+    "continue_without": "Continue without gaze data"
   }
 }

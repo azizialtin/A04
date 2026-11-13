@@ -11,6 +11,7 @@ import {
 import { AUTH_STORAGE_KEY } from '../api/client'
 import { clearAllDrafts } from '../hooks/useLocalDraft'
 import { decodeJwt, isExpired } from '../lib/jwt'
+import { resetGazeDeliverySession } from '../lib/gazeDelivery'
 import { queryClient } from '../queryClient'
 
 interface User {
@@ -43,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => readUser())
 
   const logout = useCallback(() => {
+    resetGazeDeliverySession()
     localStorage.removeItem(AUTH_STORAGE_KEY)
     // The lab machine is shared; unsubmitted text must not outlive the session.
     clearAllDrafts()
@@ -55,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback((token: string) => {
+    resetGazeDeliverySession()
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token }))
     queryClient.clear()
     setUser(readUser())
