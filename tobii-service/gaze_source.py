@@ -307,7 +307,9 @@ class TobiiSource:
                         as_dictionary=True,
                     )
                 except Exception as exc:
-                    if self.sample_count == samples_before_subscribe:
+                    if self.sample_count == samples_before_subscribe and (
+                        self._sdk_pending is None or self._sdk_pending.done()
+                    ):
                         self._pending_cleanup = None
                     self._status(
                         "error",
@@ -318,7 +320,7 @@ class TobiiSource:
                     await asyncio.sleep(self.retry_seconds)
                     continue
                 self.subscribed = True
-                if self._last_sample <= self._started:
+                if self.sample_count == samples_before_subscribe:
                     self._status("waiting_for_samples")
                 while self._listeners:
                     await asyncio.sleep(min(0.2, self.sample_timeout / 2))

@@ -194,18 +194,27 @@ async def test_invalid_samples_are_distinct_from_no_samples_and_valid_eyes_clear
     tracker, ws = Tracker(), Socket()
     gaze = source(SDK([tracker]))
     task = asyncio.create_task(gaze.stream(ws))
+    emitter = None
     try:
         await until(lambda: bool(tracker.callbacks))
-        for _ in range(8):
-            tracker.emit(False)
-            await asyncio.sleep(0.015)
+
+        async def keep_sending_invalid_samples():
+            while True:
+                tracker.emit(False)
+                await asyncio.sleep(0.02)
+
+        emitter = asyncio.create_task(keep_sending_invalid_samples())
         await until(lambda: gaze.error_code == "invalid_samples")
         assert gaze.sample_count > 0 and gaze.valid_sample_count == 0
         assert tracker.subscriptions == 1
+        await cancel(emitter)
+        emitter = None
         tracker.emit(True)
         await until(lambda: gaze.valid_sample_count == 1)
         assert gaze.error is None
     finally:
+        if emitter is not None:
+            await cancel(emitter)
         await cancel(task)
 
 
@@ -435,3 +444,52 @@ async def test_screen_only_connection_does_not_rediscover_a_known_tracker(monkey
             assert sdk.discovery_calls == 1
     finally:
         await cancel(server)
+
+
+@pytest.mark.asyncio
+async def test_sample_in_subscription_start_clock_tick_is_still_streaming():
+    tracker, ws = Tracker(), Socket()
+    gaze = source(SDK([tracker]))
+
+    def immediate(callback):
+        callback(sample())
+
+    tracker.on_subscribe = immediate
+    original_receive = gaze._receive
+
+    def same_clock_tick(frame, generation):
+        original_receive(frame, generation)
+        gaze._last_sample = gaze._started
+
+    gaze._receive = same_clock_tick
+    task = asyncio.create_task(gaze.stream(ws))
+    try:
+        await until(lambda: gaze.sample_count == 1 and gaze._pending_cleanup is not None)
+        await asyncio.sleep(0.02)
+        statuses = [m["state"] for m in ws.messages if m["type"] == "gaze_status"]
+        assert "streaming" in statuses
+        assert "waiting_for_samples" not in statuses[statuses.index("streaming") :]
+    finally:
+        await cancel(task)
+
+
+@pytest.mark.asyncio
+async def test_timed_out_subscription_that_later_succeeds_is_cleaned_before_retry():
+    tracker, ws = Tracker(), Socket()
+    gate = threading.Event()
+    tracker.on_subscribe = lambda _callback: gate.wait(2) if tracker.subscriptions == 1 else None
+    gaze = source(SDK([tracker]), sdk_timeout=0.03)
+    task = asyncio.create_task(gaze.stream(ws))
+    try:
+        await until(lambda: gaze.error_code == "subscription_failed")
+        assert tracker.subscriptions == 1
+        gate.set()
+        await until(lambda: tracker.subscriptions == 2)
+        assert tracker.unsubscriptions == 1
+        assert len(tracker.callbacks) == 1
+        tracker.emit()
+        await until(lambda: gaze.valid_sample_count == 1)
+    finally:
+        gate.set()
+        await cancel(task)
+    assert not tracker.callbacks

@@ -6,12 +6,11 @@ import uuid
 
 import pytest
 import websockets
-from websockets.exceptions import InvalidMessage
-
 from connection_logging import (
     IncompleteHandshakeFilter,
     install_incomplete_handshake_filter,
 )
+from websockets.exceptions import InvalidMessage
 
 
 def handshake_error(*, count=0, request_line=True):
@@ -62,10 +61,7 @@ def test_replaces_only_empty_request_traceback_with_rate_limited_uncertain_notic
         now[0] = moment
         logger.handle(record(handshake_error()))
     assert len(received) == 2
-    assert all(
-        entry.levelno == logging.WARNING and entry.exc_info is None
-        for entry in received
-    )
+    assert all(entry.levelno == logging.WARNING and entry.exc_info is None for entry in received)
     assert "can be" in received[0].getMessage()
     assert "harmless connection check" in received[0].getMessage()
     assert "permission" in received[0].getMessage()
@@ -83,9 +79,7 @@ def test_replaces_only_empty_request_traceback_with_rate_limited_uncertain_notic
         record(RuntimeError("SDK subscription failed")),
         record(handshake_error(), message="connection handler failed"),
         record(handshake_error(), level=logging.WARNING),
-        record(
-            message="[bridge] refused a connection from origin 'https://wrong.invalid'"
-        ),
+        record(message="[bridge] refused a connection from origin 'https://wrong.invalid'"),
         record(message="connection open", level=logging.INFO),
     ],
 )
@@ -106,6 +100,13 @@ def test_install_is_idempotent():
 @pytest.mark.asyncio
 async def test_real_empty_tcp_probe_does_not_prevent_subsequent_websocket():
     logger, received = isolated_logger()
+    original = []
+
+    def observe(entry):
+        original.append((entry.levelno, entry.getMessage()))
+        return True
+
+    logger.addFilter(observe)
     install_incomplete_handshake_filter(logger)
 
     async def handler(ws):
@@ -119,7 +120,7 @@ async def test_real_empty_tcp_probe_does_not_prevent_subsequent_websocket():
         async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
             assert await ws.recv() == "healthy connection"
 
-    assert any(
-        "closed before its WebSocket request" in row.getMessage() for row in received
-    )
+    # Legacy websockets versions already close an empty probe without an error.
+    if (logging.ERROR, "opening handshake failed") in original:
+        assert any("closed before its WebSocket request" in row.getMessage() for row in received)
     assert not any(row.levelno >= logging.ERROR for row in received)
