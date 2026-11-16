@@ -29,7 +29,7 @@
     "continue": "Let’s go"
   },
   "pre_test": {
-    "page": "Page {{current}} of {{total}}"
+    "page": "Questionnaire page {{current}} of {{total}} overall"
   },
   "sosci": {
     "pretest": {

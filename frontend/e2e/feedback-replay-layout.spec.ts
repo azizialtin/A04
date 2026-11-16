@@ -11,6 +11,7 @@ const scenarios = [
   { name: 'missing audio', source: 'screen', points: 10, audio: 'failed', warnings: 1 },
   { name: 'no gaze and missing audio', source: 'screen', points: 0, audio: 'failed', warnings: 2 },
   { name: 'clip fallback without gaze', source: 'clip', points: 0, audio: 'unknown', warnings: 1 },
+  { name: 'clip fallback with gaze', source: 'clip', points: 10, audio: 'unknown', warnings: 0 },
 ] as const
 
 async function openReplay(
@@ -97,6 +98,18 @@ async function openReplay(
     page.getByText('Sie sehen nun nacheinander die Aufzeichnungen der letzten 3 Fälle.'),
   ).toBeVisible()
   await expect(page.locator('.think-aloud > [role="status"]')).toHaveCount(scenario.warnings)
+  const fallback = page.locator('.think-aloud__head [role="status"]')
+  await expect(fallback).toHaveCount(scenario.source === 'clip' ? 1 : 0)
+  if (scenario.source === 'clip') {
+    await expect(fallback).toHaveText('nur das Video (keine Bildschirmaufzeichnung)')
+    await expect(fallback).toBeInViewport({ ratio: 1 })
+    const notice = await fallback.boundingBox()
+    const instructions = await page
+      .locator('.think-aloud__head > p.muted:not(.small)')
+      .first()
+      .boundingBox()
+    expect(notice!.y + notice!.height).toBeLessThanOrEqual(instructions!.y)
+  }
   await expect
     .poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => video.readyState))
     .toBeGreaterThan(0)

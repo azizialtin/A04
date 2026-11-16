@@ -76,8 +76,10 @@ test('waits for a pending bridge upload instead of sticking to the original-vide
   const { container } = await mount()
   expect(container.querySelector('video')).toBeNull()
   expect(screen.queryByRole('heading')).toBeNull()
+  expect(screen.queryByText('nur das Video (keine Bildschirmaufzeichnung)')).toBeNull()
   await advance(1100)
   expect(container.querySelector('video')?.getAttribute('src')).toContain('/recorded.mp4')
+  expect(container.querySelector('.think-aloud__head [role="status"]')).toBeNull()
   expect(getReplay).toHaveBeenCalledTimes(2)
   await advance(2000)
   expect(getReplay).toHaveBeenCalledTimes(2)
@@ -97,6 +99,9 @@ test('historical clip fallback with no pending upload does not incur a delay or 
   getReplay.mockResolvedValue(clip)
   const { container } = await mount()
   expect(container.querySelector('video')?.getAttribute('src')).toContain('/original.mp4')
+  expect(container.querySelector('.think-aloud__head [role="status"]')).toHaveTextContent(
+    'nur das Video (keine Bildschirmaufzeichnung)',
+  )
   await advance(3000)
   expect(getReplay).toHaveBeenCalledTimes(1)
 })
@@ -104,8 +109,12 @@ test('historical clip fallback with no pending upload does not incur a delay or 
 test('a failed pending upload returns to the available fallback', async () => {
   getReplay.mockResolvedValueOnce({ ...clip, recording_pending: true }).mockResolvedValue(clip)
   const { container } = await mount()
+  expect(screen.queryByText('nur das Video (keine Bildschirmaufzeichnung)')).toBeNull()
   await advance(1100)
   expect(container.querySelector('video')?.getAttribute('src')).toContain('/original.mp4')
+  expect(container.querySelector('.think-aloud__head [role="status"]')).toHaveTextContent(
+    'nur das Video (keine Bildschirmaufzeichnung)',
+  )
 })
 
 test('browser delivery and bridge polling share the same total sixty-second wait budget', async () => {
@@ -147,6 +156,9 @@ test('a poll resolving after the wait cap cannot replace the already exposed fal
   expect(container.querySelector('video')).toBe(video)
   expect(video.getAttribute('src')).toContain('/original.mp4')
   expect(video.currentTime).toBe(12)
+  expect(container.querySelector('.think-aloud__head [role="status"]')).toHaveTextContent(
+    'nur das Video (keine Bildschirmaufzeichnung)',
+  )
 })
 
 test('window focus cannot refetch and replace a selected replay', async () => {

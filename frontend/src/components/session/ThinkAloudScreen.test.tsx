@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import type { ReplayData } from '../../api/participant'
@@ -143,13 +143,57 @@ test('confirmed recorded audio needs no second player or audio warning', async (
   expect(screen.queryByRole('status')).toBeNull()
   expect(container.querySelectorAll('video')).toHaveLength(1)
   expect(container.querySelector('audio')).toBeNull()
+  expect(container.querySelector('.think-aloud__head > h2')).toBe(screen.getByRole('heading'))
+  expect(container.querySelector('.think-aloud__head .flex-between')).toBeNull()
+  expect(screen.queryByText('nur das Video (keine Bildschirmaufzeichnung)')).toBeNull()
 })
 
-test('clip fallback keeps its original sound without a screen-audio warning', async () => {
+test('clip fallback prominently names its source beside the heading without changing study instructions', async () => {
+  replay.source = 'clip'
+  replay.audio_status = 'failed'
+  const { container } = render(
+    <ThinkAloudScreen
+      videoId={1}
+      position={position({ batchPosition: 1, batchSize: 3 })}
+      heading="Erzählen Sie"
+      body={'Was haben Sie gesehen?\n\nUnd warum?'}
+      onComplete={vi.fn()}
+    />,
+  )
+  const heading = await screen.findByRole('heading', { name: 'Erzählen Sie 1 von 3' })
+  const header = container.querySelector<HTMLElement>('.think-aloud__head')!
+  const warning = within(header).getByRole('status')
+  expect(warning).toHaveTextContent('nur das Video (keine Bildschirmaufzeichnung)')
+  expect(warning).toHaveClass('is-danger')
+  expect(warning.parentElement).toBe(heading.parentElement)
+  expect(within(header).getByText('Was haben Sie gesehen?', { exact: true })).toBeVisible()
+  expect(within(header).getByText('Und warum?', { exact: true })).toBeVisible()
+  expect(
+    within(header).getByText('Sie sehen nun nacheinander die Aufzeichnungen der letzten 3 Fälle.', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  expect(container.querySelector('.think-aloud > [role="status"]')).toBeNull()
+  expect(container.querySelectorAll('video')).toHaveLength(1)
+  expect(container.querySelector('audio')).toBeNull()
+  expect(container.querySelector('.think-aloud__foot')).toHaveTextContent(
+    '12 Blickpunkte · nur das Video (keine Bildschirmaufzeichnung)',
+  )
+})
+
+test('clip fallback retains the default think-aloud hint', async () => {
   replay.source = 'clip'
   render(<ThinkAloudScreen videoId={1} onComplete={vi.fn()} />)
   await screen.findByRole('heading')
-  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'nur das Video (keine Bildschirmaufzeichnung)',
+  )
+  expect(
+    screen.getByText(
+      'Sehen Sie sich die Aufzeichnung an und erläutern Sie der Studienleitung, worauf Sie geachtet haben und warum Sie Ihre Notizen zu diesem Zeitpunkt gemacht haben.',
+      { exact: true },
+    ),
+  ).toBeVisible()
 })
 
 test.each([

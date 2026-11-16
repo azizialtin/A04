@@ -29,7 +29,7 @@
     "continue": "Los geht’s"
   },
   "pre_test": {
-    "page": "Seite {{current}} von {{total}}"
+    "page": "Fragebogenseite {{current}} von {{total}} insgesamt"
   },
   "sosci": {
     "pretest": {

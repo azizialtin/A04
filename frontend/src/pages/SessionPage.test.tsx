@@ -162,6 +162,7 @@ beforeEach(() => {
   useGuard.mockClear()
   enter.mockReset().mockResolvedValue({ visit_id: 'guarded-visit', section_timing: null })
   localStorage.clear()
+  sessionStorage.clear()
   guard = {
     enabled: false,
     phase: 'disabled',
@@ -381,6 +382,10 @@ test('SoSci opens separately and its measured return waits for fresh verificatio
     const survey = screen.getByRole('link', { name: 'Fragebogen öffnen' })
     expect(survey).toHaveAttribute('target', '_blank')
     expect(survey).toHaveAttribute('href', 'https://survey.test/form?id=T-1')
+    expect(
+      screen.getByRole('button', { name: 'Ich habe den Fragebogen abgeschlossen' }),
+    ).toBeDisabled()
+    fireEvent.click(survey)
     fireEvent.click(screen.getByRole('button', { name: 'Ich habe den Fragebogen abgeschlossen' }))
     expect(currentStepIndex).toBe(1)
     rerender(

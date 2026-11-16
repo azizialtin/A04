@@ -137,7 +137,11 @@ async function openTask(page: Page, task: SourceTask, sectionKey: 'pck' | 'mesp'
         : 17 + source.pck_pages.findIndex((page) => page.source_task === task.source_task),
     page_count: 25,
   }
-  return openStep(page, step)
+  const state = await openStep(page, step)
+  await expect(page.locator('[data-aoi="page_description"]')).toHaveText(
+    `Fragebogenseite ${step.page} von 25 insgesamt`,
+  )
+  return state
 }
 
 // Check before navigation: Playwright's click/fill helpers scroll offscreen elements

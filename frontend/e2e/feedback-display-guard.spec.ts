@@ -537,6 +537,9 @@ test('SoSci can open a new tab and returning to measured content requires fresh 
   await resume(page)
   await page.locator('textarea').fill('Vor dem externen Fragebogen')
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: 'Ich habe den Fragebogen abgeschlossen' }),
+  ).toBeDisabled()
   const popupPromise = page.waitForEvent('popup')
   await page.getByRole('link', { name: 'Fragebogen öffnen' }).click()
   const popup = await popupPromise

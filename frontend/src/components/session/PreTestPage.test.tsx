@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { SectionTiming, SessionStep } from '../../api/participant'
+import i18n from '../../i18n'
 import PreTestPage from './PreTestPage'
 
 const enterPage = vi.fn()
@@ -91,6 +92,31 @@ const view = async (pilot = true, page = step) => {
   })
   return result!
 }
+
+test.each([
+  ['ck_tasks', 'CK: Aufgabe 1', 4],
+  ['pck', 'Fachdidaktisches Wissen', 17],
+  ['mesp', 'MESP: Aufgabe 6', 25],
+])(
+  'the %s counter explicitly covers the whole questionnaire sequence',
+  async (section, title, page) => {
+    await view(true, { ...step, section_key: section, title, page })
+    expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+    expect(screen.getByText(`Fragebogenseite ${page} von 25 insgesamt`)).toBeInTheDocument()
+    expect(screen.queryByText(`Seite ${page} von 25`, { exact: true })).toBeNull()
+  },
+)
+
+test('the English counter also identifies global questionnaire progress', async () => {
+  await i18n.changeLanguage('en')
+  try {
+    await view()
+    expect(screen.getByText('Questionnaire page 4 of 25 overall')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'CK: Aufgabe 1' })).toBeInTheDocument()
+  } finally {
+    await i18n.changeLanguage('de')
+  }
+})
 
 test('explicit skip is left of Continue and saves only zero plus an empty explanation', async () => {
   await view()

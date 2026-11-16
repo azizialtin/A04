@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { seedStudy } from './seed'
+import { completeSosci } from './sosci'
 
 /**
  * A participant walking their run in a real browser.
@@ -56,7 +57,7 @@ test('a participant works through their cases and reaches the end', async ({ pag
 
   // --- the pre-test pages, before anything else ---------------------------
   await expect(page.getByRole('heading', { name: 'Angaben zur Person' })).toBeVisible()
-  await expect(page.getByText('Seite 1 von 1')).toBeVisible()
+  await expect(page.getByText('Fragebogenseite 1 von 1 insgesamt')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Weiter' })).toBeDisabled()
   await page.getByRole('spinbutton').fill('34')
   await inspectScreen('02-questionnaire')
@@ -69,7 +70,7 @@ test('a participant works through their cases and reaches the end', async ({ pag
     `https://sosci.example/pre?id=${participantId}`,
   )
   await inspectScreen('03-pretest-sosci')
-  await page.getByRole('button', { name: /abgeschlossen/ }).click()
+  await completeSosci(page)
 
   // --- calibration, when this deployment runs its own step ----------------
   // The lab calibrates in Tobii Pro Eye Tracker Manager before the participant
@@ -157,7 +158,7 @@ test('a participant works through their cases and reaches the end', async ({ pag
   // --- the post-test survey, then done ------------------------------------
   await expect(page.getByRole('heading', { name: 'Abschluss-Fragebogen' })).toBeVisible()
   await inspectScreen('05-posttest-sosci')
-  await page.getByRole('button', { name: /abgeschlossen/ }).click()
+  await completeSosci(page)
 
   await expect(page.getByRole('heading', { name: 'Vielen Dank!' })).toBeVisible()
   await inspectScreen('06-thanks')

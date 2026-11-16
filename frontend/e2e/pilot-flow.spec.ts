@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import type { SessionScript, SessionStep } from '../src/api/participant'
 import type { Question } from '../src/lib/questionnaire'
+import { completeSosci } from './sosci'
 
 const de = JSON.parse(
   readFileSync(new URL('../src/i18n/locales/de.json', import.meta.url), 'utf8'),
@@ -307,6 +308,9 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
         break
       case 'questionnaire':
         await expect(page.getByRole('heading', { name: step.title, exact: true })).toBeVisible()
+        await expect(page.locator('[data-aoi="page_description"]')).toHaveText(
+          `Fragebogenseite ${step.page} von ${step.page_count} insgesamt`,
+        )
         await expect(page.locator(`[data-aoi="question.${step.questions[0].id}"]`)).toBeVisible()
         if (step.section_key === 'pck') await expectPageFits(page)
         if (step.questions[0]?.id === 'ck_pre_02') {
@@ -360,7 +364,7 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
           await expect(
             page.getByText('Ihre Teilnehmer-ID wird automatisch übergeben.', { exact: false }),
           ).toHaveCount(0)
-        await page.getByRole('button', { name: /abgeschlossen/ }).click()
+        await completeSosci(page)
         break
       case 'case_intro':
         await expect(

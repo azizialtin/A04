@@ -115,6 +115,17 @@ export default function ThinkAloudScreen({
   }
 
   const batched = (position?.batchSize ?? 1) > 1
+  const title = (
+    <h2>
+      {batched
+        ? t('think_aloud.numbered', {
+            title: heading || t('think_aloud.title'),
+            current: position?.batchPosition,
+            total: position?.batchSize,
+          })
+        : heading || t('think_aloud.title')}
+    </h2>
+  )
 
   return (
     <div className="think-aloud">
@@ -134,15 +145,16 @@ export default function ThinkAloudScreen({
             })}
           </p>
         ) : null}
-        <h2>
-          {batched
-            ? t('think_aloud.numbered', {
-                title: heading || t('think_aloud.title'),
-                current: position?.batchPosition,
-                total: position?.batchSize,
-              })
-            : heading || t('think_aloud.title')}
-        </h2>
+        {selected.source === 'clip' ? (
+          <div className="flex-between">
+            {title}
+            <strong role="status" className="is-danger">
+              {t('think_aloud.clip_only')}
+            </strong>
+          </div>
+        ) : (
+          title
+        )}
         {body ? (
           <StudyText text={body} className="muted" />
         ) : (
