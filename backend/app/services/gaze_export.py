@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from app.services.display_guard import DisplayGuardIntervals
 from app.services.gaze_analysis import GazeLayout, finite_number
 
 RAW_COLUMNS = ["ts", "device_ts", "geometry_ts", "lx", "ly", "rx", "ry", "lv", "rv", "lpd", "rpd"]
@@ -137,11 +138,17 @@ def check_storage(recording, settings) -> None:
         ) from exc
 
 
-def csv_batches(recording, settings, case_cells: list, defuse) -> Generator[bytes, None, None]:
+def csv_batches(
+    recording,
+    settings,
+    case_cells: list,
+    defuse,
+    interruptions: DisplayGuardIntervals | None = None,
+) -> Generator[bytes, None, None]:
     """Bound CSV buffering independently of recording duration or study size."""
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    layout = GazeLayout(recording.geometry or [])
+    layout = GazeLayout(recording.geometry or [], interruptions)
     context = [
         recording.participant_id,
         recording.id,

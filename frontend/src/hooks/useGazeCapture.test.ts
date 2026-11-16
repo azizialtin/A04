@@ -6,7 +6,17 @@ import type { GazeLayout } from '../lib/gazeGeometry'
 import { useGazeCapture } from './useGazeCapture'
 import { enqueue } from '../lib/outbox'
 import { gazeDeliveryWarning, resetGazeDeliverySession } from '../lib/gazeDelivery'
+import { displayGuardAllowsSample } from '../lib/displayGuard'
 vi.mock('../lib/outbox', () => ({ enqueue: vi.fn() }))
+
+const guardListeners = new Set<() => void>()
+vi.mock('../lib/displayGuard', () => ({
+  displayGuardAllowsSample: vi.fn(() => true),
+  subscribeDisplayGuard: (callback: () => void) => {
+    guardListeners.add(callback)
+    return () => guardListeners.delete(callback)
+  },
+}))
 
 vi.mock('../api/gaze', () => ({
   gazeApi: {
@@ -86,6 +96,8 @@ beforeEach(() => {
   resetGazeDeliverySession()
   FakeSocket.all = []
   observers.clear()
+  guardListeners.clear()
+  vi.mocked(displayGuardAllowsSample).mockReset().mockReturnValue(true)
   vi.stubGlobal('WebSocket', FakeSocket)
   start.mockReset().mockResolvedValue({ recording_id: 7 })
   upload.mockReset().mockResolvedValue({} as never)
@@ -108,6 +120,26 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   vi.useRealTimers()
+})
+
+test('display interruption retains every raw gaze sample while removing uncertain geometry references', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  expect(guardListeners.size).toBe(1)
+  samples(socket, 1, 100_010)
+  vi.mocked(displayGuardAllowsSample).mockReturnValue(false)
+  samples(socket, 1, 100_020)
+  vi.mocked(displayGuardAllowsSample).mockReturnValue(true)
+  samples(socket, 1, 100_030)
+  unmount()
+  await act(async () => {})
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(guardListeners.size).toBe(0)
+  const saved = upload.mock.calls.flatMap(([, batch]) => batch)
+  expect(saved.map((sample) => sample.ts)).toEqual([100_010, 100_020, 100_030])
+  expect(saved.map((sample) => sample.geometry_ts)).toEqual([100_000, null, 100_000])
+  expect(saved.every((sample) => sample.lx === 0.3 && sample.ly === 0.4 && sample.lv)).toBe(true)
+  expect(complete).toHaveBeenCalledWith(7, { sample_count: 3 })
 })
 
 test.each<GazeContext>([

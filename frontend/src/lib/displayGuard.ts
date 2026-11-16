@@ -1,0 +1,316 @@
+export const DISPLAY_GUARD_ENABLED =
+  import.meta.env.MODE === 'lab' || import.meta.env.VITE_LAB_DISPLAY_GUARD === 'true'
+export const DISPLAY_GUARD_PROFILE = 'lab_1080p' as const
+export const DISPLAY_STABLE_MS = 500
+
+export type DisplayGuardReason =
+  | 'confirmation_required'
+  | 'checking_display'
+  | 'screen_resolution'
+  | 'window_size'
+  | 'window_position'
+  | 'display_scale'
+  | 'viewport_zoom'
+  | 'multiple_displays'
+  | 'window_focus'
+  | 'clock_changed'
+
+export interface DisplayMetrics {
+  screenWidth: number
+  screenHeight: number
+  innerWidth: number
+  innerHeight: number
+  outerWidth: number
+  outerHeight: number
+  x: number
+  y: number
+  dpr: number
+  extended?: boolean
+  visible: boolean
+  focused: boolean
+  viewport?: { scale: number; x: number; y: number }
+}
+
+export interface DisplayGuardSnapshot {
+  enabled: boolean
+  phase: 'disabled' | 'suspended' | 'blocked' | 'ready' | 'verified'
+  owner: string | null
+  required: boolean
+  focusRequired: boolean
+  reasons: DisplayGuardReason[]
+  generation: number
+}
+
+export interface DisplayGuardEvent {
+  event_type: 'display_guard_interrupted' | 'display_guard_resumed'
+  client_ts: number
+  payload: {
+    profile: typeof DISPLAY_GUARD_PROFILE
+    detected_at: number
+    reasons: DisplayGuardReason[]
+  }
+}
+
+export function displayProblems(metrics: DisplayMetrics, focusRequired: boolean) {
+  const reasons: DisplayGuardReason[] = []
+  const near = (value: number, expected: number, tolerance = 1) =>
+    Number.isFinite(value) && Math.abs(value - expected) <= tolerance
+  if (!near(metrics.screenWidth, 1920) || !near(metrics.screenHeight, 1080))
+    reasons.push('screen_resolution')
+  if (
+    !near(metrics.innerWidth, 1920) ||
+    !near(metrics.innerHeight, 1080) ||
+    !near(metrics.outerWidth, 1920) ||
+    !near(metrics.outerHeight, 1080)
+  )
+    reasons.push('window_size')
+  if (!near(metrics.x, 0) || !near(metrics.y, 0)) reasons.push('window_position')
+  if (!near(metrics.dpr, 1, 0.001)) reasons.push('display_scale')
+  if (
+    metrics.viewport &&
+    (!near(metrics.viewport.scale, 1, 0.001) ||
+      !near(metrics.viewport.x, 0, 0.01) ||
+      !near(metrics.viewport.y, 0, 0.01))
+  )
+    reasons.push('viewport_zoom')
+  if (metrics.extended === true) reasons.push('multiple_displays')
+  if (focusRequired && (!metrics.visible || !metrics.focused)) reasons.push('window_focus')
+  return reasons
+}
+
+export function readDisplayMetrics(): DisplayMetrics {
+  const viewport = window.visualViewport
+  return {
+    screenWidth: window.screen.width,
+    screenHeight: window.screen.height,
+    innerWidth: window.innerWidth,
+    innerHeight: window.innerHeight,
+    outerWidth: window.outerWidth,
+    outerHeight: window.outerHeight,
+    x: window.screenX,
+    y: window.screenY,
+    dpr: window.devicePixelRatio,
+    extended: (window.screen as Screen & { isExtended?: boolean }).isExtended,
+    visible: document.visibilityState !== 'hidden',
+    focused: document.hasFocus(),
+    ...(viewport
+      ? { viewport: { scale: viewport.scale, x: viewport.offsetLeft, y: viewport.offsetTop } }
+      : {}),
+  }
+}
+
+/** Owns verification across page changes; valid dimensions alone never resume a task. */
+export class DisplayGuardController {
+  private snapshot: DisplayGuardSnapshot
+  private listeners = new Set<() => void>()
+  private stableSince: number | null = null
+  private lastObserved: number | null = null
+  private largestTimestamp = 0
+  private verifiedAt = Infinity
+  private verifiedObservations: number[] = []
+  private interruptedFrom: number | null = null
+  private sink: (event: DisplayGuardEvent) => void = () => {}
+
+  constructor(
+    enabled: boolean,
+    private read = readDisplayMetrics,
+    private wallTime = Date.now,
+    private monotonicTime = () => performance.now(),
+  ) {
+    this.snapshot = {
+      enabled,
+      phase: enabled ? 'blocked' : 'disabled',
+      owner: null,
+      required: false,
+      focusRequired: false,
+      reasons: enabled ? ['confirmation_required'] : [],
+      generation: 0,
+    }
+  }
+
+  getSnapshot = () => this.snapshot
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  private publish(next: Partial<DisplayGuardSnapshot>) {
+    const value = { ...this.snapshot, ...next }
+    if (JSON.stringify(value) === JSON.stringify(this.snapshot)) return
+    this.snapshot = value
+    this.listeners.forEach((listener) => listener())
+  }
+
+  private event(
+    event_type: DisplayGuardEvent['event_type'],
+    timestamp: number,
+    reasons: DisplayGuardReason[],
+  ) {
+    if (!this.snapshot.owner) return
+    this.sink({
+      event_type,
+      client_ts: Math.max(0, Math.floor(timestamp)),
+      payload: { profile: DISPLAY_GUARD_PROFILE, detected_at: this.wallTime(), reasons },
+    })
+  }
+
+  configure(
+    owner: string | null,
+    required: boolean,
+    focusRequired: boolean,
+    sink?: (event: DisplayGuardEvent) => void,
+  ) {
+    if (!this.snapshot.enabled) return
+    if (sink) this.sink = sink
+    const changedOwner = owner !== this.snapshot.owner
+    const entering = required && (!this.snapshot.required || changedOwner)
+    if (changedOwner) {
+      this.lastObserved = null
+      this.largestTimestamp = 0
+      this.verifiedAt = Infinity
+      this.verifiedObservations = []
+      this.interruptedFrom = null
+      this.stableSince = null
+    }
+    if (!owner || !required) {
+      this.stableSince = null
+      this.verifiedAt = Infinity
+      this.publish({
+        owner,
+        required,
+        focusRequired,
+        phase: owner ? 'suspended' : 'blocked',
+        reasons: [],
+      })
+      return
+    }
+    if (entering) {
+      this.stableSince = null
+      this.verifiedAt = Infinity
+      this.interruptedFrom = this.wallTime()
+      this.publish({
+        owner,
+        required,
+        focusRequired,
+        phase: 'blocked',
+        reasons: ['confirmation_required'],
+        generation: this.snapshot.generation + 1,
+      })
+      this.event('display_guard_interrupted', this.interruptedFrom, ['confirmation_required'])
+    } else this.publish({ owner, required, focusRequired })
+    this.check()
+  }
+
+  release(owner: string) {
+    if (this.snapshot.owner !== owner) return
+    this.configure(null, false, false)
+    this.sink = () => {}
+  }
+
+  private invalidate(reasons: DisplayGuardReason[], preceding: number) {
+    const interrupted = this.snapshot.phase === 'verified'
+    const start = Math.max(0, Math.floor(preceding))
+    const extendsInterval = this.interruptedFrom === null || start < this.interruptedFrom
+    if (interrupted || extendsInterval) this.interruptedFrom = start
+    this.stableSince = null
+    // Keep the verification timestamp for an older event outside our bounded
+    // history. The blocked phase itself prevents sample admission.
+    this.publish({
+      phase: 'blocked',
+      reasons,
+      generation: this.snapshot.generation + Number(interrupted),
+    })
+    // An older queued event can arrive after a newer event already blocked the
+    // page. Persist the earlier boundary too; the backend unions both starts.
+    if (interrupted || extendsInterval) this.event('display_guard_interrupted', start, reasons)
+  }
+
+  /** A queued browser event is evidence even if geometry was already restored. */
+  interrupt = (reason: DisplayGuardReason, occurredAt?: number) => {
+    if (!this.snapshot.enabled || !this.snapshot.owner || !this.snapshot.required) return
+    const now = this.wallTime()
+    let preceding = Math.min(this.lastObserved ?? now, now)
+    if (occurredAt !== undefined && Number.isFinite(occurredAt)) {
+      // A sample can be delivered before an older queued resize/blur event.
+      // Find a verified observation preceding that event, not its dispatch.
+      preceding = Math.min(now, occurredAt, this.verifiedAt)
+      for (let index = this.verifiedObservations.length - 1; index >= 0; index--) {
+        if (this.verifiedObservations[index] < occurredAt) {
+          preceding = Math.min(now, this.verifiedObservations[index])
+          break
+        }
+      }
+    }
+    this.invalidate([reason], preceding)
+  }
+
+  check = (): boolean => {
+    if (!this.snapshot.enabled || this.snapshot.phase === 'suspended') return true
+    if (!this.snapshot.owner || !this.snapshot.required) return false
+    const now = this.wallTime()
+    const reasons = displayProblems(this.read(), this.snapshot.focusRequired)
+    if (now < this.largestTimestamp) reasons.push('clock_changed')
+    this.largestTimestamp = Math.max(now, this.largestTimestamp)
+    const preceding = Math.min(this.lastObserved ?? now, now)
+    this.lastObserved = now
+    if (reasons.length) {
+      this.invalidate(reasons, preceding)
+      return false
+    }
+    if (this.snapshot.phase === 'verified') {
+      if (this.verifiedObservations[this.verifiedObservations.length - 1] !== now) {
+        this.verifiedObservations.push(now)
+        // Long event stalls fall back conservatively to the verification time.
+        if (this.verifiedObservations.length > 512) this.verifiedObservations.shift()
+      }
+      return true
+    }
+    this.stableSince ??= this.monotonicTime()
+    const ready = this.monotonicTime() - this.stableSince >= DISPLAY_STABLE_MS
+    this.publish({
+      phase: ready ? 'ready' : 'blocked',
+      reasons: [ready ? 'confirmation_required' : 'checking_display'],
+    })
+    return false
+  }
+
+  resume = (): boolean => {
+    this.check()
+    if (this.snapshot.phase !== 'ready') return false
+    const now = this.wallTime()
+    this.verifiedAt = now
+    this.verifiedObservations = [now]
+    this.event('display_guard_resumed', now, [])
+    this.interruptedFrom = null
+    this.publish({ phase: 'verified', reasons: [] })
+    return true
+  }
+
+  allowsSample = (timestamp: number): boolean => {
+    if (!this.snapshot.enabled) return true
+    this.check()
+    return (
+      this.snapshot.phase === 'verified' &&
+      Number.isFinite(timestamp) &&
+      timestamp >= this.verifiedAt
+    )
+  }
+}
+
+export const displayGuard = new DisplayGuardController(DISPLAY_GUARD_ENABLED)
+export const getDisplayGuardSnapshot = displayGuard.getSnapshot
+export const subscribeDisplayGuard = displayGuard.subscribe
+export const checkDisplayGuard = displayGuard.check
+export const resumeDisplayGuard = displayGuard.resume
+export const displayGuardAllowsSample = displayGuard.allowsSample
+
+export function displayGuardGeometry() {
+  if (!getDisplayGuardSnapshot().enabled) return undefined
+  checkDisplayGuard()
+  return {
+    profile: DISPLAY_GUARD_PROFILE,
+    verified: getDisplayGuardSnapshot().phase === 'verified',
+  }
+}

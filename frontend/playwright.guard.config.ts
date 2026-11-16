@@ -1,0 +1,38 @@
+import { defineConfig, devices } from '@playwright/test'
+
+export default defineConfig({
+  testDir: './e2e',
+  testMatch: 'feedback-display-guard.spec.ts',
+  outputDir: './test-results/display-guard',
+  fullyParallel: false,
+  workers: 1,
+  timeout: 45_000,
+  use: {
+    baseURL: 'http://127.0.0.1:5194',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1920, height: 1080 },
+        screen: { width: 1920, height: 1080 },
+        deviceScaleFactor: 1,
+        launchOptions: { args: ['--window-position=0,0', '--window-size=1920,1080'] },
+      },
+    },
+  ],
+  webServer: {
+    command: 'npm run dev -- --host 127.0.0.1 --port 5194 --strictPort',
+    url: 'http://127.0.0.1:5194',
+    reuseExistingServer: false,
+    env: {
+      ...process.env,
+      VITE_API_BASE_URL: 'http://a04.invalid',
+      VITE_TOBII_WS_URL: 'ws://127.0.0.1:8766',
+      VITE_LAB_DISPLAY_GUARD: 'true',
+    },
+  },
+})

@@ -15,6 +15,11 @@ import {
   type ValidationPoint,
 } from '../../lib/calibration'
 import { Bridge, TOBII_WS_URL, type BridgeGaze } from '../../lib/tobii'
+import {
+  checkDisplayGuard,
+  getDisplayGuardSnapshot,
+  subscribeDisplayGuard,
+} from '../../lib/displayGuard'
 
 const DWELL_MS = 1200 // time on a calibration target before collecting
 const SETTLE_MS = 600 // time to land on a validation target before measuring
@@ -105,11 +110,14 @@ export default function CalibrationScreen({ onComplete }: Props) {
     [],
   )
 
-  const measure = useCallback(async (at: Target, aspect: number) => {
+  const measure = useCallback(async (at: Target, aspect: number, verifyDisplay: () => void) => {
+    verifyDisplay()
     setTarget(at)
     await wait(SETTLE_MS)
+    verifyDisplay()
     collected.current = []
     await wait(MEASURE_MS)
+    verifyDisplay()
 
     const samples = collected.current.filter(hasGazePosition)
     const display = toDisplay(at)
@@ -133,32 +141,61 @@ export default function CalibrationScreen({ onComplete }: Props) {
 
   const run = useCallback(async () => {
     const bridge = bridgeRef.current
-    if (!bridge) return
+    if (!bridge || !checkDisplayGuard()) return
+
+    const initialGuard = getDisplayGuardSnapshot()
+    let interrupted = false
+    const verifyDisplay = () => {
+      if (
+        initialGuard.enabled &&
+        (interrupted ||
+          !checkDisplayGuard() ||
+          getDisplayGuardSnapshot().generation !== initialGuard.generation)
+      )
+        throw new Error(t('calibration_interrupted', { ns: 'displayGuard' }))
+    }
+    const unsubscribe = subscribeDisplayGuard(() => {
+      const guard = getDisplayGuardSnapshot()
+      if (
+        initialGuard.enabled &&
+        (guard.phase !== 'verified' || guard.generation !== initialGuard.generation)
+      ) {
+        interrupted = true
+        bridge.send('stop_gaze')
+        bridge.send('calibrate_abort')
+      }
+    })
 
     setPhase('running')
     setError('')
     setResult(null)
     const points: ValidationPoint[] = []
     try {
-      await document.documentElement.requestFullscreen?.().catch(() => {})
+      if (!initialGuard.enabled)
+        await document.documentElement.requestFullscreen?.().catch(() => {})
+      verifyDisplay()
 
       const started = await bridge.request('calibrate_start', 'calibration_started')
+      verifyDisplay()
       if (!started.ok) throw new Error(t('calibration.error_start'))
 
       setProgress({ done: 0, total: CALIBRATION_TARGETS.length + VALIDATION_TARGETS.length })
       for (const [i, at] of CALIBRATION_TARGETS.entries()) {
         setTarget(at)
         await wait(DWELL_MS)
+        verifyDisplay()
         const display = toDisplay(at)
         const res = await bridge.request('calibrate_point', 'calibration_point_result', {
           x: display.x,
           y: display.y,
         })
+        verifyDisplay()
         if (!res.ok) throw new Error(t('calibration.error_point'))
         setProgress({ done: i + 1, total: CALIBRATION_TARGETS.length + VALIDATION_TARGETS.length })
       }
 
       const computed = await bridge.request('calibrate_compute', 'calibration_result')
+      verifyDisplay()
       if (!computed.ok) throw new Error(t('calibration.error_compute'))
 
       // Validation runs off the ordinary gaze stream, on targets the tracker
@@ -167,7 +204,7 @@ export default function CalibrationScreen({ onComplete }: Props) {
       const aspect = (window.screen.width || 16) / (window.screen.height || 9)
       const distances: number[] = []
       for (const [i, at] of VALIDATION_TARGETS.entries()) {
-        const { point, distance } = await measure(at, aspect)
+        const { point, distance } = await measure(at, aspect, verifyDisplay)
         points.push(point)
         if (distance !== null) distances.push(distance)
         setProgress({
@@ -192,7 +229,9 @@ export default function CalibrationScreen({ onComplete }: Props) {
         bridge.status.display_w_mm,
         distances.length ? distances.reduce((a, b) => a + b, 0) / distances.length : null,
       )
+      verifyDisplay()
       await save('success', points, offset, degrees)
+      verifyDisplay()
       setResult({ offset, degrees })
       setPhase('done')
     } catch (err) {
@@ -203,11 +242,14 @@ export default function CalibrationScreen({ onComplete }: Props) {
       await save('failed', points)
       setPhase('failed')
     } finally {
-      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
+      unsubscribe()
+      if (!initialGuard.enabled && document.fullscreenElement)
+        await document.exitFullscreen().catch(() => {})
     }
   }, [measure, save, t])
 
   const skip = useCallback(async () => {
+    if (!checkDisplayGuard()) return
     await save('skipped')
     onComplete()
   }, [onComplete, save])

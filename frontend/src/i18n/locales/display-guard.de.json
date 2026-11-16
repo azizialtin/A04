@@ -1,0 +1,12 @@
+{
+  "title": "Bildschirmeinstellung prüfen",
+  "body": "Bitte warten Sie auf die Studienleitung. Die Anzeige muss wieder den vorgesehenen Einstellungen entsprechen, bevor Sie fortfahren können.",
+  "setup": "Vorgesehen sind 1920 × 1080 Pixel, 100 % Skalierung und Browser-Zoom sowie ein Vollbild auf dem vorgesehenen Bildschirm. Mit Strg + 0 lässt sich der Browser-Zoom zurücksetzen.",
+  "ready": "Die Anzeige entspricht wieder den vorgesehenen Einstellungen. Die Studienleitung kann die Fortsetzung bestätigen.",
+  "waiting": "Die Anzeige wird überprüft. Bitte stellen Sie die vorgesehenen Einstellungen wieder her.",
+  "resume": "Studienleitung: Fortsetzen",
+  "fullscreen": "Vollbild öffnen",
+  "fullscreen_failed": "Vollbild konnte nicht geöffnet werden. Bitte verwenden Sie die Vollbildfunktion des Browsers.",
+  "timers": "Laufende Zeitbegrenzungen gelten weiterhin.",
+  "calibration_interrupted": "Die Anzeige wurde während der Kalibrierung verändert. Bitte wiederholen Sie die Kalibrierung."
+}

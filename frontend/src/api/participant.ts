@@ -24,6 +24,12 @@ export interface ReplayPoint {
   y: number
 }
 
+/** Sorted, merged half-open intervals on the replay timeline. Null means open ended. */
+export interface ReplaySuppression {
+  start_ms: number
+  end_ms: number | null
+}
+
 export interface ReplayData extends Partial<AudioCaptureMeta> {
   video_url: string
   // "screen" — the capture of the whole display, cursor and all. "clip" — the
@@ -37,6 +43,7 @@ export interface ReplayData extends Partial<AudioCaptureMeta> {
   offscreen_samples: number
   has_geometry: boolean
   points: ReplayPoint[]
+  suppressed_intervals?: ReplaySuppression[]
   // Wall-clock ms at position 0 of a screen recording, so anything else on that
   // clock — the notes — lands on the same timeline. Null for a clip replay.
   epoch_ms: number | null

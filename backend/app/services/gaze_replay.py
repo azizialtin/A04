@@ -23,6 +23,7 @@ before `client_ts` existed.
 from __future__ import annotations
 
 import json
+import math
 from bisect import bisect_right
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.models.interaction_log import InteractionLog
+from app.services.display_guard import DisplayGuardIntervals, load_display_guard_intervals
 from app.services.gaze_analysis import GazeLayout, averaged_gaze, unsupported_mapping_reason
 
 PLAYBACK_EVENTS = (
@@ -208,6 +210,7 @@ def build_points(
     samples: list[dict[str, Any]],
     segments: list[tuple[float, float, float]],
     geometry: list[dict[str, Any]] | None = None,
+    interruptions: DisplayGuardIntervals | None = None,
 ) -> tuple[list[dict[str, Any]], int, int, int]:
     """Map samples onto video time and onto the picture.
 
@@ -224,7 +227,7 @@ def build_points(
     offscreen = 0
     ordered = sorted(segments)
     starts = [s[0] for s in ordered]
-    layout = GazeLayout(geometry or [])
+    layout = GazeLayout(geometry or [], interruptions)
     for s in samples:
         ts = s.get("ts")
         if not isinstance(ts, (int, float)):
@@ -239,6 +242,9 @@ def build_points(
             continue
 
         x, y = mean
+        if layout.display_guard_reason(s) is not None:
+            unmapped += 1
+            continue
         # New samples name their actual layout; a missing reference must never
         # borrow a newer or stale snapshot just to produce a replay dot.
         geo = layout.geometry_for(s)
@@ -271,7 +277,11 @@ def _averaged(sample: dict[str, Any]) -> tuple[float, float] | None:
 
 
 def build_screen_points(
-    samples: list[dict[str, Any]], epoch_ms: int, duration_ms: int | None = None
+    samples: list[dict[str, Any]],
+    epoch_ms: int,
+    duration_ms: int | None = None,
+    geometry: list[dict[str, Any]] | None = None,
+    interruptions: DisplayGuardIntervals | None = None,
 ) -> tuple[list[dict[str, Any]], int, int, int]:
     """Map samples onto a full-screen recording. Returns the same
     (points, invalid, unmapped, offscreen) shape as `build_points`.
@@ -284,6 +294,7 @@ def build_screen_points(
     invalid = 0
     unmapped = 0
     offscreen = 0
+    layout = GazeLayout(geometry or [], interruptions)
     for sample in samples:
         ts = sample.get("ts")
         if not isinstance(ts, (int, float)):
@@ -297,6 +308,9 @@ def build_screen_points(
             invalid += 1
             continue
         x, y = mean
+        if layout.display_guard_reason(sample) is not None:
+            unmapped += 1
+            continue
         if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
             offscreen += 1  # looking past the edge of the display
             continue
@@ -325,6 +339,35 @@ def downsample(
     return thinned
 
 
+def replay_suppressed_intervals(
+    layout: GazeLayout,
+    samples: list[dict[str, Any]],
+    segments: list[tuple[float, float, float]],
+) -> list[dict[str, int | None]]:
+    ranges = []
+    for start, end in layout.suppressed_ranges(samples):
+        for wall_start, wall_end, video_start in segments:
+            lower, upper = max(start, wall_start), min(end, wall_end)
+            if lower < upper:
+                first = math.floor(video_start + lower - wall_start)
+                last = (
+                    math.ceil(video_start + upper - wall_start)
+                    if math.isfinite(upper)
+                    else float("inf")
+                )
+                ranges.append((first, last))
+    merged: list[tuple[int, int | float]] = []
+    for start_ms, end_ms in sorted(ranges):
+        if merged and start_ms <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end_ms))
+        else:
+            merged.append((start_ms, end_ms))
+    return [
+        {"start_ms": start, "end_ms": int(end) if math.isfinite(end) else None}
+        for start, end in merged
+    ]
+
+
 async def load_samples(recording, settings) -> list[dict[str, Any]]:
     """Every sample of one recording, off disk or out of the bucket.
 
@@ -340,7 +383,7 @@ async def load_samples(recording, settings) -> list[dict[str, Any]]:
     return await run_in_threadpool(read_local_samples, recording.storage_prefix)
 
 
-async def compute_screen_replay(recording, screen, settings) -> dict[str, Any]:
+async def compute_screen_replay(db: AsyncSession, recording, screen, settings) -> dict[str, Any]:
     """Replay payload against a screen recording.
 
     `recording` may be None: the capture is worth playing back on its own, and a
@@ -348,9 +391,21 @@ async def compute_screen_replay(recording, screen, settings) -> dict[str, Any]:
     the participant was doing.
     """
     samples = await load_samples(recording, settings) if recording is not None else []
-    points, invalid, unmapped, offscreen = build_screen_points(
-        samples, screen.epoch_ms, screen.duration_ms
+    interruptions = (
+        await load_display_guard_intervals(db, [recording.participant_id])
+        if recording is not None
+        else {}
     )
+    points, invalid, unmapped, offscreen = build_screen_points(
+        samples,
+        screen.epoch_ms,
+        screen.duration_ms,
+        recording.geometry if recording is not None else None,
+        interruptions.get(recording.participant_id) if recording is not None else None,
+    )
+    geometry = (recording.geometry or []) if recording is not None else []
+    guard = interruptions.get(recording.participant_id) if recording is not None else None
+    end = screen.epoch_ms + screen.duration_ms if screen.duration_ms else float("inf")
     return {
         "points": downsample(points),
         "mapped_samples": len(points),
@@ -360,6 +415,9 @@ async def compute_screen_replay(recording, screen, settings) -> dict[str, Any]:
         # The recording is the display, so the samples need no geometry to be
         # placed on it — the question the flag answers does not arise here.
         "has_geometry": True,
+        "suppressed_intervals": replay_suppressed_intervals(
+            GazeLayout(geometry, guard), samples, [(screen.epoch_ms, end, 0)]
+        ),
     }
 
 
@@ -391,7 +449,10 @@ async def compute_replay(db: AsyncSession, recording, settings) -> dict[str, Any
         segments = [(span[0], float("inf"), 0.0)]
 
     geometry = recording.geometry or []
-    points, invalid, unmapped, offscreen = build_points(samples, segments, geometry)
+    interruptions = await load_display_guard_intervals(db, [recording.participant_id])
+    points, invalid, unmapped, offscreen = build_points(
+        samples, segments, geometry, interruptions.get(recording.participant_id)
+    )
     return {
         # What is sent, and what was actually captured on the clip. The stats
         # the researcher reads should be the second, not the render budget.
@@ -401,4 +462,7 @@ async def compute_replay(db: AsyncSession, recording, settings) -> dict[str, Any
         "unmapped_samples": unmapped,
         "offscreen_samples": offscreen,
         "has_geometry": bool(geometry),
+        "suppressed_intervals": replay_suppressed_intervals(
+            GazeLayout(geometry, interruptions.get(recording.participant_id)), samples, segments
+        ),
     }

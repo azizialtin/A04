@@ -17,6 +17,7 @@ export interface GazeGeometry {
   frame: { w: number; h: number }
   dpr: number
   visual_viewport?: { scale: number; x: number; y: number; w: number; h: number }
+  display_guard?: { profile: 'lab_1080p'; verified: boolean }
 }
 
 export interface GazeAoi {

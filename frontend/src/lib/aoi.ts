@@ -1,4 +1,5 @@
 import { captureGeometry, type GazeAoi, type GazeLayout } from './gazeGeometry'
+import { displayGuardGeometry } from './displayGuard'
 
 type Box = { x: number; y: number; w: number; h: number }
 
@@ -105,6 +106,7 @@ export function capturePageGeometry(): GazeLayout {
   const clip = captureGeometry(video)
   const viewport = window.visualViewport
   const isExtended = (window.screen as Screen & { isExtended?: boolean }).isExtended
+  const guard = displayGuardGeometry()
   return {
     ts: Date.now(),
     screen: {
@@ -136,6 +138,7 @@ export function capturePageGeometry(): GazeLayout {
     aois,
     active_modal: modal ? modal.dataset.aoiModal || 'dialog' : null,
     visible: document.visibilityState !== 'hidden' && document.hasFocus(),
+    ...(guard ? { display_guard: guard } : {}),
   }
 }
 

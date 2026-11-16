@@ -57,7 +57,7 @@ export default function AdminReplayViewer({
       const dot = dotRef.current
       const stage = stageRef.current
       if (!video || !dot || !stage) return
-      const g = gazeAt(replay.points, video.currentTime * 1000)
+      const g = gazeAt(replay.points, video.currentTime * 1000, 200, replay.suppressed_intervals)
       if (!g) {
         dot.style.opacity = '0'
       } else {
@@ -78,7 +78,7 @@ export default function AdminReplayViewer({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [replay.points])
+  }, [replay.points, replay.suppressed_intervals])
 
   return (
     <div className="card">

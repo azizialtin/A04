@@ -37,6 +37,7 @@ from app.models.text_entry import TextEntry
 from app.models.video import Video
 from app.models.video_set import VideoSet
 from app.schemas.admin import ExportInfo
+from app.services.display_guard import load_display_guard_intervals
 from app.services.gaze_export import GAZE_COLUMNS, GazeStorageError, check_storage, csv_batches
 from app.services.log_data import (
     completed_step_label,
@@ -240,6 +241,16 @@ async def export_csv(
 async def _raw_gaze_export(
     db: AsyncSession, study_id: int, chosen: list[str] | None
 ) -> StreamingResponse:
+    participant_ids = list(
+        await db.scalars(
+            _only(
+                select(Participant.id).where(Participant.study_id == study_id),
+                Participant.id,
+                chosen,
+            )
+        )
+    )
+    interruptions = await load_display_guard_intervals(db, participant_ids)
     stmt = _only(
         select(GazeRecording)
         .join(Participant, Participant.id == GazeRecording.participant_id)
@@ -269,7 +280,13 @@ async def _raw_gaze_export(
             async for row in result:
                 # Errors abort the stream; the browser must never save an
                 # apparently successful CSV with missing or corrupt samples.
-                batches = csv_batches(row[0], get_settings(), _case_cells(row), _defuse)
+                batches = csv_batches(
+                    row[0],
+                    get_settings(),
+                    _case_cells(row),
+                    _defuse,
+                    interruptions.get(row[0].participant_id),
+                )
                 try:
                     async for chunk in iterate_in_threadpool(batches):
                         yield chunk

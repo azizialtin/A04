@@ -4,10 +4,21 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { gazeApi } from '../../api/gaze'
 import { VALIDATION_TARGETS } from '../../lib/calibration'
 import { Bridge, type BridgeGaze, type BridgeStatus } from '../../lib/tobii'
+import type { DisplayGuardSnapshot } from '../../lib/displayGuard'
 import CalibrationScreen from './CalibrationScreen'
 
 vi.mock('../../api/gaze', () => ({ gazeApi: { saveCalibration: vi.fn() } }))
 vi.mock('../../lib/tobii', () => ({ Bridge: { connect: vi.fn() }, TOBII_WS_URL: 'ws://test' }))
+let guard: DisplayGuardSnapshot
+const guardListeners = new Set<() => void>()
+vi.mock('../../lib/displayGuard', () => ({
+  checkDisplayGuard: () => !guard.enabled || !guard.required || guard.phase === 'verified',
+  getDisplayGuardSnapshot: () => guard,
+  subscribeDisplayGuard: (listener: () => void) => {
+    guardListeners.add(listener)
+    return () => guardListeners.delete(listener)
+  },
+}))
 
 const bridge = {
   status: { connected: true, frequency: 120, display_w_mm: 500, display_h_mm: 280 },
@@ -21,6 +32,16 @@ const bridge = {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  guard = {
+    enabled: false,
+    phase: 'disabled',
+    owner: null,
+    required: false,
+    focusRequired: false,
+    reasons: [],
+    generation: 0,
+  }
+  guardListeners.clear()
   bridge.onGaze = null
   bridge.onStatus = null
   bridge.status = { connected: true, frequency: 120, display_w_mm: 500, display_h_mm: 280 }
@@ -37,6 +58,55 @@ beforeEach(() => {
     screenY: 0,
   }))
     vi.stubGlobal(key, value)
+})
+
+test('an interrupted calibration cannot succeed after the display has already been restored', async () => {
+  guard = { ...guard, enabled: true, required: true, phase: 'verified' }
+  await open()
+  await act(() => vi.advanceTimersByTimeAsync(1200))
+  guard = { ...guard, phase: 'blocked', generation: 1 }
+  act(() => guardListeners.forEach((listener) => listener()))
+  expect(bridge.send).toHaveBeenCalledWith('calibrate_abort')
+  guard = { ...guard, phase: 'verified', generation: 2 }
+  act(() => guardListeners.forEach((listener) => listener()))
+  await act(() => vi.advanceTimersByTimeAsync(1200))
+  expect(vi.mocked(gazeApi.saveCalibration).mock.calls.map(([record]) => record.status)).toEqual([
+    'failed',
+  ])
+  expect(screen.getByText(/Anzeige wurde während der Kalibrierung verändert/)).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Kalibrierung wiederholen' }))
+  await validate((index) => [valid(index)])
+  expect(vi.mocked(gazeApi.saveCalibration).mock.calls.map(([record]) => record.status)).toEqual([
+    'failed',
+    'success',
+  ])
+})
+
+test('guarded calibration preserves the established fullscreen mode', async () => {
+  guard = { ...guard, enabled: true, required: true, phase: 'verified' }
+  const enter = vi.fn().mockResolvedValue(undefined)
+  const exit = vi.fn().mockResolvedValue(undefined)
+  const original = Object.getOwnPropertyDescriptor(document, 'fullscreenElement')
+  const originalRequest = document.documentElement.requestFullscreen
+  const originalExit = document.exitFullscreen
+  Object.defineProperty(document, 'fullscreenElement', {
+    configurable: true,
+    value: document.documentElement,
+  })
+  document.documentElement.requestFullscreen = enter
+  document.exitFullscreen = exit
+  try {
+    await open()
+    await validate((index) => [valid(index)])
+    expect(vi.mocked(gazeApi.saveCalibration).mock.calls[0][0].status).toBe('success')
+    expect(enter).not.toHaveBeenCalled()
+    expect(exit).not.toHaveBeenCalled()
+  } finally {
+    if (original) Object.defineProperty(document, 'fullscreenElement', original)
+    else Reflect.deleteProperty(document, 'fullscreenElement')
+    document.documentElement.requestFullscreen = originalRequest
+    document.exitFullscreen = originalExit
+  }
 })
 
 afterEach(() => {

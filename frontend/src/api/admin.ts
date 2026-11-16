@@ -204,6 +204,7 @@ export interface AdminReplay extends Partial<AudioCaptureMeta> {
   offscreen_samples: number
   has_geometry: boolean
   points: ReplayPoint[]
+  suppressed_intervals?: import('./participant').ReplaySuppression[]
 }
 
 export interface AuditRow {

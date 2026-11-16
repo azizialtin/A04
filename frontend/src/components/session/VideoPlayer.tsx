@@ -11,6 +11,11 @@ import { useTranslation } from 'react-i18next'
 import apiClient from '../../api/client'
 import { participantApi } from '../../api/participant'
 import { useScreenRecording } from '../../hooks/useScreenRecording'
+import {
+  checkDisplayGuard,
+  getDisplayGuardSnapshot,
+  subscribeDisplayGuard,
+} from '../../lib/displayGuard'
 import { enqueue } from '../../lib/outbox'
 import {
   audioWarning,
@@ -72,6 +77,18 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
 
   // The case's display capture is the background for its think-aloud replay.
   useScreenRecording(videoId)
+
+  useEffect(() => {
+    const pauseIfBlocked = () => {
+      const guard = getDisplayGuardSnapshot()
+      if (guard.enabled && guard.required && guard.phase !== 'verified') {
+        videoRef.current?.pause()
+        setPlaying(false)
+      }
+    }
+    pauseIfBlocked()
+    return subscribeDisplayGuard(pauseIfBlocked)
+  }, [])
 
   const started = useRef(false)
   const ended = useRef(false)
@@ -140,6 +157,10 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   )
 
   const onPlay = () => {
+    if (!checkDisplayGuard()) {
+      videoRef.current?.pause()
+      return
+    }
     setPlaying(true)
     if (!started.current) {
       started.current = true
@@ -170,6 +191,10 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   const toggle = () => {
     const v = videoRef.current
     if (!v) return
+    if (!checkDisplayGuard()) {
+      v.pause()
+      return
+    }
     if (v.paused) {
       void prepareStimulusAudio()
       void v.play().catch(() => {})
@@ -177,6 +202,7 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   }
 
   const scrubTo = (e: ChangeEvent<HTMLInputElement>) => {
+    if (!checkDisplayGuard()) return
     const to = Number(e.target.value)
     paint(e.target, to, duration)
     // Assigning currentTime fires `seeking`/`seeked` on the element, so the

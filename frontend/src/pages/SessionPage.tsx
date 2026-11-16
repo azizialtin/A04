@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { isCKDeadlineExpired, type SessionStep } from '../api/participant'
@@ -8,6 +8,7 @@ import CaseIntroScreen from '../components/session/CaseIntroScreen'
 import CaseOutroScreen from '../components/session/CaseOutroScreen'
 import CaseVideoScreen from '../components/session/CaseVideoScreen'
 import DiagnosisScreen from '../components/session/DiagnosisScreen'
+import DisplayGuard from '../components/session/DisplayGuard'
 import PhaseTransitionScreen from '../components/session/PhaseTransitionScreen'
 import PreTestPage from '../components/session/PreTestPage'
 import SectionIntroScreen from '../components/session/SectionIntroScreen'
@@ -28,6 +29,8 @@ import {
   useUpdateProgress,
 } from '../hooks/participant'
 import { useOutbox } from '../hooks/useOutbox'
+import { useDisplayGuard } from '../hooks/useDisplayGuard'
+import { checkDisplayGuard } from '../lib/displayGuard'
 import { enqueue } from '../lib/outbox'
 import { caseAt, pilotPositionAt } from '../lib/sessionProgress'
 import { isStepBackChord } from '../lib/stepBack'
@@ -115,6 +118,24 @@ export default function SessionPage() {
   const respond = useRespondQuestionnaire()
   const stepBack = useStepBack()
   const unsent = useOutbox(me.data?.id)
+  const stepNow = session.data?.steps[session.data.current_step_index]
+  const guardRequired = Boolean(
+    stepNow && !['sosci', 'think_aloud', 'thanks'].includes(stepNow.kind),
+  )
+  const focusRequired = Boolean(
+    stepNow &&
+    ['questionnaire', 'case_video', 'diagnosis', 'case_outro', 'calibration'].includes(
+      stepNow.kind,
+    ),
+  )
+  const guard = useDisplayGuard(me.data?.id, guardRequired, focusRequired)
+  const guardBlocked = guard.enabled && guardRequired && guard.phase !== 'verified'
+  const stepIdentity = `${me.data?.id ?? ''}:${session.data?.current_step_index ?? ''}`
+  const admittedStep = useRef<string | null>(null)
+  const pageMounted = !guardBlocked || admittedStep.current === stepIdentity
+  useLayoutEffect(() => {
+    if (!guardBlocked) admittedStep.current = stepIdentity
+  }, [guardBlocked, stepIdentity])
 
   // The supervisor's way back. There is no button: the chord opens a
   // confirmation that names both screens, and the server moves the pointer.
@@ -136,6 +157,7 @@ export default function SessionPage() {
         !e.repeat
       if (!back && !finish) return
       e.preventDefault()
+      if (!checkDisplayGuard()) return
       if (navigationBusy) return
       // One state transition also protects two chords pressed before React renders.
       setSupervisorDialog((open) => open ?? (back ? 'back' : 'finish'))
@@ -144,7 +166,6 @@ export default function SessionPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [navigationBusy, session.data])
 
-  const stepNow = session.data?.steps[session.data.current_step_index]
   const currentVisit = useRef<string | undefined>()
   useEffect(() => {
     currentVisit.current = undefined
@@ -163,12 +184,12 @@ export default function SessionPage() {
       enteredRef.current = null
       return
     }
-    if (!ready || enteredRef.current === pageIndex) return
+    if (!ready || !pageMounted || enteredRef.current === pageIndex) return
     enteredRef.current = pageIndex
     if (stepRef.current?.kind === 'questionnaire' && stepRef.current.section_key) return
     const page = stepRef.current ? pageDescriptor(stepRef.current) : null
     if (page) logPage('questionnaire_page_entered', page)
-  }, [ready, pageIndex])
+  }, [ready, pageIndex, pageMounted])
 
   if (me.isLoading || session.isLoading) {
     return <div className="fullpage">{t('session.loading')}</div>
@@ -199,7 +220,8 @@ export default function SessionPage() {
         atStart={current_step_index <= 0}
         busy={navigationBusy}
         onCancel={() => setSupervisorDialog(null)}
-        onConfirm={() =>
+        onConfirm={() => {
+          if (!checkDisplayGuard()) return
           stepBack.mutate(
             currentVisit.current
               ? { visit_id: currentVisit.current, client_ts: Date.now() }
@@ -209,7 +231,7 @@ export default function SessionPage() {
               onError: () => toast.show(t('session.error'), 'error'),
             },
           )
-        }
+        }}
       />
     ) : null
 
@@ -222,11 +244,13 @@ export default function SessionPage() {
     )
   }
 
-  const advance = () =>
+  const advance = () => {
+    if (!checkDisplayGuard()) return
     updateProgress.mutate(
       { index: current_step_index + 1, expected: current_step_index },
       { onError: () => toast.show(t('session.error'), 'error') },
     )
+  }
 
   // Every battery submits the same way: store the answers, then move on. A
   // failure keeps the participant on the page with what they typed intact.
@@ -239,6 +263,7 @@ export default function SessionPage() {
     visitId?: string,
     clientTs?: number,
   ) => {
+    if (!checkDisplayGuard()) return false
     try {
       await respond.mutateAsync({
         questionnaireId,
@@ -460,12 +485,12 @@ export default function SessionPage() {
   // Keyed by step, so React never carries one screen's state into the next. The
   // pre-test pages are adjacent steps of the same kind: without this the second
   // page opens holding the first page's answers and submits them again.
-  const screen = (
+  const screen = pageMounted ? (
     <Fragment key={current_step_index}>
       {content}
       <SessionGazeCapture step={step} />
     </Fragment>
-  )
+  ) : null
 
   // Sits outside the shell: the case screen has no chrome, and that is exactly
   // where notes are written.
@@ -485,7 +510,7 @@ export default function SessionPage() {
   const progress = Math.round((current_step_index / total_steps) * 100)
   if (CHROMELESS.has(step.kind)) {
     return (
-      <>
+      <DisplayGuard state={guard}>
         {OVERLAY_PROGRESS.has(step.kind) && (
           <div className="shell__progress shell__progress--overlay" aria-hidden="true">
             <div style={{ width: `${progress}%` }} />
@@ -494,42 +519,44 @@ export default function SessionPage() {
         {screen}
         {unsentBanner}
         {backDialog}
-      </>
+      </DisplayGuard>
     )
   }
   // Where they are in the study, in the terms they were briefed in — the phase
   // and the case — rather than a step number out of a script only we can see.
   const position = caseAt(steps, current_step_index)
   return (
-    <div className="shell">
-      {unsentBanner}
-      <header className="shell__header">
-        <span className="brand-sm">A04</span>
-        <span className="muted">
-          {pilot
-            ? pilotLabel
-            : position
-              ? t('session.case_position', {
-                  phase: t(`session.phase.${position.phaseType}`, {
-                    defaultValue: position.phaseType,
-                  }),
-                  current: position.current,
-                  total: position.total,
-                })
-              : t('session.questions')}
-        </span>
-        <div className="shell__header-right">
-          <LanguageSwitcher />
-          <button type="button" className="btn btn-ghost" onClick={logout}>
-            {t('common.logout')}
-          </button>
+    <DisplayGuard state={guard}>
+      <div className="shell">
+        {unsentBanner}
+        <header className="shell__header">
+          <span className="brand-sm">A04</span>
+          <span className="muted">
+            {pilot
+              ? pilotLabel
+              : position
+                ? t('session.case_position', {
+                    phase: t(`session.phase.${position.phaseType}`, {
+                      defaultValue: position.phaseType,
+                    }),
+                    current: position.current,
+                    total: position.total,
+                  })
+                : t('session.questions')}
+          </span>
+          <div className="shell__header-right">
+            <LanguageSwitcher />
+            <button type="button" className="btn btn-ghost" onClick={logout}>
+              {t('common.logout')}
+            </button>
+          </div>
+        </header>
+        <div className="shell__progress">
+          <div style={{ width: `${progress}%` }} />
         </div>
-      </header>
-      <div className="shell__progress">
-        <div style={{ width: `${progress}%` }} />
+        <main className="shell__main">{screen}</main>
+        {backDialog}
       </div>
-      <main className="shell__main">{screen}</main>
-      {backDialog}
-    </div>
+    </DisplayGuard>
   )
 }

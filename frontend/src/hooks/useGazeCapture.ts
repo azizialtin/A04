@@ -6,6 +6,7 @@ import { sameLayout, type GazeLayout } from '../lib/gazeGeometry'
 import { openGazeConnection, type GazeHealth } from '../lib/gazeConnection'
 import { gazeDeliveryGeneration, reportGazeDelivery } from '../lib/gazeDelivery'
 import { enqueue } from '../lib/outbox'
+import { displayGuardAllowsSample, subscribeDisplayGuard } from '../lib/displayGuard'
 
 const FLUSH_INTERVAL_MS = 2000
 const BATCH_SIZE = 500
@@ -317,7 +318,9 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
           lpd: typeof msg.lpd === 'number' ? msg.lpd : null,
           rpd: typeof msg.rpd === 'number' ? msg.rpd : null,
           device_ts: typeof msg.device_ts === 'number' ? msg.device_ts : null,
-          geometry_ts: geometryAt(msg.ts as number),
+          geometry_ts: displayGuardAllowsSample(msg.ts as number)
+            ? geometryAt(msg.ts as number)
+            : null,
         })
         if (samples.length > MAX_PENDING) {
           samples.shift()
@@ -337,6 +340,16 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     }
 
     const stopObserving = observePageGeometry(syncGeometry)
+    // Never measure recursively during a guard check. Samples are already
+    // rejected synchronously; the next frame supplies the verified layout.
+    let guardFrame = 0
+    const stopGuard = subscribeDisplayGuard(() => {
+      if (guardFrame) return
+      guardFrame = requestAnimationFrame(() => {
+        guardFrame = 0
+        if (active) syncGeometry()
+      })
+    })
     const timer = window.setInterval(() => {
       void flushLayouts()
       void flushSamples()
@@ -345,6 +358,8 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     return () => {
       active = false
       stopObserving()
+      stopGuard()
+      cancelAnimationFrame(guardFrame)
       window.clearInterval(timer)
       window.clearTimeout(startRetryTimer)
       retry.current = () => {}

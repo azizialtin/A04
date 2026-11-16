@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import type { SessionStep } from '../api/participant'
+import type { DisplayGuardSnapshot } from '../lib/displayGuard'
 import { ToastProvider } from '../components/Toast'
 import { AuthProvider } from '../contexts/AuthContext'
 import { enqueue } from '../lib/outbox'
@@ -12,6 +13,14 @@ const stepBack = vi.fn()
 let currentStepIndex = 0
 let sessionRefetchError = false
 let me: { id: string; study_name: string; status: string } | undefined
+let guard: DisplayGuardSnapshot
+vi.mock('../hooks/useDisplayGuard', () => ({ useDisplayGuard: () => guard }))
+vi.mock('../lib/displayGuard', async (original) => ({
+  ...(await original<typeof import('../lib/displayGuard')>()),
+  checkDisplayGuard: () => !guard.enabled || !guard.required || guard.phase === 'verified',
+  getDisplayGuardSnapshot: () => guard,
+  resumeDisplayGuard: vi.fn(),
+}))
 
 // The pre-test block: two pages of the same step kind, back to back. Everything
 // after them is irrelevant here, so the script stops at the survey hand-off.
@@ -119,6 +128,15 @@ beforeEach(() => {
   stepBack.mockClear()
   logged.mockClear()
   localStorage.clear()
+  guard = {
+    enabled: false,
+    phase: 'disabled',
+    owner: 'T-1',
+    required: true,
+    focusRequired: true,
+    reasons: [],
+    generation: 0,
+  }
 })
 
 const view = () =>
@@ -129,6 +147,56 @@ const view = () =>
       </ToastProvider>
     </AuthProvider>,
   )
+
+test('the display guard gates entries, preserves the mounted draft and holds the next page', async () => {
+  guard = { ...guard, enabled: true, phase: 'blocked' }
+  const { rerender, container } = view()
+  const refresh = () =>
+    rerender(
+      <AuthProvider>
+        <ToastProvider>
+          <SessionPage />
+        </ToastProvider>
+      </AuthProvider>,
+    )
+  expect(screen.getByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeVisible()
+  expect(screen.queryByRole('spinbutton')).toBeNull()
+  expect(logged).not.toHaveBeenCalled()
+
+  guard = { ...guard, phase: 'verified' }
+  refresh()
+  const field = screen.getByRole('spinbutton')
+  const next = screen.getByRole('button', { name: 'Weiter' })
+  fireEvent.change(field, { target: { value: '34' } })
+  expect(
+    logged.mock.calls.filter(([, event]) => event.event_type === 'questionnaire_page_entered'),
+  ).toHaveLength(1)
+
+  guard = { ...guard, phase: 'blocked', generation: 1 }
+  refresh()
+  expect(field).toBeInTheDocument()
+  expect(field).toHaveValue(34)
+  expect((container.querySelector('.display-guard__content') as HTMLElement).inert).toBe(true)
+  fireEvent.click(next)
+  fireEvent.keyDown(window, { code: 'KeyB', ctrlKey: true, altKey: true, shiftKey: true })
+  expect(respond).not.toHaveBeenCalled()
+  expect(stepBack).not.toHaveBeenCalled()
+
+  // A timer may advance the script while the old page is blocked.
+  currentStepIndex = 1
+  refresh()
+  expect(field).not.toBeInTheDocument()
+  expect(container.querySelector('input')).toBeNull()
+  expect(
+    logged.mock.calls.filter(([, event]) => event.event_type === 'questionnaire_page_entered'),
+  ).toHaveLength(1)
+  guard = { ...guard, phase: 'verified' }
+  refresh()
+  expect(screen.getByRole('spinbutton')).toHaveValue(null)
+  expect(
+    logged.mock.calls.filter(([, event]) => event.event_type === 'questionnaire_page_entered'),
+  ).toHaveLength(2)
+})
 
 test('each pre-test page submits only its own answers', async () => {
   // The two pages are adjacent steps of the same kind. Reusing the component

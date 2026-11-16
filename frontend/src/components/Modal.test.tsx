@@ -151,3 +151,34 @@ test('only the top dialog handles Escape and closing it restores focus to its pa
   expect(action).toHaveFocus()
   outer.unmount()
 })
+
+test('a blocking guard keeps focus priority over a later timer retry dialog', async () => {
+  const user = userEvent.setup()
+  const dismissGuard = vi.fn()
+  const dismissRetry = vi.fn()
+  const guard = render(
+    <Modal open title="Display guard" onClose={dismissGuard} closeDisabled focusPriority={100}>
+      <button>Fullscreen</button>
+      <button>Researcher resume</button>
+    </Modal>,
+  )
+  const fullscreen = screen.getByRole('button', { name: 'Fullscreen' })
+  const resume = screen.getByRole('button', { name: 'Researcher resume' })
+  expect(fullscreen).toHaveFocus()
+  const retry = render(
+    <Modal open title="Timer retry" onClose={dismissRetry}>
+      <button autoFocus>Retry</button>
+    </Modal>,
+  )
+  expect(fullscreen).toHaveFocus()
+  await user.tab()
+  expect(resume).toHaveFocus()
+  await user.tab()
+  expect(fullscreen).toHaveFocus()
+  await user.keyboard('{Escape}')
+  expect(dismissGuard).not.toHaveBeenCalled()
+  expect(dismissRetry).not.toHaveBeenCalled()
+  retry.unmount()
+  expect(fullscreen).toHaveFocus()
+  guard.unmount()
+})

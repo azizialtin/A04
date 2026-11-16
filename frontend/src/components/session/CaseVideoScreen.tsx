@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useVideoNotes } from '../../hooks/participant'
+import { checkDisplayGuard } from '../../lib/displayGuard'
 import { enqueue } from '../../lib/outbox'
 import { latestNote } from '../../lib/notes'
 import Modal from '../Modal'
@@ -71,6 +72,7 @@ export default function CaseVideoScreen({
   }, [log])
 
   const openInfo = () => {
+    if (!checkDisplayGuard()) return
     setShowInfo(true)
     log('info_opened')
   }
@@ -79,6 +81,7 @@ export default function CaseVideoScreen({
     log('info_closed')
   }
   const openTask = () => {
+    if (!checkDisplayGuard()) return
     setShowTask(true)
     log('student_task_opened')
   }
@@ -87,6 +90,7 @@ export default function CaseVideoScreen({
     log('student_task_closed')
   }
   const openExit = () => {
+    if (!checkDisplayGuard()) return
     if (completing.current || showExit) return
     setShowExit(true)
     log('case_exit_opened', { currentTime: currentTime.current })
@@ -97,6 +101,7 @@ export default function CaseVideoScreen({
     log('case_exit_cancelled', { currentTime: currentTime.current })
   }
   const complete = async (reason: 'confirm' | 'timer') => {
+    if (reason === 'confirm' && !checkDisplayGuard()) return
     // Timer expiry and a confirmation click may arrive in the same render.
     // Lock synchronously, and keep the lock after success until navigation
     // unmounts this screen. A failed request leaves the case available to retry.

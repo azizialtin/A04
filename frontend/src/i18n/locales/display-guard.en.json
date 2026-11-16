@@ -1,0 +1,12 @@
+{
+  "title": "Check display settings",
+  "body": "Please wait for the researcher. The display must match the intended settings before you can continue.",
+  "setup": "Use 1920 × 1080 pixels, 100% display scaling and browser zoom, and fullscreen on the intended display. Ctrl + 0 resets browser zoom.",
+  "ready": "The display matches the intended settings again. The researcher can confirm that you may continue.",
+  "waiting": "The display is being checked. Please restore the intended settings.",
+  "resume": "Researcher: Continue",
+  "fullscreen": "Open fullscreen",
+  "fullscreen_failed": "Fullscreen could not be opened. Please use the browser's fullscreen option.",
+  "timers": "Any running time limits still apply.",
+  "calibration_interrupted": "The display changed during calibration. Please repeat calibration."
+}

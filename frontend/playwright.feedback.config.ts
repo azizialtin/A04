@@ -4,6 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   testMatch: 'feedback-*.spec.ts',
+  testIgnore: 'feedback-display-guard.spec.ts',
   outputDir: './test-results/feedback',
   fullyParallel: false,
   workers: 1,

@@ -272,7 +272,7 @@ async def admin_screen_replay(
     if url is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "That capture has no playable file.")
 
-    data = await compute_screen_replay(None, screen, settings)
+    data = await compute_screen_replay(db, None, screen, settings)
     return {
         "recording_id": screen.id,
         "participant_id": screen.participant_id,
@@ -292,6 +292,7 @@ async def admin_screen_replay(
         "offscreen_samples": data["offscreen_samples"],
         "has_geometry": data["has_geometry"],
         "points": data["points"],
+        "suppressed_intervals": data["suppressed_intervals"],
     }
 
 
@@ -324,7 +325,7 @@ async def admin_gaze_replay(
         if url:
             source, epoch_ms, duration_ms = "screen", screen.epoch_ms, screen.duration_ms
             recorder = screen.recorder
-            data = await compute_screen_replay(rec, screen, settings)
+            data = await compute_screen_replay(db, rec, screen, settings)
     if source == "clip":
         try:
             url = resolve_video_url(video, settings) if video else None
@@ -351,4 +352,5 @@ async def admin_gaze_replay(
         "offscreen_samples": data["offscreen_samples"],
         "has_geometry": data["has_geometry"],
         "points": data["points"],
+        "suppressed_intervals": data["suppressed_intervals"],
     }

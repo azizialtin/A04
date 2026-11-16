@@ -257,7 +257,9 @@ function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapsh
       const stage = stageRef.current
       if (!video || !dot || !stage) return
 
-      const g = showGazeRef.current ? gazeAt(replay.points, video.currentTime * 1000) : null
+      const g = showGazeRef.current
+        ? gazeAt(replay.points, video.currentTime * 1000, 200, replay.suppressed_intervals)
+        : null
       if (!g) {
         dot.style.opacity = '0'
       } else {
@@ -285,7 +287,7 @@ function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapsh
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [replay.points, timeline])
+  }, [replay.points, replay.suppressed_intervals, timeline])
 
   return (
     <div className="replay">

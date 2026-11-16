@@ -1,4 +1,18 @@
-import type { NoteSnapshot, ReplayPoint } from '../api/participant'
+import type { NoteSnapshot, ReplayPoint, ReplaySuppression } from '../api/participant'
+
+function suppressedBetween(intervals: ReplaySuppression[], a: number, b: number): boolean {
+  const start = Math.min(a, b)
+  const end = Math.max(a, b)
+  let low = 0
+  let high = intervals.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (intervals[middle].start_ms <= end) low = middle + 1
+    else high = middle
+  }
+  const interval = intervals[low - 1]
+  return !!interval && (interval.end_ms === null || interval.end_ms > start)
+}
 
 /** Largest index i with points[i].t <= t, or -1. Points are sorted by t. */
 export function lowerBound(points: ReplayPoint[], t: number): number {
@@ -26,11 +40,15 @@ export function gazeAt(
   points: ReplayPoint[],
   tMs: number,
   maxGapMs = 200,
+  suppressedIntervals: ReplaySuppression[] = [],
 ): { x: number; y: number } | null {
-  if (points.length === 0) return null
+  if (points.length === 0 || suppressedBetween(suppressedIntervals, tMs, tMs)) return null
   const i = lowerBound(points, tMs)
-  const lo = i >= 0 ? points[i] : null
-  const hi = i + 1 < points.length ? points[i + 1] : null
+  const lo = i >= 0 && !suppressedBetween(suppressedIntervals, points[i].t, tMs) ? points[i] : null
+  const hi =
+    i + 1 < points.length && !suppressedBetween(suppressedIntervals, tMs, points[i + 1].t)
+      ? points[i + 1]
+      : null
 
   if (lo && hi && hi.t - lo.t <= maxGapMs) {
     const frac = hi.t > lo.t ? (tMs - lo.t) / (hi.t - lo.t) : 0

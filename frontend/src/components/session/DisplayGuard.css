@@ -1,0 +1,27 @@
+.display-guard__content {
+  display: contents;
+}
+
+.display-guard > .modal-backdrop {
+  z-index: 10000;
+  overflow: auto;
+  padding: 24px;
+}
+
+.display-guard .modal {
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+}
+
+.display-guard .modal__header > button {
+  display: none;
+}
+
+.display-guard .modal__body {
+  font-size: 16px;
+}
+
+.display-guard .modal__actions {
+  flex-wrap: wrap;
+}

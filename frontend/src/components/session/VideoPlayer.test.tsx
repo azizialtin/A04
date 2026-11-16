@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { useEffect } from 'react'
+import type { DisplayGuardSnapshot } from '../../lib/displayGuard'
 
 import VideoPlayer from './VideoPlayer'
 import { connectStimulusAudio, failStimulusAudio } from '../../lib/stimulusAudio'
@@ -14,7 +16,25 @@ vi.mock('../../api/participant', () => ({
 }))
 // The lab bridge is not here, and neither hook has anything to say without it.
 vi.mock('../../hooks/useGazeCapture', () => ({ useGazeCapture: () => undefined }))
-vi.mock('../../hooks/useScreenRecording', () => ({ useScreenRecording: () => undefined }))
+const captureStarted = vi.fn()
+const captureStopped = vi.fn()
+vi.mock('../../hooks/useScreenRecording', () => ({
+  useScreenRecording: () =>
+    useEffect(() => {
+      captureStarted()
+      return captureStopped
+    }, []),
+}))
+let guard: DisplayGuardSnapshot
+const guardListeners = new Set<() => void>()
+vi.mock('../../lib/displayGuard', () => ({
+  checkDisplayGuard: () => !guard.enabled || !guard.required || guard.phase === 'verified',
+  getDisplayGuardSnapshot: () => guard,
+  subscribeDisplayGuard: (listener: () => void) => {
+    guardListeners.add(listener)
+    return () => guardListeners.delete(listener)
+  },
+}))
 
 const enqueue = vi.fn()
 vi.mock('../../lib/outbox', () => ({ enqueue: (...args: unknown[]) => enqueue(...args) }))
@@ -32,6 +52,18 @@ let play: ReturnType<typeof vi.spyOn>
 let pause: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
+  guard = {
+    enabled: false,
+    phase: 'disabled',
+    owner: null,
+    required: false,
+    focusRequired: false,
+    reasons: [],
+    generation: 0,
+  }
+  guardListeners.clear()
+  captureStarted.mockClear()
+  captureStopped.mockClear()
   enqueue.mockClear()
   vi.mocked(connectStimulusAudio)
     .mockReset()
@@ -40,6 +72,32 @@ beforeEach(() => {
   // both, and drive the element's own events by hand.
   play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
   pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+})
+
+test('a display interruption pauses playback without restarting capture or automatically resuming', async () => {
+  guard = { ...guard, enabled: true, required: true, phase: 'verified' }
+  const video = await mount()
+  setPaused(video, false)
+  fireEvent.play(video)
+  guard = { ...guard, phase: 'blocked', generation: 1 }
+  act(() => guardListeners.forEach((listener) => listener()))
+  expect(pause).toHaveBeenCalledOnce()
+  expect(captureStarted).toHaveBeenCalledOnce()
+  expect(captureStopped).not.toHaveBeenCalled()
+  setPaused(video, true)
+  fireEvent.click(screen.getByRole('button', { name: 'Abspielen' }))
+  fireEvent.change(screen.getByRole('slider'), { target: { value: '42' } })
+  expect(play).not.toHaveBeenCalled()
+  expect(video.currentTime).toBe(0)
+  fireEvent.play(video)
+  expect(fired().filter((event) => event === 'video_resumed')).toHaveLength(0)
+
+  guard = { ...guard, phase: 'verified' }
+  act(() => guardListeners.forEach((listener) => listener()))
+  expect(play).not.toHaveBeenCalled()
+  expect(captureStopped).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Abspielen' }))
+  expect(play).toHaveBeenCalledOnce()
 })
 
 afterEach(() => vi.restoreAllMocks())

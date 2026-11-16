@@ -29,6 +29,28 @@ test('gazeAt returns null across a gap larger than maxGapMs', () => {
   expect(gazeAt(sparse, 2500)).toBeNull()
 })
 
+test('guard interruptions suppress interpolation and held dots, including gaps with no samples', () => {
+  const interval = [{ start_ms: 110, end_ms: 150 }]
+  expect(gazeAt(points, 110, 200, interval)).toBeNull()
+  expect(gazeAt(points, 149, 200, interval)).toBeNull()
+  // Never interpolate across an interruption, even just outside its boundaries.
+  expect(gazeAt(points, 105, 200, interval)).toEqual({ x: 0.2, y: 0.2 })
+  expect(gazeAt(points, 150, 200, interval)).toEqual({ x: 0.4, y: 0.4 })
+  expect(gazeAt(points.slice(0, 2), 150, 200, interval)).toBeNull()
+  expect(gazeAt(points.slice(2), 105, 200, interval)).toBeNull()
+})
+
+test('guard replay handles open intervals and sorted disjoint intervals', () => {
+  const intervals = [
+    { start_ms: 10, end_ms: 20 },
+    { start_ms: 110, end_ms: null },
+  ]
+  expect(gazeAt(points, 15, 200, intervals)).toBeNull()
+  expect(gazeAt(points, 20, 200, intervals)).toEqual({ x: 0.2, y: 0.2 })
+  expect(gazeAt(points, 999999, 200, intervals)).toBeNull()
+  expect(gazeAt(points, 100, 200, intervals)).toEqual({ x: 0.2, y: 0.2 })
+})
+
 test('noteAt returns the latest snapshot at or before the time', () => {
   const notes: NoteSnapshot[] = [
     { video_time_seconds: 1, client_ts: null, text: 'first', created_at: 'a' },

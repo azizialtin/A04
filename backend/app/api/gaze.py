@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
@@ -77,6 +77,11 @@ class GazeAOI(Rect):
     priority: int = 0
 
 
+class DisplayGuard(BaseModel):
+    profile: Literal["lab_1080p"]
+    verified: StrictBool
+
+
 class GazeGeometry(BaseModel):
     """Where the clip sat on the screen, in CSS pixels, at time `ts`.
 
@@ -94,6 +99,11 @@ class GazeGeometry(BaseModel):
     aois: list[GazeAOI] | None = Field(default=None, max_length=500)
     active_modal: str | None = Field(default=None, max_length=120)
     visible: bool = True
+    display_guard: DisplayGuard | None = None
+
+    def snapshot(self) -> dict:
+        # Keep retries of historical snapshots equal to their stored shape.
+        return self.model_dump(exclude={"display_guard"} if self.display_guard is None else set())
 
 
 class StartRecordingRequest(BaseModel):
@@ -166,6 +176,11 @@ class ReplayPoint(BaseModel):
     y: float
 
 
+class ReplaySuppression(BaseModel):
+    start_ms: int
+    end_ms: int | None
+
+
 class ReplayResponse(BaseModel):
     video_url: str
     # "screen" — the capture of the whole display, cursor and all, which is what
@@ -184,6 +199,7 @@ class ReplayResponse(BaseModel):
     offscreen_samples: int
     has_geometry: bool
     points: list[ReplayPoint]
+    suppressed_intervals: list[ReplaySuppression] = Field(default_factory=list)
     # Wall-clock ms at position 0, so the player can place anything else stamped
     # on that clock — the notes — onto the same timeline.
     epoch_ms: int | None = None
@@ -291,7 +307,7 @@ async def start_recording(
         questionnaire_id=questionnaire_id,
         sampling_rate_hz=int(body.sampling_rate_hz),
         storage_mode=settings.GAZE_STORAGE_MODE,
-        geometry=[body.geometry.model_dump()] if body.geometry else [],
+        geometry=[body.geometry.snapshot()] if body.geometry else [],
     )
     db.add(recording)
     await db.commit()
@@ -372,7 +388,7 @@ async def add_geometry(
             # layout when no further snapshots can be accepted.
             snapshots.append(
                 {
-                    **body.model_dump(),
+                    **body.snapshot(),
                     "aois": None,
                     "visible": False,
                     "ts": max(body.ts, max(s["ts"] for s in snapshots)),
@@ -381,7 +397,7 @@ async def add_geometry(
             recording.geometry = snapshots
             await db.commit()
         raise HTTPException(status.HTTP_409_CONFLICT, "Geometry snapshot limit reached.")
-    snapshots.append(body.model_dump())
+    snapshots.append(body.snapshot())
     # Reassign rather than mutate: SQLAlchemy does not track JSONB in place.
     recording.geometry = sorted(snapshots, key=lambda s: s["ts"])
     await db.commit()
@@ -537,7 +553,7 @@ async def get_replay(
             logger.exception("could not sign screen recording %d", screen.id)
             screen_url = None
         if screen_url:
-            data = await compute_screen_replay(recording, screen, settings)
+            data = await compute_screen_replay(db, recording, screen, settings)
             return ReplayResponse(
                 video_url=screen_url,
                 source="screen",
@@ -548,6 +564,7 @@ async def get_replay(
                 offscreen_samples=data["offscreen_samples"],
                 has_geometry=data["has_geometry"],
                 points=data["points"],
+                suppressed_intervals=data.get("suppressed_intervals", []),
                 epoch_ms=screen.epoch_ms,
                 duration_ms=screen.duration_ms,
                 recorder=screen.recorder,
@@ -585,4 +602,5 @@ async def get_replay(
         offscreen_samples=data["offscreen_samples"],
         has_geometry=data["has_geometry"],
         points=data["points"],
+        suppressed_intervals=data.get("suppressed_intervals", []),
     )

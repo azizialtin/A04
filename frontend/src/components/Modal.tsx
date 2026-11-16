@@ -31,6 +31,7 @@ interface Props {
   children: ReactNode
   aoiId?: string
   closeDisabled?: boolean
+  focusPriority?: number
 }
 
 export default function Modal({
@@ -40,6 +41,7 @@ export default function Modal({
   children,
   aoiId = 'dialog',
   closeDisabled = false,
+  focusPriority = 0,
 }: Props) {
   const root = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
@@ -63,8 +65,15 @@ export default function Modal({
     const previous =
       active instanceof HTMLElement && !dialog.contains(active) ? active : initialFocus.current
     activeDialogs.push(dialog)
+    activeDialogs.sort(
+      (a, b) => Number(a.dataset.modalPriority ?? 0) - Number(b.dataset.modalPriority ?? 0),
+    )
     const focusFirst = () => (focusableElements(dialog)[0] ?? dialog).focus()
-    if (!dialog.contains(document.activeElement)) focusFirst()
+    if (
+      activeDialogs[activeDialogs.length - 1] === dialog &&
+      !dialog.contains(document.activeElement)
+    )
+      focusFirst()
 
     const onKey = (event: KeyboardEvent) => {
       if (activeDialogs[activeDialogs.length - 1] !== dialog) return
@@ -103,7 +112,7 @@ export default function Modal({
       if (index !== -1) activeDialogs.splice(index, 1)
       if (previous?.isConnected) previous.focus()
     }
-  }, [open])
+  }, [open, focusPriority])
   if (!open) return null
   return (
     <div
@@ -113,6 +122,7 @@ export default function Modal({
       role="dialog"
       aria-modal="true"
       data-aoi-modal={aoiId}
+      data-modal-priority={focusPriority || undefined}
       aria-label={title}
       onClick={() => close.current()}
     >

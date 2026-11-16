@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import CaseVideoScreen from './CaseVideoScreen'
 import { enqueue } from '../../lib/outbox'
+import * as displayGuard from '../../lib/displayGuard'
 
 const capture = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), disconnect: vi.fn() }))
 vi.mock('../../hooks/participant', () => ({ useVideoNotes: () => ({ data: [] }) }))
@@ -279,4 +280,18 @@ test('timer expiry queues the last note before requesting navigation', async () 
   await act(async () => vi.advanceTimersByTime(300))
   expect(onComplete).toHaveBeenCalledOnce()
   expect(localStorage.getItem('a04.draft.notes.T-001.7')).toBeNull()
+})
+
+test('a display interruption blocks manual completion but does not stop the case deadline', async () => {
+  vi.useFakeTimers()
+  const onComplete = vi.fn()
+  render(<CaseVideoScreen {...props} timeLimitSeconds={1} onComplete={onComplete} />)
+  await act(async () => {})
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  vi.spyOn(displayGuard, 'checkDisplayGuard').mockReturnValue(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Zur Diagnose' }))
+  expect(onComplete).not.toHaveBeenCalled()
+  await act(async () => vi.advanceTimersByTime(1000))
+  expect(onComplete).toHaveBeenCalledOnce()
+  expect(capture.stop).not.toHaveBeenCalled()
 })
