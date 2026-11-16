@@ -224,16 +224,39 @@
   background: #edf5f4;
 }
 .pretest-page--mesp .matrix {
+  display: block;
   padding: 16px;
   border: 1px solid #e3eae9;
   border-radius: 10px;
   background: #fafcfb;
 }
 .pretest-page--mesp .lead,
-.pretest-page--mesp .matrix__legend li,
+.pretest-page--mesp .matrix__scale-label,
 .pretest-page--mesp .matrix__table .matrix__item {
   font-size: 16px;
   line-height: 1.5;
+}
+.pretest-page--mesp .matrix__table {
+  table-layout: fixed;
+  min-width: 1600px;
+}
+.pretest-page--mesp .matrix__table .matrix__item {
+  width: 40%;
+}
+.pretest-page--mesp .matrix__table thead th {
+  vertical-align: top;
+  padding-bottom: 16px;
+}
+.pretest-page--mesp .matrix__scale-label {
+  display: block;
+  margin-top: 6px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.pretest-page--mesp caption.matrix__legend-title {
+  text-align: left;
+  padding-bottom: 12px;
 }
 .pretest-page--mesp .matrix__table .matrix__item {
   font-weight: 400;
@@ -296,18 +319,9 @@
   .pretest-page--mesp .qlist {
     margin-top: 6px;
   }
-  .pretest-page--mesp .matrix {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
-    grid-template-rows: min-content 1fr;
-    column-gap: 40px;
-  }
   .pretest-page--mesp .matrix__legend-title {
     margin: 0 0 12px;
     font-size: 16px;
-  }
-  .pretest-page--mesp .matrix__legend {
-    gap: 12px;
-    margin: 0;
   }
   .pretest-page--mesp .matrix__scroll {
     min-width: 0;

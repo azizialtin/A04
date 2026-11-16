@@ -344,6 +344,7 @@ export default function PreTestPage({
         instruction={step.description}
         questions={step.questions}
         layout={pilot && step.section_key === 'pck' ? 'columns' : undefined}
+        matrixLabels={pilot && step.section_key === 'mesp' ? 'headers' : undefined}
         initialAnswers={initial}
         onAnswersChange={changed}
         disabled={

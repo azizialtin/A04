@@ -36,6 +36,8 @@ interface Props {
   onSkip?: (timeSpentSeconds: number) => void
   /** Opt-in wide layout for batteries with authored column grouping. */
   layout?: 'columns'
+  /** Put the full scale labels directly above their response columns. */
+  matrixLabels?: 'headers'
 }
 
 export default function QuestionnaireRenderer({
@@ -50,6 +52,7 @@ export default function QuestionnaireRenderer({
   onSubmit,
   onSkip,
   layout,
+  matrixLabels,
 }: Props) {
   const { t } = useTranslation()
   const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {})
@@ -124,6 +127,7 @@ export default function QuestionnaireRenderer({
           }}
           startLine={questionsStart}
           layout={layout}
+          matrixLabels={matrixLabels}
         />
       </fieldset>
 
@@ -143,12 +147,14 @@ export function QuestionnaireFields({
   onChange,
   startLine = 1,
   layout,
+  matrixLabels,
 }: {
   questions: Question[]
   answers: Answers
   onChange: (next: Answers) => void
   startLine?: number
   layout?: 'columns'
+  matrixLabels?: 'headers'
 }) {
   const visible = useMemo(() => visibleQuestionIds(questions, answers), [questions, answers])
   const numbered = useMemo(() => numberCodeQuestions(questions, startLine), [questions, startLine])
@@ -166,6 +172,7 @@ export function QuestionnaireFields({
         answers={answers}
         onAnswer={setAnswer}
         deduplicateLegend={layout === 'columns'}
+        labelsInHeaders={matrixLabels === 'headers'}
       />
     ) : (
       <Field
@@ -223,11 +230,13 @@ function Matrix({
   answers,
   onAnswer,
   deduplicateLegend = false,
+  labelsInHeaders = false,
 }: {
   block: Extract<QuestionBlock, { kind: 'matrix' }>
   answers: Answers
   onAnswer: (id: string, value: unknown) => void
   deduplicateLegend?: boolean
+  labelsInHeaders?: boolean
 }) {
   const { t } = useTranslation()
   const numbered = (option: QuestionOption, i: number) => `${i + 1} – ${option.label}`
@@ -248,9 +257,9 @@ function Matrix({
       )
     })
   return (
-    <div className="matrix">
+    <div className={`matrix${labelsInHeaders ? ' matrix--labels-in-headers' : ''}`}>
       {prompt && <StudyText text={prompt} className="matrix__prompt" />}
-      {hasLabels && !promptIncludesLegend && (
+      {hasLabels && !promptIncludesLegend && !labelsInHeaders && (
         <>
           <p className="matrix__legend-title">{t('questionnaire.legend')}</p>
           <ol className="matrix__legend" data-aoi={`matrix.${block.key}.legend`}>
@@ -267,12 +276,28 @@ function Matrix({
       )}
       <div className="matrix__scroll">
         <table className="matrix__table">
+          {hasLabels && labelsInHeaders && (
+            <caption className="matrix__legend-title">{t('questionnaire.legend')}</caption>
+          )}
           <thead>
             <tr>
-              <th scope="col" className="matrix__item" />
+              <th
+                scope="col"
+                className="matrix__item"
+                data-aoi-row-prompt={labelsInHeaders ? '' : undefined}
+              />
               {block.options.map((option, i) => (
-                <th key={String(option.value)} scope="col" title={option.label}>
+                <th
+                  key={String(option.value)}
+                  scope="col"
+                  title={option.label}
+                  data-aoi={hasLabels && labelsInHeaders ? `matrix.${block.key}.legend` : undefined}
+                  data-aoi-clip={labelsInHeaders ? 'after-row-prompt' : undefined}
+                >
                   <span className="matrix__num">{i + 1}</span>
+                  {hasLabels && labelsInHeaders && (
+                    <span className="matrix__scale-label">{option.label}</span>
+                  )}
                 </th>
               ))}
             </tr>

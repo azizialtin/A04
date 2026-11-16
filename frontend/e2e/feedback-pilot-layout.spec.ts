@@ -147,7 +147,7 @@ async function assertFits(page: Page, info: TestInfo, label: string) {
     const panel = document.querySelector('.pretest-page .panel, .section-intro')!
     const elements = [
       ...panel.querySelectorAll<HTMLElement>(
-        'h2, p, li, legend, th, td, pre, button, input, textarea, .matrix__scroll',
+        'h2, p, li, legend, th, td, pre, button, input, textarea, .matrix__scroll, .matrix__scale-label',
       ),
     ]
     const clipped = elements
@@ -156,6 +156,8 @@ async function assertFits(page: Page, info: TestInfo, label: string) {
           return false
         const style = getComputedStyle(element)
         return (
+          (element.matches('.matrix__scale-label') &&
+            element.scrollWidth > element.clientWidth + 1) ||
           (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowY) &&
             element.scrollHeight > element.clientHeight + 1) ||
           (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowX) &&
@@ -182,7 +184,7 @@ async function assertFits(page: Page, info: TestInfo, label: string) {
       }))
     const prose = [
       ...panel.querySelectorAll<HTMLElement>(
-        '.lead, .qfield__text, .matrix__prompt, .matrix__table tbody th, .choice__option, .ranking__label',
+        '.lead, .qfield__text, .matrix__prompt, .matrix__table tbody th, .matrix__scale-label, .choice__option, .ranking__label',
       ),
     ]
     const code = [...panel.querySelectorAll<HTMLElement>('pre.code')]
@@ -356,9 +358,10 @@ for (const task of source.mesp_pages) {
         ),
       )
     }
-    expect(await page.locator('.matrix__legend li').allTextContents()).toEqual(
-      task.questions[0].options!.map((option, index) => `${index + 1}${option.label}`),
-    )
+    await expect(page.locator('.matrix__legend')).toHaveCount(0)
+    expect(
+      await page.locator('.matrix__table thead th:not(:first-child)').allTextContents(),
+    ).toEqual(task.questions[0].options!.map((option, index) => `${index + 1}${option.label}`))
     await assertFits(page, info, 'unanswered')
     const expected: Record<string, unknown> = {}
     for (const [index, question] of task.questions.entries()) {
@@ -374,6 +377,17 @@ for (const task of source.mesp_pages) {
     await assertFits(page, info, 'answered')
     await expect.poll(() => state.layouts.length).toBeGreaterThan(0)
     const last = state.layouts.at(-1)!
+    const legendAreas = last.aois?.filter(
+      (item) => item.id === `matrix.${task.questions[0].matrix}.legend`,
+    )
+    expect(legendAreas).toHaveLength(6)
+    const headings = page.locator('.matrix__table thead th:not(:first-child)')
+    for (const [index, area] of legendAreas!.entries()) {
+      const bounds = await headings.nth(index).boundingBox()
+      expect(area.x).toBeCloseTo(bounds!.x, 0)
+      expect(area.y).toBeCloseTo(bounds!.y, 0)
+      expect(area.w).toBeCloseTo(bounds!.width, 0)
+    }
     for (const question of task.questions) {
       const bounds = await page.locator(`[data-aoi="question.${question.id}.prompt"]`).boundingBox()
       const area = last.aois?.find((item) => item.id === `question.${question.id}.prompt`)

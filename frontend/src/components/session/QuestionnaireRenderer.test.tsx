@@ -143,6 +143,47 @@ test('blocks submit until the required question is answered', () => {
   expect(onSubmit).toHaveBeenCalledWith({ c: 3 }, expect.any(Number))
 })
 
+test('integrated scale headers preserve full labels and saved values without changing the default legend', async () => {
+  const user = userEvent.setup()
+  const onSubmit = vi.fn()
+  const row: Question = {
+    id: 'suitability',
+    type: 'multiple_choice',
+    text: 'Eine Handlungsmöglichkeit.',
+    matrix: 'suitability',
+    options: [
+      { value: 10, label: 'sehr geeignete Handlungsmöglichkeit für diese Situation' },
+      { value: 20, label: 'sehr ungeeignete Handlungsmöglichkeit für diese Situation' },
+    ],
+  }
+  const { container, rerender } = render(
+    <QuestionnaireRenderer
+      title="MESP"
+      questions={[row]}
+      matrixLabels="headers"
+      onSubmit={onSubmit}
+    />,
+  )
+  expect(screen.getByRole('table', { name: 'Antwortmöglichkeiten' })).toBeVisible()
+  expect(container.querySelector('.matrix__legend')).toBeNull()
+  expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+    '',
+    '1sehr geeignete Handlungsmöglichkeit für diese Situation',
+    '2sehr ungeeignete Handlungsmöglichkeit für diese Situation',
+  ])
+  expect(container.querySelectorAll('th[data-aoi="matrix.suitability.legend"]')).toHaveLength(2)
+  await user.click(
+    screen.getByRole('radio', {
+      name: 'Eine Handlungsmöglichkeit.: 2 – sehr ungeeignete Handlungsmöglichkeit für diese Situation',
+    }),
+  )
+  await user.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(onSubmit).toHaveBeenCalledWith({ suitability: 20 }, expect.any(Number))
+  rerender(<QuestionnaireRenderer title="Legacy" questions={[row]} onSubmit={onSubmit} />)
+  expect(container.querySelector('.matrix__legend')).toBeVisible()
+  expect(container.querySelector('.matrix__scale-label')).toBeNull()
+})
+
 const multiSelect: Question = {
   id: 'multi',
   type: 'multi_select',
