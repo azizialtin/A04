@@ -190,6 +190,21 @@
   display: block;
   max-width: 1200px;
 }
+.pretest-page--pilot.pretest-page--pck .qhead {
+  position: relative;
+  isolation: isolate;
+  padding-bottom: 10px;
+}
+.pretest-page--pilot.pretest-page--pck .qhead::before {
+  content: '';
+  position: absolute;
+  inset: -8px -12px 0;
+  z-index: -1;
+  pointer-events: none;
+  border-bottom: 2px solid #a8c7c4;
+  border-radius: 10px 10px 0 0;
+  background: #edf5f4;
+}
 
 /* The lab viewport shows each complete PCK task at once. Shared context stays
    above the questions; authored groups read down a column, then to the right.
@@ -265,7 +280,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: start;
     gap: 18px;
-    margin-top: 16px;
+    margin-top: 6px;
   }
   .pretest-page--pilot.pretest-page--pck .question-column {
     min-width: 0;

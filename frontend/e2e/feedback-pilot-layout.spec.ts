@@ -122,6 +122,8 @@ async function openTask(page: Page, task: (typeof source.pck_pages)[number]) {
     page.getByRole('heading', { name: 'Fachdidaktisches Wissen', exact: true }),
   ).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
+  // Capture the ready, unanswered page after the synthetic tracker has connected.
+  await expect(page.getByText('Blickdaten werden empfangen.', { exact: true })).toBeVisible()
   return state
 }
 
