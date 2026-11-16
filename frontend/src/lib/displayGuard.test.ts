@@ -4,6 +4,7 @@ import {
   DisplayGuardController,
   displayProblems,
   type DisplayGuardEvent,
+  type DisplayGuardScope,
   type DisplayMetrics,
 } from './displayGuard'
 
@@ -34,8 +35,8 @@ function setup(enabled = true) {
     () => now,
     () => monotonic,
   )
-  const configure = (owner: string | null = 'participant', required = true, focus = true) =>
-    controller.configure(owner, required, focus, (event) => events.push(event))
+  const configure = (owner: string | null = 'participant', scope: DisplayGuardScope = 'required') =>
+    controller.configure(owner, scope, (event) => events.push(event))
   const advance = (ms: number) => {
     now += ms
     monotonic += ms
@@ -204,16 +205,140 @@ test('SoSci is exempt, ordinary page changes keep verification, returning requir
   const s = setup()
   s.configure()
   s.verify()
-  s.configure('participant', true, false)
+  s.configure('participant', 'monitor')
   expect(s.controller.getSnapshot().phase).toBe('verified')
-  s.configure('participant', false, false)
+  s.configure('participant', 'suspended')
   s.change({ innerWidth: 1000, focused: false })
   expect(s.controller.check()).toBe(true)
   expect(s.controller.allowsSample(s.time())).toBe(false)
-  s.configure('participant', true, true)
+  s.configure('participant', 'required')
   expect(s.controller.check()).toBe(false)
   s.change(lab)
   s.controller.check()
+  s.verify()
+})
+
+test('unverified welcome and instruction pages remain actionable with invalid settings', () => {
+  const s = setup()
+  s.change({ innerWidth: 1200, focused: false })
+  s.configure('participant', 'monitor')
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.getSnapshot().required).toBe(false)
+  expect(s.controller.allowsSample(s.time())).toBe(false)
+  expect(s.controller.resume()).toBe(false)
+  expect(s.events).toEqual([])
+  s.configure()
+  expect(s.controller.check()).toBe(false)
+  expect(s.events).toHaveLength(1)
+  s.change(lab)
+  s.controller.check()
+  s.verify()
+})
+
+test('ordinary instruction pages retain valid verification without admitting their own gaze', () => {
+  const s = setup()
+  s.configure()
+  s.verify()
+  const generation = s.controller.getSnapshot().generation
+  s.configure('participant', 'monitor')
+  s.advance(2000)
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.getSnapshot().phase).toBe('verified')
+  expect(s.controller.allowsSample(s.time())).toBe(false)
+  s.configure()
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.allowsSample(s.time())).toBe(true)
+  expect(s.controller.getSnapshot().generation).toBe(generation)
+  expect(s.events.map((event) => event.event_type)).toEqual([
+    'display_guard_interrupted',
+    'display_guard_resumed',
+  ])
+})
+
+test('a silent geometry change permits instruction navigation but revokes the next measured page', () => {
+  const s = setup()
+  s.configure()
+  s.verify()
+  const lastVerifiedObservation = s.time()
+  s.configure('participant', 'monitor')
+  s.advance(100)
+  s.change({ innerWidth: 1600 })
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.getSnapshot()).toMatchObject({ phase: 'blocked', required: false })
+  expect(s.events[s.events.length - 1].client_ts).toBe(lastVerifiedObservation)
+  s.change(lab)
+  s.controller.check()
+  s.advance(500)
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.resume()).toBe(false)
+  s.configure()
+  expect(s.controller.check()).toBe(false)
+  expect(s.controller.allowsSample(s.time())).toBe(false)
+  s.verify()
+  expect(s.controller.allowsSample(s.time())).toBe(true)
+  expect(s.events.filter((event) => event.event_type === 'display_guard_resumed')).toHaveLength(2)
+})
+
+test('delayed measured-page events still backdate exclusions after entering a quiet instruction page', () => {
+  const s = setup()
+  s.configure()
+  s.verify()
+  s.advance(8)
+  s.controller.check()
+  const previousObservation = s.time()
+  s.advance(4)
+  const changedAt = s.time()
+  s.advance(20)
+  s.configure('participant', 'monitor')
+  s.advance(50)
+  s.controller.check()
+  s.controller.interrupt('window_focus', changedAt)
+  expect(s.controller.check()).toBe(true)
+  expect(s.events[s.events.length - 1].client_ts).toBe(previousObservation)
+  s.configure()
+  expect(s.controller.check()).toBe(false)
+})
+
+test('returning from an external page through an ordinary intro never restores verification automatically', () => {
+  const s = setup()
+  s.configure()
+  s.verify()
+  s.configure('participant', 'suspended')
+  s.configure('participant', 'monitor')
+  s.advance(500)
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.getSnapshot().phase).toBe('ready')
+  s.configure()
+  expect(s.controller.check()).toBe(false)
+  s.verify()
+})
+
+test('SoSci remains exempt while delayed events from the previous measured page correct its exclusion boundary', () => {
+  const s = setup()
+  s.configure()
+  s.verify()
+  s.advance(8)
+  s.controller.check()
+  const previousObservation = s.time()
+  s.advance(4)
+  const changedAt = s.time()
+  s.advance(20)
+  s.configure('participant', 'suspended')
+  const suspendedAt = s.time()
+  s.advance(50)
+  s.controller.interrupt('window_focus', changedAt)
+  expect(s.events[s.events.length - 1].client_ts).toBe(previousObservation)
+  expect(s.controller.getSnapshot().phase).toBe('suspended')
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.allowsSample(s.time())).toBe(false)
+  const count = s.events.length
+  s.controller.interrupt('window_size', suspendedAt + 1)
+  s.controller.interrupt('window_focus', 0) // An unknown event clock proves no preceding change.
+  expect(s.events).toHaveLength(count)
+  s.configure('participant', 'monitor')
+  expect(s.controller.check()).toBe(true)
+  s.configure()
+  expect(s.controller.check()).toBe(false)
   s.verify()
 })
 

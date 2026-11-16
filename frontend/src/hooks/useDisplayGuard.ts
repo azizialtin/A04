@@ -1,20 +1,24 @@
 import { useLayoutEffect, useMemo, useSyncExternalStore } from 'react'
 
-import { displayGuard, DISPLAY_GUARD_ENABLED, type DisplayGuardSnapshot } from '../lib/displayGuard'
+import {
+  displayGuard,
+  DISPLAY_GUARD_ENABLED,
+  type DisplayGuardScope,
+  type DisplayGuardSnapshot,
+} from '../lib/displayGuard'
 import { enqueue } from '../lib/outbox'
 
 export function useDisplayGuard(
   owner: string | undefined,
-  required: boolean,
-  focusRequired: boolean,
+  scope: DisplayGuardScope,
 ): DisplayGuardSnapshot {
+  const required = scope === 'required'
+  const focusRequired = required
   const snapshot = useSyncExternalStore(displayGuard.subscribe, displayGuard.getSnapshot)
 
   useLayoutEffect(() => {
-    displayGuard.configure(owner ?? null, required, focusRequired, (event) =>
-      enqueue('event', { ...event }),
-    )
-  }, [owner, required, focusRequired])
+    displayGuard.configure(owner ?? null, scope, (event) => enqueue('event', { ...event }))
+  }, [owner, scope])
 
   useLayoutEffect(() => {
     if (!DISPLAY_GUARD_ENABLED || !owner) return
@@ -34,8 +38,9 @@ export function useDisplayGuard(
       check()
     }
     const focusChanged = (event: Event) => {
-      if (displayGuard.getSnapshot().focusRequired)
-        displayGuard.interrupt('window_focus', eventTime(event))
+      // A queued blur can originate on the preceding measured page. Quiet
+      // pages keep that boundary without preventing their own interaction.
+      displayGuard.interrupt('window_focus', eventTime(event))
       check()
     }
     const keys = (event: KeyboardEvent) => {
@@ -87,6 +92,9 @@ export function useDisplayGuard(
     )
       return {
         ...snapshot,
+        owner: owner ?? null,
+        required,
+        focusRequired,
         phase: required ? 'blocked' : 'suspended',
         reasons: ['checking_display'],
       } as DisplayGuardSnapshot

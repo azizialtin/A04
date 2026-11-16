@@ -31,6 +31,7 @@ import {
 import { useOutbox } from '../hooks/useOutbox'
 import { useDisplayGuard } from '../hooks/useDisplayGuard'
 import { checkDisplayGuard } from '../lib/displayGuard'
+import { displayGuardScope } from '../lib/displayGuardScope'
 import { enqueue } from '../lib/outbox'
 import { caseAt, pilotPositionAt } from '../lib/sessionProgress'
 import { isStepBackChord } from '../lib/stepBack'
@@ -119,16 +120,9 @@ export default function SessionPage() {
   const stepBack = useStepBack()
   const unsent = useOutbox(me.data?.id)
   const stepNow = session.data?.steps[session.data.current_step_index]
-  const guardRequired = Boolean(
-    stepNow && !['sosci', 'think_aloud', 'thanks'].includes(stepNow.kind),
-  )
-  const focusRequired = Boolean(
-    stepNow &&
-    ['questionnaire', 'case_video', 'diagnosis', 'case_outro', 'calibration'].includes(
-      stepNow.kind,
-    ),
-  )
-  const guard = useDisplayGuard(me.data?.id, guardRequired, focusRequired)
+  const guardScope = displayGuardScope(stepNow)
+  const guardRequired = guardScope === 'required'
+  const guard = useDisplayGuard(me.data?.id, guardScope)
   const guardBlocked = guard.enabled && guardRequired && guard.phase !== 'verified'
   const stepIdentity = `${me.data?.id ?? ''}:${session.data?.current_step_index ?? ''}`
   const admittedStep = useRef<string | null>(null)

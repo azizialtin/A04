@@ -51,6 +51,7 @@ async function setup(page: Page, steps: SessionStep[], ckDuration = 420_000) {
     visits: [] as Record<string, unknown>[],
     events: [] as Record<string, unknown>[],
     responses: [] as Record<string, unknown>[],
+    progress: [] as Record<string, unknown>[],
     finishes: [] as Record<string, unknown>[],
     recordings: [] as Record<string, unknown>[],
     layouts: [] as Record<string, unknown>[],
@@ -169,12 +170,15 @@ async function setup(page: Page, steps: SessionStep[], ckDuration = 420_000) {
       return json(progress())
     }
     if (/^\/participant\/questionnaires\/\d+\/respond$/.test(path)) {
-      state.responses.push(request.postDataJSON())
-      state.current += 1
+      const response = request.postDataJSON()
+      state.responses.push(response)
+      if (response.advance) state.current += 1
       return json(progress())
     }
     if (path === '/participant/session/progress') {
-      state.current = request.postDataJSON().current_step_index
+      const response = request.postDataJSON()
+      state.progress.push(response)
+      state.current = response.current_step_index
       return json(progress())
     }
     if (path === '/participant/events') {
@@ -338,7 +342,7 @@ for (const disturbance of ['resize', 'windowed', 'zoom', 'display scale'] as con
 
 test('native tab focus loss blocks input and preserves the draft and visit until operator confirmation', async ({
   baseURL,
-}) => {
+}, info) => {
   // The normal Playwright context forces every tab to report focus. Its public
   // CDP noDefaults option leaves native focus intact in a disposable profile.
   const profile = await mkdtemp(`${tmpdir()}/a04-display-focus-`)
@@ -373,8 +377,13 @@ test('native tab focus loss blocks input and preserves the draft and visit until
     })
     const browser = await chromium.connectOverCDP(endpoint, { noDefaults: true })
     const context = browser.contexts()[0]
+    const page = await context.newPage()
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(String(error)))
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text())
+    })
     try {
-      const page = await context.newPage()
       const cdp = await context.newCDPSession(page)
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width: 1920,
@@ -425,6 +434,10 @@ test('native tab focus loss blocks input and preserves the draft and visit until
         )
         .toBe(true)
       expect(state.unexpected).toEqual([])
+    } catch (error) {
+      writeFileSync(info.outputPath('native-focus-errors.json'), JSON.stringify(errors, null, 2))
+      await page.screenshot({ path: info.outputPath('native-focus-failure.png') }).catch(() => {})
+      throw error
     } finally {
       await browser.close()
     }
@@ -788,7 +801,6 @@ test('guard-enabled MESP introduction preserves the complete instructions and vi
     },
   ])
   await page.goto('/session')
-  await resume(page)
   await expect(
     page.getByRole('heading', { name: manifest.mesp_intro.title, exact: true }),
   ).toBeVisible()
@@ -798,5 +810,246 @@ test('guard-enabled MESP introduction preserves the complete instructions and vi
   await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
   await assertGuardedLayout(page, info, 'mesp-intro')
   expect(state.visits).toHaveLength(0)
+  expect(state.recordings).toHaveLength(0)
+  expect(state.screenStarts).toBe(0)
   expect(state.unexpected).toEqual([])
 })
+
+async function advanceUnmeasured(page: Page, state: { current: number }, expectedIndex: number) {
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  // The case-intro gaze preflight remains available; it does not persist a recording.
+  const preflight = page.getByRole('dialog', { name: 'Blickaufzeichnung prüfen' })
+  await expect
+    .poll(async () => state.current !== expectedIndex || (await preflight.isVisible()))
+    .toBe(true)
+  if (await preflight.isVisible())
+    await preflight.getByRole('button', { name: /^(Weiter|Ohne Blickdaten fortfahren)$/ }).click()
+  await expect.poll(() => state.current).toBe(expectedIndex + 1)
+}
+
+async function expectUnmeasuredStep(page: Page, step: SessionStep) {
+  if (step.kind === 'welcome')
+    await expect(page.locator('.id-badge__value')).toHaveText(PARTICIPANT)
+  else if (step.kind === 'phase_transition')
+    await expect(page.locator('.phase-badge')).toBeVisible()
+  else if (step.kind === 'case_intro')
+    await expect(page.getByRole('heading', { name: /^Fall \d+/ })).toBeVisible()
+  else if (step.kind === 'case_outro')
+    await expect(page.getByRole('heading', { name: step.heading, exact: true })).toBeVisible()
+  else if (step.kind === 'text_page' || step.kind === 'section_intro')
+    await expect(page.getByRole('heading', { name: step.title, exact: true })).toBeVisible()
+  else throw new Error(`Unexpected unmeasured test step: ${step.kind}`)
+}
+
+test('invalid display settings leave all unmeasured pages navigable and defer the CK visit and deadline', async ({
+  page,
+}) => {
+  const steps: SessionStep[] = [
+    { kind: 'welcome', index: 0, completed: false },
+    {
+      kind: 'text_page',
+      index: 1,
+      completed: false,
+      key: 'pre_intro',
+      title: 'Hinweise vor den Aufgaben',
+      body: 'Bitte lesen Sie die Hinweise.',
+    },
+    {
+      kind: 'section_intro',
+      index: 2,
+      completed: false,
+      section_key: 'ck_tasks',
+      title: 'Fachwissen',
+      body: 'Bitte lesen Sie die Hinweise zum Fachwissen.',
+      time_limit_seconds: 420,
+    },
+    {
+      kind: 'section_intro',
+      index: 3,
+      completed: false,
+      section_key: 'pck',
+      title: 'Fachdidaktisches Wissen',
+      body: 'Bitte lesen Sie die Hinweise zu den Lernsituationen.',
+      time_limit_seconds: null,
+    },
+    {
+      kind: 'section_intro',
+      index: 4,
+      completed: false,
+      section_key: 'mesp',
+      ...manifest.mesp_intro,
+      time_limit_seconds: null,
+    },
+    {
+      kind: 'phase_transition',
+      index: 5,
+      completed: false,
+      phase_type: 'training',
+      phase_number: 2,
+    },
+    {
+      kind: 'case_intro',
+      index: 6,
+      completed: false,
+      phase_type: 'training',
+      video_id: 7,
+      title: '',
+      body: '',
+    },
+    {
+      kind: 'case_outro',
+      index: 7,
+      completed: false,
+      phase_type: 'training',
+      video_id: 7,
+      questionnaire_id: null,
+      title: 'Fallabschluss',
+      heading: 'Fallabschluss ohne Fragen',
+      section: 'Fallabschluss',
+      instruction: '',
+      questions: [],
+    },
+    questionnaire(8, true),
+  ]
+  const state = await setup(page, steps)
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.goto('/session')
+  for (const step of steps.slice(0, -1)) {
+    await expectUnmeasuredStep(page, step)
+    await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+    expect(state.visits).toHaveLength(0)
+    expect(state.recordings).toHaveLength(0)
+    expect(state.screenStarts).toBe(0)
+    expect(state.timing).toBeNull()
+    await advanceUnmeasured(page, state, step.index)
+  }
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
+  await expect(page.getByRole('button', { name: RESUME })).toBeDisabled()
+  await expect(page.locator('textarea')).toHaveCount(0)
+  expect(state.visits).toHaveLength(0)
+  expect(state.recordings).toHaveLength(0)
+  expect(state.timing).toBeNull()
+  expect(state.progress).toHaveLength(8)
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await expect(page.getByRole('button', { name: RESUME })).toBeEnabled()
+  expect(state.visits).toHaveLength(0)
+  expect(state.timing).toBeNull()
+  await resume(page)
+  await expect.poll(() => state.visits.length).toBe(1)
+  await expect(page.locator('textarea')).toBeVisible()
+  expect(state.timing).toMatchObject({
+    section_key: 'ck_tasks',
+    duration_seconds: 420,
+    finished: false,
+  })
+  expect(state.unexpected).toEqual([])
+})
+
+test('a questionnaire-backed outro retains its existing guard and capture scope even with no questions', async ({
+  page,
+}) => {
+  const state = await setup(page, [
+    {
+      kind: 'case_outro',
+      index: 0,
+      completed: false,
+      phase_type: 'training',
+      video_id: 7,
+      questionnaire_id: 99,
+      title: 'Leerer Fragebogen',
+      section: 'Fallabschluss',
+      instruction: '',
+      questions: [],
+    },
+  ])
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.goto('/session')
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
+  await expect(page.getByRole('button', { name: RESUME })).toBeDisabled()
+  expect(state.recordings).toHaveLength(0)
+  await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toHaveCount(0)
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await resume(page)
+  await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
+  await expect.poll(() => state.recordings.length).toBe(1)
+  expect(state.recordings[0]).toMatchObject({ step_kind: 'case_outro', questionnaire_id: 99 })
+  expect(state.screenStarts).toBe(0)
+  expect(state.unexpected).toEqual([])
+})
+
+for (const disturbed of [false, true]) {
+  test(`ordinary instructions ${disturbed ? 'silently revoke changed display settings' : 'retain valid verification'} before the next measured page`, async ({
+    page,
+  }) => {
+    const steps: SessionStep[] = [
+      questionnaire(),
+      {
+        kind: 'text_page',
+        index: 1,
+        completed: false,
+        key: 'pre_intro',
+        title: 'Hinweise zwischen Aufgaben',
+        body: 'Bitte lesen Sie die Hinweise.',
+      },
+      {
+        kind: 'section_intro',
+        index: 2,
+        completed: false,
+        section_key: 'pck',
+        title: 'Weitere Aufgaben',
+        body: 'Bitte bearbeiten Sie die nächste Aufgabe.',
+        time_limit_seconds: null,
+      },
+      {
+        kind: 'case_intro',
+        index: 3,
+        completed: false,
+        phase_type: 'training',
+        video_id: 7,
+        title: '',
+        body: '',
+      },
+      questionnaire(4),
+    ]
+    const state = await setup(page, steps)
+    await page.goto('/session')
+    await resume(page)
+    await expect.poll(() => state.recordings.length).toBe(1)
+    await page.locator('textarea').fill('Antwort vor den Hinweisen')
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Hinweise zwischen Aufgaben', exact: true }),
+    ).toBeVisible()
+    if (disturbed) {
+      await page.setViewportSize({ width: 1600, height: 900 })
+      await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+      await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
+      await page.setViewportSize({ width: 1920, height: 1080 })
+    }
+    for (const step of steps.slice(1, -1)) {
+      await expectUnmeasuredStep(page, step)
+      await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeVisible()
+      await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+      expect(state.visits).toHaveLength(1)
+      expect(state.recordings).toHaveLength(1)
+      await advanceUnmeasured(page, state, step.index)
+    }
+    if (disturbed) {
+      await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
+      await expect(page.locator('textarea')).toHaveCount(0)
+      expect(state.visits).toHaveLength(1)
+      await resume(page)
+    }
+    await expect(page.getByRole('heading', { name: 'Prüfseite 5', exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+    await expect.poll(() => state.visits.length).toBe(2)
+    await expect
+      .poll(
+        () => state.events.filter((event) => event.event_type === 'display_guard_resumed').length,
+      )
+      .toBe(disturbed ? 2 : 1)
+    expect(state.unexpected).toEqual([])
+  })
+}

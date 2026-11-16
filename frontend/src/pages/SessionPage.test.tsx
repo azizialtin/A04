@@ -9,12 +9,25 @@ import { enqueue } from '../lib/outbox'
 import SessionPage from './SessionPage'
 
 const respond = vi.fn().mockResolvedValue({})
+const enter = vi.fn()
 const stepBack = vi.fn()
 let currentStepIndex = 0
 let sessionRefetchError = false
 let me: { id: string; study_name: string; status: string } | undefined
 let guard: DisplayGuardSnapshot
-vi.mock('../hooks/useDisplayGuard', () => ({ useDisplayGuard: () => guard }))
+const useGuard = vi.fn((owner: string | undefined, scope: 'required' | 'monitor' | 'suspended') => {
+  guard = {
+    ...guard,
+    owner: owner ?? null,
+    required: scope === 'required',
+    focusRequired: scope === 'required',
+  }
+  return guard
+})
+vi.mock('../hooks/useDisplayGuard', () => ({
+  useDisplayGuard: (owner: string | undefined, scope: 'required' | 'monitor' | 'suspended') =>
+    useGuard(owner, scope),
+}))
 vi.mock('../lib/displayGuard', async (original) => ({
   ...(await original<typeof import('../lib/displayGuard')>()),
   checkDisplayGuard: () => !guard.enabled || !guard.required || guard.phase === 'verified',
@@ -107,7 +120,7 @@ vi.mock('../hooks/participant', () => ({
   }),
   useRespondQuestionnaire: () => ({ mutateAsync: respond, isPending: false }),
   useStepBack: () => ({ mutate: stepBack, isPending: false }),
-  useEnterQuestionnaire: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEnterQuestionnaire: () => ({ mutateAsync: enter, isPending: false }),
   useFinishCK: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
@@ -116,6 +129,25 @@ vi.mock('../hooks/useOutbox', () => ({ useOutbox: () => 0 }))
 // here it only has to be the screen the bar is drawn over.
 vi.mock('../components/session/CaseVideoScreen', () => ({
   default: () => <div>Fallvideo</div>,
+}))
+vi.mock('../components/session/ThinkAloudScreen', () => ({
+  default: ({ onComplete }: { onComplete: () => void }) => (
+    <button onClick={onComplete}>Replay next</button>
+  ),
+}))
+vi.mock('../components/session/ThanksScreen', () => ({ default: () => <p>Finished</p> }))
+vi.mock('../hooks/useGazePreflight', () => ({
+  useGazePreflight: () => ({
+    state: 'tracking',
+    retry: vi.fn(),
+    close: vi.fn(),
+    received: 1,
+    valid: 1,
+  }),
+}))
+vi.mock('../lib/screenCapture', () => ({
+  bridgeCanRecord: vi.fn().mockResolvedValue(true),
+  prepareCapture: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('../lib/outbox', () => ({ enqueue: vi.fn() }))
 const logged = vi.mocked(enqueue)
@@ -127,6 +159,8 @@ beforeEach(() => {
   respond.mockClear()
   stepBack.mockClear()
   logged.mockClear()
+  useGuard.mockClear()
+  enter.mockReset().mockResolvedValue({ visit_id: 'guarded-visit', section_timing: null })
   localStorage.clear()
   guard = {
     enabled: false,
@@ -147,6 +181,266 @@ const view = () =>
       </ToastProvider>
     </AuthProvider>,
   )
+
+const baseStep = { index: 0, completed: false }
+const scopeCases: {
+  name: string
+  step: SessionStep
+  scope: 'required' | 'monitor' | 'suspended'
+}[] = [
+  { name: 'questionnaire', step: STEPS[0], scope: 'required' },
+  { name: 'video', step: { ...STEPS[4], index: 0 }, scope: 'required' },
+  {
+    name: 'diagnosis',
+    step: {
+      ...baseStep,
+      kind: 'diagnosis',
+      video_id: 7,
+      task_description: '',
+      section: '',
+      questions: [],
+    },
+    scope: 'required',
+  },
+  {
+    name: 'outro with a questionnaire',
+    step: {
+      ...baseStep,
+      kind: 'case_outro',
+      video_id: 7,
+      phase_type: 'training',
+      questionnaire_id: 9,
+      title: '',
+      section: '',
+      instruction: '',
+      questions: [{ id: 'effort', type: 'number', text: 'Effort' }],
+    },
+    scope: 'required',
+  },
+  {
+    name: 'outro with an empty but assigned questionnaire',
+    step: {
+      ...baseStep,
+      kind: 'case_outro',
+      video_id: 7,
+      phase_type: 'training',
+      questionnaire_id: 9,
+      title: '',
+      section: '',
+      instruction: '',
+      questions: [],
+    },
+    scope: 'required',
+  },
+  {
+    name: 'existing calibration safety',
+    step: { ...baseStep, kind: 'calibration' },
+    scope: 'required',
+  },
+  { name: 'welcome', step: { ...baseStep, kind: 'welcome' }, scope: 'monitor' },
+  {
+    name: 'text page',
+    step: {
+      ...baseStep,
+      kind: 'text_page',
+      key: 'video_start',
+      title: 'Instructions',
+      body: 'Read before continuing.',
+    },
+    scope: 'monitor',
+  },
+  {
+    name: 'section introduction',
+    step: {
+      ...baseStep,
+      kind: 'section_intro',
+      section_key: 'ck_tasks',
+      title: 'CK instructions',
+      body: 'Instructions before the timed exercises.',
+      time_limit_seconds: 420,
+    },
+    scope: 'monitor',
+  },
+  {
+    name: 'case introduction',
+    step: {
+      ...baseStep,
+      kind: 'case_intro',
+      phase_type: 'training',
+      video_id: 7,
+      title: 'Fall 1',
+      body: 'Any questions?',
+    },
+    scope: 'monitor',
+  },
+  {
+    name: 'phase transition',
+    step: { ...baseStep, kind: 'phase_transition', phase_type: 'training', phase_number: 1 },
+    scope: 'monitor',
+  },
+  { name: 'outro without a questionnaire', step: { ...STEPS[3], index: 0 }, scope: 'monitor' },
+  { name: 'SoSci', step: { ...STEPS[2], index: 0 }, scope: 'suspended' },
+  {
+    name: 'think-aloud replay',
+    step: {
+      ...baseStep,
+      kind: 'think_aloud',
+      video_id: 7,
+      phase_type: 'training',
+      case_number: 1,
+      case_total: 1,
+      batch_position: 1,
+      batch_size: 1,
+    },
+    scope: 'suspended',
+  },
+  { name: 'end page', step: { ...baseStep, kind: 'thanks' }, scope: 'suspended' },
+]
+
+test.each(scopeCases)('$name uses the intended gaze guard scope', ({ step, scope }) => {
+  const original = STEPS[0]
+  STEPS[0] = step
+  guard = { ...guard, enabled: true, phase: 'blocked' }
+  try {
+    const { container } = view()
+    expect(useGuard).toHaveBeenLastCalledWith('T-1', scope)
+    const content = container.querySelector('.display-guard__content') as HTMLElement
+    expect(content.inert).toBe(scope === 'required')
+    expect(content.hasAttribute('aria-hidden')).toBe(scope === 'required')
+    expect(screen.queryByRole('dialog', { name: 'Bildschirmeinstellung prüfen' }) !== null).toBe(
+      scope === 'required',
+    )
+    expect(enter).not.toHaveBeenCalled()
+    expect(
+      logged.mock.calls.filter(([, event]) => event.event_type === 'questionnaire_page_entered'),
+    ).toHaveLength(0)
+  } finally {
+    STEPS[0] = original
+  }
+})
+
+test.each(scopeCases.filter(({ scope, name }) => scope === 'monitor' && name !== 'welcome'))(
+  '$name remains usable when display verification is not valid',
+  async ({ step }) => {
+    const original = STEPS[0]
+    STEPS[0] = step
+    guard = { ...guard, enabled: true, phase: 'blocked' }
+    try {
+      view()
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Weiter' })))
+      expect(currentStepIndex).toBe(1)
+      expect(respond).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeNull()
+    } finally {
+      STEPS[0] = original
+    }
+  },
+)
+
+test('CK instructions remain readable while the first timed page waits for verification', async () => {
+  const originals = [...STEPS]
+  STEPS[0] = scopeCases.find(({ name }) => name === 'section introduction')!.step
+  STEPS[1] = { ...STEPS[1], section_key: 'ck_tasks' } as SessionStep
+  guard = { ...guard, enabled: true, phase: 'blocked' }
+  try {
+    const { rerender } = view()
+    const refresh = () =>
+      rerender(
+        <AuthProvider>
+          <ToastProvider>
+            <SessionPage />
+          </ToastProvider>
+        </AuthProvider>,
+      )
+    expect(screen.getByRole('heading', { name: 'CK instructions' })).toBeVisible()
+    expect(enter).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+    refresh()
+    expect(screen.getByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeVisible()
+    expect(screen.queryByRole('spinbutton')).toBeNull()
+    expect(enter).not.toHaveBeenCalled()
+    guard = { ...guard, phase: 'verified' }
+    await act(async () => refresh())
+    expect(enter).toHaveBeenCalledOnce()
+    expect(enter).toHaveBeenCalledWith(
+      expect.objectContaining({ step_index: 1, questionnaire_id: 2 }),
+    )
+    expect(screen.getByRole('spinbutton')).toBeEnabled()
+  } finally {
+    STEPS.splice(0, STEPS.length, ...originals)
+  }
+})
+
+test('SoSci opens separately and its measured return waits for fresh verification', () => {
+  const original = STEPS[0]
+  STEPS[0] = { ...STEPS[2], index: 0, url: 'https://survey.test/form' } as SessionStep
+  guard = { ...guard, enabled: true, phase: 'blocked' }
+  try {
+    const { rerender } = view()
+    expect(screen.queryByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeNull()
+    const survey = screen.getByRole('link', { name: 'Fragebogen öffnen' })
+    expect(survey).toHaveAttribute('target', '_blank')
+    expect(survey).toHaveAttribute('href', 'https://survey.test/form?id=T-1')
+    fireEvent.click(screen.getByRole('button', { name: 'Ich habe den Fragebogen abgeschlossen' }))
+    expect(currentStepIndex).toBe(1)
+    rerender(
+      <AuthProvider>
+        <ToastProvider>
+          <SessionPage />
+        </ToastProvider>
+      </AuthProvider>,
+    )
+    expect(useGuard).toHaveBeenLastCalledWith('T-1', 'required')
+    expect(screen.getByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeVisible()
+    expect(screen.queryByRole('spinbutton')).toBeNull()
+  } finally {
+    STEPS[0] = original
+  }
+})
+
+test('an unchanged display stays usable through case instructions into the next measured page', async () => {
+  const original = STEPS[0]
+  STEPS[0] = scopeCases.find(({ name }) => name === 'case introduction')!.step
+  guard = { ...guard, enabled: true, phase: 'verified' }
+  try {
+    const { rerender } = view()
+    expect(useGuard).toHaveBeenLastCalledWith('T-1', 'monitor')
+    expect(screen.queryByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeNull()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Weiter' })))
+    rerender(
+      <AuthProvider>
+        <ToastProvider>
+          <SessionPage />
+        </ToastProvider>
+      </AuthProvider>,
+    )
+    expect(useGuard).toHaveBeenLastCalledWith('T-1', 'required')
+    expect(screen.getByRole('spinbutton')).toBeEnabled()
+    expect(screen.queryByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeNull()
+  } finally {
+    STEPS[0] = original
+  }
+})
+
+test('supervisor navigation remains available on an unmeasured page with invalid display settings', () => {
+  currentStepIndex = 3
+  guard = { ...guard, enabled: true, phase: 'blocked' }
+  view()
+  expect(useGuard).toHaveBeenLastCalledWith('T-1', 'monitor')
+  fireEvent.keyDown(window, { code: 'KeyB', ctrlKey: true, altKey: true, shiftKey: true })
+  expect(screen.queryByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+  expect(stepBack).toHaveBeenCalledOnce()
+})
+
+test('a completed script without a current step cannot be blocked by display verification', () => {
+  currentStepIndex = STEPS.length
+  guard = { ...guard, enabled: true, phase: 'blocked' }
+  view()
+  expect(useGuard).toHaveBeenLastCalledWith('T-1', 'suspended')
+  expect(screen.getByText('Finished')).toBeVisible()
+  expect(screen.queryByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })).toBeNull()
+})
 
 test('the display guard gates entries, preserves the mounted draft and holds the next page', async () => {
   guard = { ...guard, enabled: true, phase: 'blocked' }

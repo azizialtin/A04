@@ -1,7 +1,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { displayGuard } from '../lib/displayGuard'
+import { displayGuard, type DisplayGuardScope } from '../lib/displayGuard'
 import { enqueue } from '../lib/outbox'
 import { useDisplayGuard } from './useDisplayGuard'
 
@@ -41,8 +41,8 @@ afterEach(() => {
 })
 
 test('blocks browser zoom shortcuts and Ctrl-wheel only in required scope, keeping Ctrl-0 available', () => {
-  const { rerender } = renderHook(({ required }) => useDisplayGuard('person', required, false), {
-    initialProps: { required: true },
+  const { rerender } = renderHook(({ scope }) => useDisplayGuard('person', scope), {
+    initialProps: { scope: 'required' as DisplayGuardScope },
   })
   const key = (value: string) => {
     const event = new KeyboardEvent('keydown', {
@@ -60,7 +60,7 @@ test('blocks browser zoom shortcuts and Ctrl-wheel only in required scope, keepi
   const wheel = new WheelEvent('wheel', { ctrlKey: true, cancelable: true })
   document.dispatchEvent(wheel)
   expect(wheel.defaultPrevented).toBe(true)
-  rerender({ required: false })
+  rerender({ scope: 'monitor' })
   expect(key('+')).toBe(false)
   const externalWheel = new WheelEvent('wheel', { ctrlKey: true, cancelable: true })
   document.dispatchEvent(externalWheel)
@@ -68,7 +68,7 @@ test('blocks browser zoom shortcuts and Ctrl-wheel only in required scope, keepi
 })
 
 test('checks focus and resize immediately, logs durable boundaries, and cleans up ownership', () => {
-  const { result, unmount } = renderHook(() => useDisplayGuard('person', true, true))
+  const { result, unmount } = renderHook(() => useDisplayGuard('person', 'required'))
   act(() => {
     vi.advanceTimersByTime(500)
     displayGuard.resume()
@@ -98,7 +98,7 @@ test('checks focus and resize immediately, logs durable boundaries, and cleans u
 })
 
 test('queued resize and blur still interrupt when the browser already reports restored settings', () => {
-  const { result } = renderHook(() => useDisplayGuard('person', true, true))
+  const { result } = renderHook(() => useDisplayGuard('person', 'required'))
   act(() => {
     vi.advanceTimersByTime(500)
     displayGuard.resume()
@@ -119,4 +119,28 @@ test('queued resize and blur still interrupt when the browser already reports re
       .mocked(enqueue)
       .mock.calls.filter(([, event]) => event.event_type === 'display_guard_interrupted'),
   ).toHaveLength(3)
+})
+
+test('monitor scope permits input but remembers queued display and focus changes for the next measured page', () => {
+  const { result, rerender } = renderHook(({ scope }) => useDisplayGuard('person', scope), {
+    initialProps: { scope: 'required' as DisplayGuardScope },
+  })
+  act(() => {
+    vi.advanceTimersByTime(500)
+    displayGuard.resume()
+  })
+  rerender({ scope: 'monitor' })
+  expect(result.current).toMatchObject({ required: false, phase: 'verified' })
+  act(() => window.dispatchEvent(new Event('blur')))
+  expect(result.current.required).toBe(false)
+  expect(displayGuard.check()).toBe(true)
+  expect(result.current.phase).not.toBe('verified')
+  rerender({ scope: 'required' })
+  expect(result.current.required).toBe(true)
+  expect(displayGuard.check()).toBe(false)
+  expect(
+    vi
+      .mocked(enqueue)
+      .mock.calls.filter(([, event]) => event.event_type === 'display_guard_interrupted'),
+  ).toHaveLength(2)
 })

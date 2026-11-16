@@ -28,9 +28,17 @@ cannot identify the calibrated physical monitor from its dimensions alone.
 
 ## Participant behavior
 
-- Entry into the study requires valid settings for at least 500 ms and explicit
-  **Studienleitung: Fortsetzen** confirmation. Correct settings alone do not
-  dismiss the guard.
+- Entry into the first gaze-recording page requires valid settings for at least
+  500 ms and explicit **Studienleitung: Fortsetzen** confirmation. Correct
+  settings alone do not dismiss the guard. The required pages follow the same
+  capture definition as the recorder: in-app questionnaires, video cases,
+  diagnosis pages and case-outro pages with an assigned questionnaire.
+- Welcome, text/instruction pages, section and case introductions, phase
+  transitions, and outros without a questionnaire remain usable at any display
+  size. They monitor settings silently. Verification carries across them when
+  settings remain valid, so ordinary instructions do not add another popup.
+  A display or focus change silently revokes verification; the next measured
+  page then waits for confirmation before mounting or starting its visit/timer.
 - Resize, zoom, movement, fullscreen changes, and focus loss on measured pages
   block participant input. Ctrl/Cmd plus/minus and Ctrl-wheel are intercepted
   while guarded; Ctrl+0 remains available to restore zoom. Browser menus and OS
@@ -44,10 +52,13 @@ cannot identify the calibrated physical monitor from its dimensions alone.
   continue. Manual advance and supervisor navigation are blocked during an
   interruption.
 - SoSci pages, think-aloud replay and the final page are exempt. SoSci can open
-  in its separate tab. Returning to a required study page requires fresh
-  verification. Display-picker focus loss on introductory pages is allowed.
-- An interrupted in-app calibration attempt must be repeated. Calibration does
-  not exit fullscreen owned by the lab setup.
+  in its separate tab. Returning from these pages requires fresh verification
+  before measured content, including when an ordinary introduction is in between.
+  Display-picker focus loss on introductory pages does not block their controls.
+- In-app calibration remains disabled (`CALIBRATION_ENABLED=false`); calibrate
+  externally before the first measured page. Its existing safety guard remains
+  available if calibration is explicitly enabled in a future change. This scope
+  change does not enable or move calibration, or change which pages record gaze.
 
 The resume control is an operator acknowledgement, not an authenticated
 supervisor login. Original research wording, MESP option order, PCK/MESP page
@@ -81,7 +92,8 @@ retain their prior behavior. No database migration is required.
 
 1. Verify the bridge's real Fusion connection and 120 Hz samples; calibrate on
    the intended 15.6-inch display at the required settings.
-2. Start a synthetic participant, enter fullscreen, and confirm the guard.
+2. Start a synthetic participant and walk through the unblocked introduction.
+   Enter fullscreen and confirm the guard before the first measured page.
    Check known fixation targets on the video, notes, code, question, response
    controls and a popup; compare the exported AOIs and screen replay.
 3. Resize or zoom during a draft and during video playback. Confirm the page

@@ -3,6 +3,8 @@ export const DISPLAY_GUARD_ENABLED =
 export const DISPLAY_GUARD_PROFILE = 'lab_1080p' as const
 export const DISPLAY_STABLE_MS = 500
 
+export type DisplayGuardScope = 'required' | 'monitor' | 'suspended'
+
 export type DisplayGuardReason =
   | 'confirmation_required'
   | 'checking_display'
@@ -102,6 +104,8 @@ export function readDisplayMetrics(): DisplayMetrics {
 /** Owns verification across page changes; valid dimensions alone never resume a task. */
 export class DisplayGuardController {
   private snapshot: DisplayGuardSnapshot
+  private scope: DisplayGuardScope = 'suspended'
+  private suspendedAt: number | null = null
   private listeners = new Set<() => void>()
   private stableSince: number | null = null
   private lastObserved: number | null = null
@@ -158,14 +162,17 @@ export class DisplayGuardController {
 
   configure(
     owner: string | null,
-    required: boolean,
-    focusRequired: boolean,
+    scope: DisplayGuardScope,
     sink?: (event: DisplayGuardEvent) => void,
   ) {
     if (!this.snapshot.enabled) return
     if (sink) this.sink = sink
     const changedOwner = owner !== this.snapshot.owner
-    const entering = required && (!this.snapshot.required || changedOwner)
+    const previousScope = this.scope
+    const required = scope === 'required'
+    const focusRequired = required
+    const entering = required && (previousScope !== 'required' || changedOwner)
+    this.scope = scope
     if (changedOwner) {
       this.lastObserved = null
       this.largestTimestamp = 0
@@ -173,10 +180,12 @@ export class DisplayGuardController {
       this.verifiedObservations = []
       this.interruptedFrom = null
       this.stableSince = null
+      this.suspendedAt = null
     }
-    if (!owner || !required) {
+    if (!owner || scope === 'suspended') {
       this.stableSince = null
-      this.verifiedAt = Infinity
+      if (owner && !changedOwner && previousScope !== 'suspended')
+        this.suspendedAt = this.wallTime()
       this.publish({
         owner,
         required,
@@ -186,10 +195,12 @@ export class DisplayGuardController {
       })
       return
     }
-    if (entering) {
+    this.suspendedAt = null
+    const keepVerification = !changedOwner && this.snapshot.phase === 'verified'
+    if (entering && !keepVerification) {
       this.stableSince = null
-      this.verifiedAt = Infinity
-      this.interruptedFrom = this.wallTime()
+      const needsBoundary = this.interruptedFrom === null
+      this.interruptedFrom ??= this.wallTime()
       this.publish({
         owner,
         required,
@@ -198,21 +209,31 @@ export class DisplayGuardController {
         reasons: ['confirmation_required'],
         generation: this.snapshot.generation + 1,
       })
-      this.event('display_guard_interrupted', this.interruptedFrom, ['confirmation_required'])
-    } else this.publish({ owner, required, focusRequired })
+      if (needsBoundary)
+        this.event('display_guard_interrupted', this.interruptedFrom, ['confirmation_required'])
+    } else {
+      this.publish({
+        owner,
+        required,
+        focusRequired,
+        ...(changedOwner || previousScope === 'suspended'
+          ? { phase: 'blocked' as const, reasons: [] }
+          : {}),
+      })
+    }
     this.check()
   }
 
   release(owner: string) {
     if (this.snapshot.owner !== owner) return
-    this.configure(null, false, false)
+    this.configure(null, 'suspended')
     this.sink = () => {}
   }
 
   private invalidate(reasons: DisplayGuardReason[], preceding: number) {
     const interrupted = this.snapshot.phase === 'verified'
     const start = Math.max(0, Math.floor(preceding))
-    const extendsInterval = this.interruptedFrom === null || start < this.interruptedFrom
+    const extendsInterval = this.interruptedFrom !== null && start < this.interruptedFrom
     if (interrupted || extendsInterval) this.interruptedFrom = start
     this.stableSince = null
     // Keep the verification timestamp for an older event outside our bounded
@@ -229,7 +250,17 @@ export class DisplayGuardController {
 
   /** A queued browser event is evidence even if geometry was already restored. */
   interrupt = (reason: DisplayGuardReason, occurredAt?: number) => {
-    if (!this.snapshot.enabled || !this.snapshot.owner || !this.snapshot.required) return
+    if (!this.snapshot.enabled || !this.snapshot.owner) return
+    if (
+      this.scope === 'suspended' &&
+      (this.suspendedAt === null ||
+        occurredAt === undefined ||
+        !Number.isFinite(occurredAt) ||
+        occurredAt <= 0 ||
+        occurredAt > this.suspendedAt ||
+        !Number.isFinite(this.verifiedAt))
+    )
+      return
     const now = this.wallTime()
     let preceding = Math.min(this.lastObserved ?? now, now)
     if (occurredAt !== undefined && Number.isFinite(occurredAt)) {
@@ -243,12 +274,20 @@ export class DisplayGuardController {
         }
       }
     }
-    this.invalidate([reason], preceding)
+    if (this.scope === 'suspended') {
+      // A queued event from the preceding measured page still corrects its
+      // data. Actual SoSci/replay activity remains exempt and never blocks UI.
+      const start = Math.max(0, Math.floor(preceding))
+      if (this.interruptedFrom === null || start < this.interruptedFrom) {
+        this.interruptedFrom = start
+        this.event('display_guard_interrupted', start, [reason])
+      }
+    } else this.invalidate([reason], preceding)
   }
 
   check = (): boolean => {
     if (!this.snapshot.enabled || this.snapshot.phase === 'suspended') return true
-    if (!this.snapshot.owner || !this.snapshot.required) return false
+    if (!this.snapshot.owner) return false
     const now = this.wallTime()
     const reasons = displayProblems(this.read(), this.snapshot.focusRequired)
     if (now < this.largestTimestamp) reasons.push('clock_changed')
@@ -257,7 +296,7 @@ export class DisplayGuardController {
     this.lastObserved = now
     if (reasons.length) {
       this.invalidate(reasons, preceding)
-      return false
+      return !this.snapshot.required
     }
     if (this.snapshot.phase === 'verified') {
       if (this.verifiedObservations[this.verifiedObservations.length - 1] !== now) {
@@ -273,12 +312,12 @@ export class DisplayGuardController {
       phase: ready ? 'ready' : 'blocked',
       reasons: [ready ? 'confirmation_required' : 'checking_display'],
     })
-    return false
+    return !this.snapshot.required
   }
 
   resume = (): boolean => {
     this.check()
-    if (this.snapshot.phase !== 'ready') return false
+    if (!this.snapshot.required || this.snapshot.phase !== 'ready') return false
     const now = this.wallTime()
     this.verifiedAt = now
     this.verifiedObservations = [now]
@@ -292,6 +331,7 @@ export class DisplayGuardController {
     if (!this.snapshot.enabled) return true
     this.check()
     return (
+      this.snapshot.required &&
       this.snapshot.phase === 'verified' &&
       Number.isFinite(timestamp) &&
       timestamp >= this.verifiedAt
@@ -311,6 +351,6 @@ export function displayGuardGeometry() {
   checkDisplayGuard()
   return {
     profile: DISPLAY_GUARD_PROFILE,
-    verified: getDisplayGuardSnapshot().phase === 'verified',
+    verified: getDisplayGuardSnapshot().required && getDisplayGuardSnapshot().phase === 'verified',
   }
 }
