@@ -145,6 +145,7 @@ export default function PreTestPage({
     pilot && 'pretest-page--pilot',
     timed && 'pretest-page--ck',
     step.section_key === 'pck' && 'pretest-page--pck',
+    pilot && step.section_key === 'mesp' && 'pretest-page--mesp',
     matrixPage && 'pretest-page--matrix',
     matrixPage && step.description.length > 800 && 'pretest-page--instructions',
     demographics && 'pretest-page--demographics',

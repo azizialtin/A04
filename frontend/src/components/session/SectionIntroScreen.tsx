@@ -13,7 +13,9 @@ export default function SectionIntroScreen({
 }) {
   const { t } = useTranslation()
   return (
-    <section className="panel panel--form section-intro">
+    <section
+      className={`panel panel--form section-intro${step.section_key === 'mesp' ? ' section-intro--mesp' : ''}`}
+    >
       <h2>{step.title}</h2>
       <StudyText text={step.body} className="lead" />
       {step.time_limit_seconds !== null && (

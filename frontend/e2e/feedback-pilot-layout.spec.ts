@@ -5,6 +5,8 @@ import type { SessionStep } from '../src/api/participant'
 import type { GazeLayout } from '../src/lib/gazeGeometry'
 import type { Question } from '../src/lib/questionnaire'
 
+type SourceTask = { source_task: number; title: string; description: string; questions: Question[] }
+
 const API = 'http://a04.invalid'
 const source = JSON.parse(
   readFileSync(
@@ -12,10 +14,15 @@ const source = JSON.parse(
     'utf8',
   ),
 ) as {
-  pck_pages: { source_task: number; title: string; description: string; questions: Question[] }[]
+  pck_pages: SourceTask[]
+  mesp_pages: SourceTask[]
+  mesp_intro: { title: string; body: string }
 }
 
-async function openTask(page: Page, task: (typeof source.pck_pages)[number]) {
+async function openStep(
+  page: Page,
+  step: Extract<SessionStep, { kind: 'questionnaire' | 'section_intro' }>,
+) {
   await page.setViewportSize({ width: 1920, height: 1080 })
   await page.addInitScript(() => {
     const token = `e30.${btoa(JSON.stringify({ sub: 'PILOT-LAYOUT', role: 'participant', exp: 4_000_000_000 }))}.test`
@@ -54,19 +61,6 @@ async function openTask(page: Page, task: (typeof source.pck_pages)[number]) {
     })
     ws.onClose(() => clearInterval(samples))
   })
-  const step: SessionStep = {
-    ...task,
-    index: 0,
-    completed: false,
-    kind: 'questionnaire',
-    questionnaire_id: task.source_task,
-    placement: 'pre_test',
-    section: 'PCK-Pretest',
-    section_key: 'pck',
-    video_id: null,
-    page: 17 + source.pck_pages.findIndex((page) => page.source_task === task.source_task),
-    page_count: 25,
-  }
   const state = {
     current: 0,
     answers: [] as Record<string, unknown>[],
@@ -118,23 +112,42 @@ async function openTask(page: Page, task: (typeof source.pck_pages)[number]) {
     return route.fulfill({ status: 404, json: { detail: path } })
   })
   await page.goto('/session')
-  await expect(
-    page.getByRole('heading', { name: 'Fachdidaktisches Wissen', exact: true }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: step.title, exact: true })).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
   // Capture the ready, unanswered page after the synthetic tracker has connected.
-  await expect(page.getByText('Blickdaten werden empfangen.', { exact: true })).toBeVisible()
+  if (step.kind === 'questionnaire')
+    await expect(page.getByText('Blickdaten werden empfangen.', { exact: true })).toBeVisible()
   return state
+}
+
+async function openTask(page: Page, task: SourceTask, sectionKey: 'pck' | 'mesp' = 'pck') {
+  const step: SessionStep = {
+    ...task,
+    index: 0,
+    completed: false,
+    kind: 'questionnaire',
+    questionnaire_id: task.source_task,
+    placement: 'pre_test',
+    section: sectionKey === 'mesp' ? 'MESP' : 'PCK-Pretest',
+    section_key: sectionKey,
+    video_id: null,
+    page:
+      sectionKey === 'mesp'
+        ? 20 + source.mesp_pages.findIndex((page) => page.source_task === task.source_task)
+        : 17 + source.pck_pages.findIndex((page) => page.source_task === task.source_task),
+    page_count: 25,
+  }
+  return openStep(page, step)
 }
 
 // Check before navigation: Playwright's click/fill helpers scroll offscreen elements
 // into view, so a completed walkthrough alone cannot establish viewport fit.
 async function assertFits(page: Page, info: TestInfo, label: string) {
   const metrics = await page.evaluate(() => {
-    const panel = document.querySelector('.pretest-page .panel')!
+    const panel = document.querySelector('.pretest-page .panel, .section-intro')!
     const elements = [
       ...panel.querySelectorAll<HTMLElement>(
-        'p, legend, th, td, pre, button, input, textarea, .matrix__scroll',
+        'h2, p, li, legend, th, td, pre, button, input, textarea, .matrix__scroll',
       ),
     ]
     const clipped = elements
@@ -202,6 +215,7 @@ async function assertFits(page: Page, info: TestInfo, label: string) {
     body: JSON.stringify(metrics, null, 2),
     contentType: 'application/json',
   })
+  await page.mouse.move(1910, 1070)
   await page.screenshot({ path: info.outputPath(`${label}.png`), fullPage: true })
   expect(metrics, label).toMatchObject({
     vertical: 0,
@@ -288,6 +302,88 @@ for (const task of source.pck_pages) {
     expect(Object.keys(state.answers[0]).sort()).toEqual(
       task.questions.map((question) => question.id).sort(),
     )
+    expect(state.unexpected).toEqual([])
+  })
+}
+
+test('pilot MESP introduction fits with the full approved instructions', async ({ page }, info) => {
+  const state = await openStep(page, {
+    kind: 'section_intro',
+    index: 0,
+    completed: false,
+    section_key: 'mesp',
+    ...source.mesp_intro,
+    time_limit_seconds: null,
+  })
+  const displayed = await page.locator('.section-intro p.lead, .section-intro li').allTextContents()
+  const normalize = (text: string) => text.replace(/\s+/g, ' ').trim()
+  expect(normalize(displayed.join(' '))).toBe(
+    normalize(source.mesp_intro.body.replace(/^- /gm, '')),
+  )
+  await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
+  await assertFits(page, info, 'intro')
+  expect(state.unexpected).toEqual([])
+})
+
+for (const task of source.mesp_pages) {
+  test(`pilot MESP task ${task.source_task} fits with unchanged wording and response order`, async ({
+    page,
+  }, info) => {
+    const state = await openTask(page, task, 'mesp')
+    const next = page.getByRole('button', { name: 'Weiter', exact: true })
+    await expect(next).toBeDisabled()
+    await expect(page.locator('input:checked')).toHaveCount(0)
+    await expect(page.getByRole('radio')).toHaveCount(30)
+    const ids = await page
+      .locator('.matrix__table tbody tr')
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-aoi')))
+    expect(ids).toEqual(task.questions.map((question) => `question.${question.id}`))
+    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim()
+    expect(normalize(await page.locator('[data-aoi="instructions"]').innerText())).toBe(
+      normalize(task.description),
+    )
+    const instruction = await page.locator('[data-aoi="instructions"]').boundingBox()
+    const firstQuestion = await page.locator('.questionnaire-controls').boundingBox()
+    expect(instruction!.y + instruction!.height).toBeLessThanOrEqual(firstQuestion!.y)
+    for (const question of task.questions) {
+      const field = page.locator(`[data-aoi="question.${question.id}"]`)
+      const names = await field
+        .getByRole('radio')
+        .evaluateAll((inputs) => inputs.map((input) => input.getAttribute('aria-label')))
+      expect(names).toEqual(
+        question.options!.map(
+          (option, index) => `${question.text}: ${index + 1} – ${option.label}`,
+        ),
+      )
+    }
+    expect(await page.locator('.matrix__legend li').allTextContents()).toEqual(
+      task.questions[0].options!.map((option, index) => `${index + 1}${option.label}`),
+    )
+    await assertFits(page, info, 'unanswered')
+    const expected: Record<string, unknown> = {}
+    for (const [index, question] of task.questions.entries()) {
+      const selectedIndex = (task.source_task + index - 1) % 6
+      await page
+        .locator(`[data-aoi="question.${question.id}"]`)
+        .getByRole('radio')
+        .nth(selectedIndex)
+        .check()
+      expected[question.id] = question.options![selectedIndex].value
+    }
+    await expect(next).toBeEnabled()
+    await assertFits(page, info, 'answered')
+    await expect.poll(() => state.layouts.length).toBeGreaterThan(0)
+    const last = state.layouts.at(-1)!
+    for (const question of task.questions) {
+      const bounds = await page.locator(`[data-aoi="question.${question.id}.prompt"]`).boundingBox()
+      const area = last.aois?.find((item) => item.id === `question.${question.id}.prompt`)
+      expect(area).toBeDefined()
+      expect(area!.x).toBeCloseTo(bounds!.x, 0)
+      expect(area!.y).toBeCloseTo(bounds!.y, 0)
+    }
+    await next.click()
+    await expect(page.getByRole('heading', { name: 'Vielen Dank!', exact: true })).toBeVisible()
+    expect(state.answers).toEqual([expected])
     expect(state.unexpected).toEqual([])
   })
 }
