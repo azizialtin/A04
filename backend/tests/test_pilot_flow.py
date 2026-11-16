@@ -73,9 +73,9 @@ async def test_exact_pilot_pages_five_training_pre_post_last_three(
         "section_intro: Debugging-Aufgaben",
         *[f"questionnaire: CK: Aufgabe {i}" for i in range(1, 14)],
         "section_intro: Fachdidaktisches Wissen",
-        "questionnaire: PCK: Aufgabe 1",
-        "questionnaire: PCK: Aufgabe 3",
-        "questionnaire: PCK: Aufgabe 5",
+        "questionnaire: Fachdidaktisches Wissen",
+        "questionnaire: Fachdidaktisches Wissen",
+        "questionnaire: Fachdidaktisches Wissen",
         "section_intro: MESP",
         *[f"questionnaire: MESP: Aufgabe {i}" for i in range(1, 7)],
         "sosci: pretest",
@@ -97,6 +97,11 @@ async def test_exact_pilot_pages_five_training_pre_post_last_three(
         "thanks",
     ]
     assert [page_name(step) for step in steps] == expected
+    assert [
+        step["questions"][0]["id"]
+        for step in steps
+        if step["kind"] == "questionnaire" and step.get("section_key") == "pck"
+    ] == ["pck_pre_1a", "pck_pre_3a_1", "pck_pre_5a"]
     assert len(steps) == 69
     assert "SECRET stimulus" not in json.dumps(steps)
     assert all(step["case_total"] == 7 for step in steps if "case_number" in step)

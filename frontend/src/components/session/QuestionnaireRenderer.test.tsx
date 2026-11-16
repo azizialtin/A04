@@ -9,6 +9,77 @@ const questions: Question[] = [
   { id: 'c', type: 'likert', text: 'Confidence', scale_min: 1, scale_max: 5 },
 ]
 
+test('authored columns preserve question, keyboard, and submitted answer order', async () => {
+  const user = userEvent.setup()
+  const onSubmit = vi.fn()
+  const grouped: Question[] = [
+    { id: 'a', type: 'free_text', text: 'Erste Antwort', layout_column: 1 },
+    { id: 'b', type: 'free_text', text: 'Zweite Antwort', layout_column: 2 },
+    { id: 'reason', type: 'free_text', text: 'Begründung', layout_column: 2 },
+    { id: 'c', type: 'free_text', text: 'Dritte Antwort', layout_column: 3 },
+  ]
+  const { container, rerender } = render(
+    <QuestionnaireRenderer title="PCK" questions={grouped} layout="columns" onSubmit={onSubmit} />,
+  )
+  const columns = container.querySelectorAll('.question-column')
+  expect(columns).toHaveLength(3)
+  expect(
+    Array.from(columns).map((column) =>
+      Array.from(column.querySelectorAll('.qfield')).map((field) => field.getAttribute('data-aoi')),
+    ),
+  ).toEqual([['question.a'], ['question.b', 'question.reason'], ['question.c']])
+  for (const [index, input] of screen.getAllByRole('textbox').entries()) {
+    await user.tab()
+    expect(input).toHaveFocus()
+    await user.keyboard(String(index + 1))
+  }
+  await user.tab()
+  expect(screen.getByRole('button', { name: 'Weiter' })).toHaveFocus()
+  await user.keyboard('{Enter}')
+  expect(onSubmit).toHaveBeenCalledWith({ a: '1', b: '2', reason: '3', c: '4' }, expect.any(Number))
+  // Metadata does not change an ordinary questionnaire's layout.
+  rerender(<QuestionnaireRenderer title="Legacy" questions={grouped} onSubmit={onSubmit} />)
+  expect(container.querySelector('.qlist--columns')).toBeNull()
+})
+
+test('invalid column groups fall back without sorting or splitting a matrix', () => {
+  const row = (id: string, column: 1 | 2): Question => ({
+    id,
+    type: 'multiple_choice',
+    text: id,
+    matrix: 'rating',
+    options: ['1', '2'],
+    layout_column: column,
+  })
+  const { container, rerender } = render(
+    <QuestionnaireRenderer
+      title="PCK"
+      questions={[row('first', 1), row('second', 2)]}
+      layout="columns"
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(screen.getAllByRole('table')).toHaveLength(1)
+  expect(container.querySelector('.qlist--columns')).toBeNull()
+  rerender(
+    <QuestionnaireRenderer
+      title="PCK"
+      questions={[
+        { id: 'first', type: 'free_text', text: 'First', layout_column: 2 },
+        { id: 'second', type: 'free_text', text: 'Second', layout_column: 1 },
+      ]}
+      layout="columns"
+      onSubmit={vi.fn()}
+    />,
+  )
+  expect(container.querySelector('.qlist--columns')).toBeNull()
+  expect(
+    Array.from(container.querySelectorAll('.qfield')).map((field) =>
+      field.getAttribute('data-aoi'),
+    ),
+  ).toEqual(['question.first', 'question.second'])
+})
+
 test('blocks submit until the required question is answered', () => {
   const onSubmit = vi.fn()
   render(<QuestionnaireRenderer title="Intro" questions={questions} onSubmit={onSubmit} />)

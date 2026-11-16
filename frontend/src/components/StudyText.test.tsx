@@ -101,3 +101,19 @@ test('inline code stays escaped and student-task blocks can restart without chan
     ),
   ).toEqual(['1', '2', '3'])
 })
+
+test('shared stimulus groups prose without moving or dropping code lines', () => {
+  const source =
+    'Situation.\n\n```java\nclass Example {\n\n  int value;\n}\n```\n\nBeachten Sie den Wert.'
+  const { container, rerender } = render(<StudyText text={source} layout="stimulus" />)
+  const stimulus = container.querySelector('.study-stimulus')!
+  expect(stimulus).toHaveClass('study-stimulus--with-code')
+  expect(Array.from(stimulus.children).map((child) => child.tagName)).toEqual(['DIV', 'PRE', 'DIV'])
+  expect(
+    Array.from(stimulus.querySelectorAll('.code__line')).map((line) => line.textContent),
+  ).toEqual(['class Example {\n', '\n', '  int value;\n', '}\n'])
+  expect(stimulus.firstElementChild).toHaveTextContent('Situation.')
+  expect(stimulus.lastElementChild).toHaveTextContent('Beachten Sie den Wert.')
+  rerender(<StudyText text="Situation ohne Code." layout="stimulus" />)
+  expect(container.querySelector('.study-stimulus')).not.toHaveClass('study-stimulus--with-code')
+})

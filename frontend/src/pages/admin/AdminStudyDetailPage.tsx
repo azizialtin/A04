@@ -404,24 +404,25 @@ function TextsSection({ study }: { study: Study }) {
 
       {pilot &&
         Object.entries(de.pilot.text_pages).map(([key, text]) => {
+          const label = key === 'post_intro' ? 'Vor dem Abschlussfragebogen' : text.title
           const titleKey = `${key}_title` as keyof StudyTexts
           const bodyKey = `${key}_body` as keyof StudyTexts
           return (
             <fieldset className="form" key={key}>
-              <legend>{text.title}</legend>
+              <legend>{label}</legend>
               <label className="label" htmlFor={`text-${key}-title`}>
-                Überschrift: {text.title}
+                Überschrift: {label}
               </label>
               <input
                 id={`text-${key}-title`}
                 className="input"
                 maxLength={200}
                 value={(texts[titleKey] as string | undefined) ?? ''}
-                placeholder={text.title}
+                placeholder={text.title || 'Keine Überschrift (Standard)'}
                 onChange={set(titleKey)}
               />
               <label className="label" htmlFor={`text-${key}-body`}>
-                Text: {text.title}
+                Text: {label}
               </label>
               <textarea
                 id={`text-${key}-body`}
@@ -432,6 +433,12 @@ function TextsSection({ study }: { study: Study }) {
                 placeholder={text.body}
                 onChange={set(bodyKey)}
               />
+              {key === 'post_intro' && (
+                <p className="muted small">
+                  Standardmäßig erscheint diese Seite ohne Überschrift. Leeren Sie das
+                  Überschriftfeld, um diesen Standard wiederherzustellen.
+                </p>
+              )}
               {(key === 'video_end' || key === 'discussion_start') && (
                 <p className="muted small">
                   Diese Pausenseite erscheint beim gebündelten lauten Denken nach dem Nachtest.

@@ -34,6 +34,8 @@ interface Props {
   onAnswersChange?: (answers: Answers) => void
   onSubmit: (answers: Answers, timeSpentSeconds: number) => void
   onSkip?: (timeSpentSeconds: number) => void
+  /** Opt-in wide layout for batteries with authored column grouping. */
+  layout?: 'columns'
 }
 
 export default function QuestionnaireRenderer({
@@ -47,6 +49,7 @@ export default function QuestionnaireRenderer({
   onAnswersChange,
   onSubmit,
   onSkip,
+  layout,
 }: Props) {
   const { t } = useTranslation()
   const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {})
@@ -55,34 +58,8 @@ export default function QuestionnaireRenderer({
   const instructionStart = 1 + studyCodeLineCount(description ?? '')
   const questionsStart = instructionStart + studyCodeLineCount(instruction ?? '')
 
-  return (
-    <div className="panel panel--form">
-      <header className="qhead">
-        <h2 data-aoi="page_title">{title}</h2>
-        {description ? (
-          <div data-aoi="page_description">
-            <StudyText text={description} className="muted" />
-          </div>
-        ) : null}
-        {instruction ? (
-          <div data-aoi="instructions">
-            <StudyText text={instruction} className="lead" startLine={instructionStart} />
-          </div>
-        ) : null}
-      </header>
-
-      <fieldset className="questionnaire-controls" disabled={disabled || submitting}>
-        <QuestionnaireFields
-          questions={questions}
-          answers={answers}
-          onChange={(next) => {
-            setAnswers(next)
-            onAnswersChange?.(next)
-          }}
-          startLine={questionsStart}
-        />
-      </fieldset>
-
+  const footer = (
+    <>
       {/* How many are left, not only that something is: a table of seven rows
           gives no clue why the button will not light up. */}
       {missing.length > 0 && questions.length > 1 ? (
@@ -113,6 +90,44 @@ export default function QuestionnaireRenderer({
           {submitting ? t('common.loading') : t('questionnaire.submit')}
         </button>
       </div>
+    </>
+  )
+
+  return (
+    <div className="panel panel--form">
+      <header className="qhead">
+        <h2 data-aoi="page_title">{title}</h2>
+        {description ? (
+          <div data-aoi="page_description">
+            <StudyText text={description} className="muted" />
+          </div>
+        ) : null}
+        {instruction ? (
+          <div data-aoi="instructions">
+            <StudyText
+              text={instruction}
+              className="lead"
+              startLine={instructionStart}
+              layout={layout === 'columns' ? 'stimulus' : undefined}
+            />
+          </div>
+        ) : null}
+      </header>
+
+      <fieldset className="questionnaire-controls" disabled={disabled || submitting}>
+        <QuestionnaireFields
+          questions={questions}
+          answers={answers}
+          onChange={(next) => {
+            setAnswers(next)
+            onAnswersChange?.(next)
+          }}
+          startLine={questionsStart}
+          layout={layout}
+        />
+      </fieldset>
+
+      {layout === 'columns' ? <footer className="questionnaire-footer">{footer}</footer> : footer}
     </div>
   )
 }
@@ -127,11 +142,13 @@ export function QuestionnaireFields({
   answers,
   onChange,
   startLine = 1,
+  layout,
 }: {
   questions: Question[]
   answers: Answers
   onChange: (next: Answers) => void
   startLine?: number
+  layout?: 'columns'
 }) {
   const visible = useMemo(() => visibleQuestionIds(questions, answers), [questions, answers])
   const numbered = useMemo(() => numberCodeQuestions(questions, startLine), [questions, startLine])
@@ -141,26 +158,56 @@ export function QuestionnaireFields({
   )
   const setAnswer = (id: string, value: unknown) => onChange({ ...answers, [id]: value })
 
-  return (
-    <div className="qlist">
-      {blocks.map((block) =>
-        block.kind === 'matrix' ? (
-          <Matrix
-            key={`${block.key}:${block.questions[0].id}`}
-            block={block}
-            answers={answers}
-            onAnswer={setAnswer}
-          />
-        ) : (
-          <Field
-            key={block.question.id}
-            question={block.question}
-            value={answers[block.question.id]}
-            onChange={(v) => setAnswer(block.question.id, v)}
-          />
-        ),
-      )}
+  const renderBlock = (block: QuestionBlock) =>
+    block.kind === 'matrix' ? (
+      <Matrix
+        key={`${block.key}:${block.questions[0].id}`}
+        block={block}
+        answers={answers}
+        onAnswer={setAnswer}
+      />
+    ) : (
+      <Field
+        key={block.question.id}
+        question={block.question}
+        value={answers[block.question.id]}
+        onChange={(v) => setAnswer(block.question.id, v)}
+      />
+    )
+
+  // Columns are contiguous groups in authored order, never a sorting rule.
+  // Missing or inconsistent metadata falls back to the ordinary single column.
+  const columns: { column: number; blocks: QuestionBlock[] }[] = []
+  const canUseColumns =
+    layout === 'columns' &&
+    blocks.every((block) => {
+      const questions = block.kind === 'matrix' ? block.questions : [block.question]
+      const column = questions[0].layout_column
+      const previous = columns[columns.length - 1]
+      if (
+        !column ||
+        !Number.isInteger(column) ||
+        column < 1 ||
+        column > 3 ||
+        questions.some((q) => q.layout_column !== column) ||
+        (previous && column < previous.column)
+      )
+        return false
+      if (previous?.column === column) previous.blocks.push(block)
+      else columns.push({ column, blocks: [block] })
+      return true
+    })
+
+  return canUseColumns ? (
+    <div className="qlist qlist--columns">
+      {columns.map(({ column, blocks }) => (
+        <div className="question-column" data-layout-column={column} key={column}>
+          {blocks.map(renderBlock)}
+        </div>
+      ))}
     </div>
+  ) : (
+    <div className="qlist">{blocks.map(renderBlock)}</div>
   )
 }
 

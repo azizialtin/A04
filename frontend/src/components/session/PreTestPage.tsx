@@ -342,6 +342,7 @@ export default function PreTestPage({
         description={t('pre_test.page', { current: step.page, total: step.page_count })}
         instruction={step.description}
         questions={step.questions}
+        layout={pilot && step.section_key === 'pck' ? 'columns' : undefined}
         initialAnswers={initial}
         onAnswersChange={changed}
         disabled={

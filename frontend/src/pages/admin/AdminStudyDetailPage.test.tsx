@@ -70,8 +70,9 @@ test('all six pilot text pages can be saved and restored without obsolete intro 
   expect(screen.queryByLabelText('Überschrift für das Vortest-Video')).not.toBeInTheDocument()
   const expected: Record<string, string> = {}
   for (const [key, text] of Object.entries(de.pilot.text_pages)) {
-    const title = screen.getByLabelText(`Überschrift: ${text.title}`)
-    const body = screen.getByLabelText(`Text: ${text.title}`)
+    const label = key === 'post_intro' ? 'Vor dem Abschlussfragebogen' : text.title
+    const title = screen.getByLabelText(`Überschrift: ${label}`)
+    const body = screen.getByLabelText(`Text: ${label}`)
     expect(body).toHaveAttribute('placeholder', text.body)
     expected[`${key}_title`] = `Titel ${key}`
     expected[`${key}_body`] = `Text ${key}\n\nZweiter Absatz.`
@@ -89,7 +90,9 @@ test('all six pilot text pages can be saved and restored without obsolete intro 
   view()
   await screen.findByRole('heading', { name: 'Texte für Teilnehmer' })
   for (const [key, text] of Object.entries(de.pilot.text_pages)) {
-    expect(screen.getByLabelText(`Text: ${text.title}`)).toHaveValue(expected[`${key}_body`])
+    const label = key === 'post_intro' ? 'Vor dem Abschlussfragebogen' : text.title
+    expect(screen.getByLabelText(`Überschrift: ${label}`)).toHaveValue(expected[`${key}_title`])
+    expect(screen.getByLabelText(`Text: ${label}`)).toHaveValue(expected[`${key}_body`])
   }
 })
 
@@ -100,4 +103,35 @@ test('legacy text controls stay available without introducing new flow pages', a
   expect(screen.getByLabelText(/Der Ablauf/)).toBeInTheDocument()
   expect(screen.getByLabelText('Überschrift für das Vortest-Video')).toBeInTheDocument()
   expect(screen.queryByLabelText('Text: Ende Video-Phase')).not.toBeInTheDocument()
+})
+
+test('clearing the final introduction title restores its heading-free default', async () => {
+  getStudy.mockResolvedValue({
+    ...initial,
+    texts: { ...initial.texts, post_intro_title: 'Eigener Titel' },
+  })
+  const mounted = view()
+  const title = await screen.findByLabelText('Überschrift: Vor dem Abschlussfragebogen')
+  expect(title).toHaveValue('Eigener Titel')
+  expect(title).toHaveAttribute('placeholder', 'Keine Überschrift (Standard)')
+  expect(
+    screen.getByText(/Standardmäßig erscheint diese Seite ohne Überschrift/),
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText('Text: Vor dem Abschlussfragebogen')).toHaveAttribute(
+    'placeholder',
+    de.pilot.text_pages.post_intro.body,
+  )
+  fireEvent.change(title, { target: { value: '' } })
+  const form = screen
+    .getByRole('heading', { name: 'Texte für Teilnehmer' })
+    .closest('.card') as HTMLElement
+  fireEvent.click(within(form).getByRole('button', { name: /^Speichern$/ }))
+  await waitFor(() =>
+    expect(updateStudy).toHaveBeenCalledWith(7, {
+      texts: { ...initial.texts, post_intro_title: '' },
+    }),
+  )
+  mounted.unmount()
+  view()
+  expect(await screen.findByLabelText('Überschrift: Vor dem Abschlussfragebogen')).toHaveValue('')
 })

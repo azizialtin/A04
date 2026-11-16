@@ -79,6 +79,10 @@ def validate_question_definitions(questions: Any) -> list[str]:
                     errors.append(f"{prefix}: Die Auswahlgrenze überschreitet die Optionen.")
         if "matrix_prompt" in question and not isinstance(question["matrix_prompt"], str):
             errors.append(f"{prefix}: matrix_prompt muss Text sein.")
+        if "layout_column" in question and (
+            not _positive_integer(question["layout_column"]) or question["layout_column"] > 3
+        ):
+            errors.append(f"{prefix}: layout_column muss eine ganze Zahl von 1 bis 3 sein.")
         condition = question.get("show_if")
         if condition is not None and (
             not isinstance(condition, dict)

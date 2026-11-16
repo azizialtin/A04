@@ -14,6 +14,17 @@ test('required field must be answered', () => {
   expect(missingRequired(qs, { a: 'because' })).toEqual([])
 })
 
+test('optional layout columns accept only integer columns one through three', () => {
+  const question = { id: 'a', type: 'free_text', text: 'Antwort' }
+  expect(definitionErrors([question])).toEqual([])
+  for (const layout_column of [1, 2, 3])
+    expect(definitionErrors([{ ...question, layout_column }])).toEqual([])
+  for (const layout_column of [0, 4, -1, 1.5, '1', true, null])
+    expect(definitionErrors([{ ...question, layout_column }])).toEqual([
+      'Frage 1: layout_column muss eine ganze Zahl zwischen 1 und 3 sein.',
+    ])
+})
+
 const multiSelect: Question = {
   id: 'multi',
   type: 'multi_select',

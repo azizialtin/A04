@@ -33,6 +33,7 @@ export default function StudyText({
   mode = 'paragraphs',
   startLine = 1,
   restartCodeBlocks = false,
+  layout,
 }: {
   text: string
   className?: string
@@ -40,6 +41,8 @@ export default function StudyText({
   mode?: 'paragraphs' | 'preserve'
   startLine?: number
   restartCodeBlocks?: boolean
+  /** A shared task stimulus can place its prose beside its single code window. */
+  layout?: 'stimulus'
 }) {
   const segments = splitCodeBlocks(text)
   let nextLine = Number.isSafeInteger(startLine) && startLine > 0 ? startLine : 1
@@ -48,33 +51,51 @@ export default function StudyText({
     if (segment.kind === 'code') nextLine += segment.lines.length
     return { segment, firstLine }
   })
-  return (
-    <>
-      {numbered.map(({ segment, firstLine }, i) =>
-        segment.kind === 'code' ? (
-          <CodeBlock key={i} code={segment.lines} lang={segment.lang} startLine={firstLine} />
-        ) : mode === 'preserve' ? (
-          <p key={i} className={className} style={{ whiteSpace: 'pre-wrap', ...style }}>
-            {emphasis(segment.text.replace(/^\n+|\n+$/g, ''))}
-          </p>
-        ) : (
-          paragraphs(segment.text).map((paragraph, j) => {
-            const items = bullets(paragraph)
-            return items ? (
-              <ul key={`${i}-${j}`} className={cx('prose-list', className)} style={style}>
-                {items.map((item, k) => (
-                  <li key={k}>{emphasis(item)}</li>
-                ))}
-              </ul>
-            ) : (
-              <p key={`${i}-${j}`} className={className} style={style}>
-                {emphasis(paragraph)}
-              </p>
-            )
-          })
-        ),
+  const content = numbered.map(({ segment, firstLine }, i) => {
+    if (segment.kind === 'code')
+      return <CodeBlock key={i} code={segment.lines} lang={segment.lang} startLine={firstLine} />
+    const prose =
+      mode === 'preserve' ? (
+        <p key={i} className={className} style={{ whiteSpace: 'pre-wrap', ...style }}>
+          {emphasis(segment.text.replace(/^\n+|\n+$/g, ''))}
+        </p>
+      ) : (
+        paragraphs(segment.text).map((paragraph, j) => {
+          const items = bullets(paragraph)
+          return items ? (
+            <ul key={`${i}-${j}`} className={cx('prose-list', className)} style={style}>
+              {items.map((item, k) => (
+                <li key={k}>{emphasis(item)}</li>
+              ))}
+            </ul>
+          ) : (
+            <p key={`${i}-${j}`} className={className} style={style}>
+              {emphasis(paragraph)}
+            </p>
+          )
+        })
+      )
+    return layout === 'stimulus' ? (
+      <div key={i} className="study-stimulus__prose">
+        {prose}
+      </div>
+    ) : (
+      prose
+    )
+  })
+  return layout === 'stimulus' ? (
+    <div
+      className={cx(
+        'study-stimulus',
+        segments.filter((s) => s.kind === 'code').length === 1
+          ? 'study-stimulus--with-code'
+          : undefined,
       )}
-    </>
+    >
+      {content}
+    </div>
+  ) : (
+    <>{content}</>
   )
 }
 

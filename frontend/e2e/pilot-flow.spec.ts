@@ -226,12 +226,11 @@ test('pilot admin settings and all six text pages survive reload and reach the p
 
   const expected: Record<string, string> = {}
   for (const [key, source] of Object.entries(de.pilot.text_pages)) {
-    expected[`${key}_title`] = `Pilot: ${source.title}`
+    const label = key === 'post_intro' ? 'Vor dem Abschlussfragebogen' : source.title
+    expected[`${key}_title`] = `Pilot: ${label}`
     expected[`${key}_body`] = `Individueller Text für ${key}.\n\nZweiter Absatz.`
-    await page
-      .getByLabel(`Überschrift: ${source.title}`, { exact: true })
-      .fill(expected[`${key}_title`])
-    await page.getByLabel(`Text: ${source.title}`, { exact: true }).fill(expected[`${key}_body`])
+    await page.getByLabel(`Überschrift: ${label}`, { exact: true }).fill(expected[`${key}_title`])
+    await page.getByLabel(`Text: ${label}`, { exact: true }).fill(expected[`${key}_body`])
   }
   const texts = page
     .locator('.card')
@@ -243,7 +242,8 @@ test('pilot admin settings and all six text pages survive reload and reach the p
     .toBe(expected.post_intro_body)
   await page.reload()
   for (const [key, source] of Object.entries(de.pilot.text_pages)) {
-    await expect(page.getByLabel(`Text: ${source.title}`, { exact: true })).toHaveValue(
+    const label = key === 'post_intro' ? 'Vor dem Abschlussfragebogen' : source.title
+    await expect(page.getByLabel(`Text: ${label}`, { exact: true })).toHaveValue(
       expected[`${key}_body`],
     )
   }
@@ -307,6 +307,8 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
         break
       case 'questionnaire':
         await expect(page.getByRole('heading', { name: step.title, exact: true })).toBeVisible()
+        await expect(page.locator(`[data-aoi="question.${step.questions[0].id}"]`)).toBeVisible()
+        if (step.section_key === 'pck') await expectPageFits(page)
         if (step.questions[0]?.id === 'ck_pre_02') {
           await page.getByRole('spinbutton').fill('6')
           await page
@@ -324,6 +326,7 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
             })
           }
           await expect(next).toBeEnabled()
+          if (step.section_key === 'pck') await expectPageFits(page)
           await next.click()
         }
         break
@@ -340,6 +343,12 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
         break
       case 'text_page':
         await expect(next).toBeVisible()
+        if (step.key === 'post_intro') {
+          await expect(page.locator('.panel').getByRole('heading')).toHaveCount(0)
+          await expect(
+            page.getByText('Sie haben die Diagnoseaufgaben abgeschlossen.', { exact: false }),
+          ).toBeVisible()
+        }
         await page.screenshot({
           path: info.outputPath(`page-${index}-${step.key}.png`),
           fullPage: true,
@@ -438,6 +447,22 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
     contentType: 'application/json',
   })
 })
+
+async function expectPageFits(page: Page) {
+  await page.evaluate(() => document.fonts.ready)
+  expect(
+    await page.evaluate(() => ({
+      width: Math.max(document.body.scrollWidth, document.documentElement.scrollWidth),
+      height: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+      scrollY,
+    })),
+  ).toEqual({ width: 1920, height: 1080, viewportWidth: 1920, viewportHeight: 1080, scrollY: 0 })
+  await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeInViewport({
+    ratio: 1,
+  })
+}
 
 test('expired CK resumes after reload, saves the partial answer and automatically enters PCK', async ({
   page,

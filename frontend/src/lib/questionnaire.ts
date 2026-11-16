@@ -49,6 +49,8 @@ export interface Question {
   min_selections?: number
   max_selections?: number
   matrix_prompt?: string
+  /** Optional column of a wide questionnaire layout; source order is retained. */
+  layout_column?: 1 | 2 | 3
   /**
    * Consecutive single-choice questions with the same key and the same options
    * are shown as one table — a row each, the options listed once — rather
@@ -132,6 +134,11 @@ export function definitionErrors(questions: unknown): string[] {
       errors.push(`${prefix}: allow_skip ist nur als Wahrheitswert für Debugging-Aufgaben erlaubt.`)
     if ('matrix_prompt' in question && typeof question.matrix_prompt !== 'string')
       errors.push(`${prefix}: matrix_prompt muss Text sein.`)
+    if (
+      'layout_column' in question &&
+      (!positiveInteger(question.layout_column) || (question.layout_column as number) > 3)
+    )
+      errors.push(`${prefix}: layout_column muss eine ganze Zahl zwischen 1 und 3 sein.`)
     for (const field of ['min_selections', 'max_selections']) {
       if (field in question && (kind !== 'multi_select' || !positiveInteger(question[field])))
         errors.push(`${prefix}: ${field} muss eine positive ganze Zahl für Mehrfachauswahl sein.`)

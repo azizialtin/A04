@@ -98,7 +98,17 @@ three cases replayed in the discussion phase. It verifies explicit CK skip
 values in CSV, all PCK pages including the exact-two selection, all six MESP
 pages with 30 independently rated statements, neutral participant labels, and
 student-task code formatting. It captures PCK/MESP pages, transition pages and
-the video rail, and checks horizontal overflow.
+the video rail, checks horizontal overflow, and asserts vertical fit on each
+PCK page before answering and before advancing. The post-questionnaire intro
+must show its supplied paragraph without an added default heading.
+
+`feedback-pilot-layout.spec.ts` checks all three complete pilot PCK pages at
+1920×1080 CSS pixels, with unanswered, incomplete and completed responses. It
+checks page and internal overflow, fully visible controls, readable font sizes,
+authored DOM order, exact code lines and gaze-prompt positions. These assertions
+run before navigation, because Playwright's normal click/fill helpers can
+silently scroll offscreen fields into view. Source task 3 includes all 17 lines
+of the refreshed code rather than a shortened formatting variant.
 
 A separate reload/expiry test preserves a partial CK answer, finishes the
 section automatically, and enters PCK. To avoid a seven-minute test wait, it

@@ -72,6 +72,7 @@ def test_pilot_questions_are_valid_and_have_unique_variables(battery):
 def test_pck_preserves_ten_conceptual_items_and_their_distinct_response_forms():
     pages = load_pretest_manifest(PILOT_SOURCE_KEY)["pck_pages"]
     assert [page["source_task"] for page in pages] == [1, 3, 5]
+    assert [page["title"] for page in pages] == ["Fachdidaktisches Wissen"] * 3
     concepts = {
         question["source_ref"]["variable"] for page in pages for question in page["questions"]
     }
@@ -135,6 +136,72 @@ def test_pck_preserves_ten_conceptual_items_and_their_distinct_response_forms():
             "4",
             "5",
         ]
+
+
+def test_pck3_preserves_the_refreshed_source_code_format_and_scoped_provenance():
+    content = load_pretest_manifest(PILOT_SOURCE_KEY)
+    page = next(page for page in content["pck_pages"] if page["source_task"] == 3)
+    code = page["description"].split("```java\n", 1)[1].split("```", 1)[0]
+    assert code.splitlines() == [
+        "public class LibraryAccount {",
+        "",
+        "  private int maxBooks = 5;",
+        "",
+        "  public boolean canBorrowMoreBooks (int currentlyBorrowed) {",
+        "",
+        "    if (currentlyBorrowed <= maxBooks) {",
+        "",
+        "        return true;",
+        "",
+        "    } else {",
+        "",
+        "    return false;",
+        "",
+        "    }",
+        "  }",
+        "}",
+    ]
+    refresh = next(source for source in content["sources"] if source.get("cells") == ["J31"])
+    assert refresh["sheet"] == "TODO Pre-Test Inside Tool"
+    assert refresh["sha256"] == "bb3cc546b210e37ee90ddfdf50b7272a8ab1f8abd30743f985651bb251c377ee"
+    assert content["source_sha256"] != refresh["sha256"]
+    assert "Base spreadsheet snapshot" in content["source_sha256_scope"]
+
+
+def test_pck_layout_groups_preserve_the_authored_item_order():
+    pages = load_pretest_manifest(PILOT_SOURCE_KEY)["pck_pages"]
+    columns = {
+        1: {"a": 1, "b": 2, "c": 3},
+        3: {"a": 1, "b": 2, "c": 3},
+        5: {"a": 1, "b": 1, "c": 2, "d": 3},
+    }
+    for page in pages:
+        expected = columns[page["source_task"]]
+        for question in page["questions"]:
+            assert question["layout_column"] == expected[question["source_ref"]["variable"][-1]]
+        authored = [question["layout_column"] for question in page["questions"]]
+        assert authored == sorted(authored)
+    for battery in PILOT_BATTERIES:
+        if battery.section_key != "pck":
+            assert all("layout_column" not in question for question in battery.questions)
+
+
+@pytest.mark.parametrize("column", [1, 2, 3])
+def test_question_layout_column_accepts_the_three_authored_columns(column):
+    assert (
+        validate_question_definitions(
+            [{"id": "answer", "type": "free_text", "text": "Antwort", "layout_column": column}]
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("column", [None, True, False, -1, 0, 4, 1.5, "1", []])
+def test_question_layout_column_rejects_invalid_positions(column):
+    errors = validate_question_definitions(
+        [{"id": "answer", "type": "free_text", "text": "Antwort", "layout_column": column}]
+    )
+    assert any("layout_column" in error for error in errors)
 
 
 def test_mesp_has_six_fixed_situations_with_independent_six_point_ratings():
