@@ -80,6 +80,55 @@ test('invalid column groups fall back without sorting or splitting a matrix', ()
   ).toEqual(['question.first', 'question.second'])
 })
 
+test('wide tasks omit only a complete duplicate numbered legend, preserving prompt and accessible choices', () => {
+  const prompt = 'Bewerten Sie die Aussage (1 = sehr plausibel, 2 = nicht plausibel).'
+  const row: Question = {
+    id: 'rating',
+    type: 'multiple_choice',
+    text: 'Die Aussage.',
+    matrix: 'plausibility',
+    matrix_prompt: prompt,
+    layout_column: 1,
+    options: [
+      { value: 1, label: 'sehr plausibel' },
+      { value: 2, label: 'nicht plausibel' },
+    ],
+  }
+  const { container, rerender } = render(
+    <QuestionnaireRenderer title="PCK" questions={[row]} layout="columns" onSubmit={vi.fn()} />,
+  )
+  expect(screen.getByText(prompt)).toBeVisible()
+  expect(container.querySelector('.matrix__legend')).toBeNull()
+  expect(screen.getByRole('radio', { name: 'Die Aussage.: 1 – sehr plausibel' })).toBeVisible()
+  expect(screen.getByRole('radio', { name: 'Die Aussage.: 2 – nicht plausibel' })).toBeVisible()
+  expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+    '',
+    '1',
+    '2',
+  ])
+
+  // A partial, differently numbered, or longer label cannot replace the legend.
+  for (const matrix_prompt of [
+    'Bewerten Sie die Aussage (1 = sehr plausibel).',
+    'Bewerten Sie die Aussage (2 = sehr plausibel, 1 = nicht plausibel).',
+    'Bewerten Sie die Aussage (1 = sehr plausibel oder sicher, 2 = nicht plausibel).',
+  ]) {
+    rerender(
+      <QuestionnaireRenderer
+        title="PCK"
+        questions={[{ ...row, matrix_prompt }]}
+        layout="columns"
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(container.querySelector('.matrix__legend')).toBeVisible()
+    expect(screen.getByText(matrix_prompt)).toBeVisible()
+  }
+  // Ordinary questionnaires keep their existing legend even with the same prompt.
+  rerender(<QuestionnaireRenderer title="Legacy" questions={[row]} onSubmit={vi.fn()} />)
+  expect(container.querySelector('.matrix__legend')).toBeVisible()
+})
+
 test('blocks submit until the required question is answered', () => {
   const onSubmit = vi.fn()
   render(<QuestionnaireRenderer title="Intro" questions={questions} onSubmit={onSubmit} />)

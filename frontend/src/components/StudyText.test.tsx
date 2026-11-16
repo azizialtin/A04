@@ -117,3 +117,17 @@ test('shared stimulus groups prose without moving or dropping code lines', () =>
   rerender(<StudyText text="Situation ohne Code." layout="stimulus" />)
   expect(container.querySelector('.study-stimulus')).not.toHaveClass('study-stimulus--with-code')
 })
+
+test('a stimulus quotation receives visual hierarchy without changing its words or ordinary prose', () => {
+  const quote = 'Die Schülerin erklärt: „Das Ergebnis stimmt.“'
+  const { container, rerender } = render(
+    <StudyText text={`Situation.\n\n${quote}`} layout="stimulus" />,
+  )
+  expect(container.querySelector('.study-stimulus__quotation')?.textContent).toBe(quote)
+  expect(container.querySelector('.study-stimulus__prose')?.firstElementChild).not.toHaveClass(
+    'study-stimulus__quotation',
+  )
+  rerender(<StudyText text={quote} />)
+  expect(container.querySelector('.study-stimulus__quotation')).toBeNull()
+  expect(container.textContent).toBe(quote)
+})

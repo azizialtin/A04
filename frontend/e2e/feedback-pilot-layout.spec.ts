@@ -64,7 +64,7 @@ async function openTask(page: Page, task: (typeof source.pck_pages)[number]) {
     section: 'PCK-Pretest',
     section_key: 'pck',
     video_id: null,
-    page: 17,
+    page: 17 + source.pck_pages.findIndex((page) => page.source_task === task.source_task),
     page_count: 25,
   }
   const state = {

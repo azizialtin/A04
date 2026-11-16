@@ -165,6 +165,7 @@ export function QuestionnaireFields({
         block={block}
         answers={answers}
         onAnswer={setAnswer}
+        deduplicateLegend={layout === 'columns'}
       />
     ) : (
       <Field
@@ -221,19 +222,35 @@ function Matrix({
   block,
   answers,
   onAnswer,
+  deduplicateLegend = false,
 }: {
   block: Extract<QuestionBlock, { kind: 'matrix' }>
   answers: Answers
   onAnswer: (id: string, value: unknown) => void
+  deduplicateLegend?: boolean
 }) {
   const { t } = useTranslation()
   const numbered = (option: QuestionOption, i: number) => `${i + 1} – ${option.label}`
   const prompt = block.questions[0].matrix_prompt
   const hasLabels = block.options.some((option) => option.label !== String(option.value))
+  // Keep the authored prompt intact. Omit only a second rendering of the same
+  // numbered scale, and only for the opt-in wide task layout.
+  const promptIncludesLegend =
+    deduplicateLegend &&
+    prompt &&
+    block.options.every((option, index) => {
+      const label = option.label
+        .trim()
+        .replace(/\s+/g, ' ')
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return new RegExp(`(?:^|[\\s(,;])${index + 1}\\s*=\\s*${label}(?=\\s*(?:$|[,;.)]))`).test(
+        prompt.replace(/\s+/g, ' '),
+      )
+    })
   return (
     <div className="matrix">
       {prompt && <StudyText text={prompt} className="matrix__prompt" />}
-      {hasLabels && (
+      {hasLabels && !promptIncludesLegend && (
         <>
           <p className="matrix__legend-title">{t('questionnaire.legend')}</p>
           <ol className="matrix__legend" data-aoi={`matrix.${block.key}.legend`}>

@@ -69,7 +69,16 @@ export default function StudyText({
               ))}
             </ul>
           ) : (
-            <p key={`${i}-${j}`} className={className} style={style}>
+            <p
+              key={`${i}-${j}`}
+              className={cx(
+                className,
+                layout === 'stimulus' && /„[^“]+“/.test(paragraph)
+                  ? 'study-stimulus__quotation'
+                  : undefined,
+              )}
+              style={style}
+            >
               {emphasis(paragraph)}
             </p>
           )

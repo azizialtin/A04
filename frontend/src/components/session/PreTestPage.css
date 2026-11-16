@@ -200,7 +200,7 @@
   }
   .pretest-page--pilot.pretest-page--pck .panel--form {
     max-width: 1840px;
-    padding: 20px 28px;
+    padding: 20px 24px;
   }
   .pretest-page--pilot.pretest-page--pck .qhead {
     display: grid;
@@ -219,6 +219,7 @@
   .pretest-page--pilot.pretest-page--pck .study-stimulus--with-code {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-rows: min-content 1fr;
     gap: 8px 28px;
     align-items: start;
   }
@@ -246,23 +247,46 @@
   .pretest-page--pilot.pretest-page--pck .qhead .lead {
     margin: 0 0 8px;
   }
+  .pretest-page--pilot.pretest-page--pck .study-stimulus__quotation {
+    border-left: 3px solid #cbdedd;
+    padding-left: 12px;
+    color: #425554;
+  }
+  .pretest-page--pilot.pretest-page--pck
+    .study-stimulus:not(.study-stimulus--with-code)
+    > .study-stimulus__prose:has(> .study-stimulus__quotation:last-child:nth-child(2)) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    gap: 28px;
+    align-items: start;
+  }
   .pretest-page--pilot.pretest-page--pck .qlist--columns {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: start;
-    gap: 28px;
-    margin-top: 12px;
+    gap: 18px;
+    margin-top: 16px;
   }
   .pretest-page--pilot.pretest-page--pck .question-column {
     min-width: 0;
+    padding: 4px 12px 8px;
+    border: 1px solid #e3eae9;
+    border-radius: 10px;
+    background: #fafcfb;
   }
   .pretest-page--pilot.pretest-page--pck .qfield,
   .pretest-page--pilot.pretest-page--pck .matrix {
     padding: 10px 0;
   }
+  .pretest-page--pilot.pretest-page--pck .question-column > :first-child {
+    border-top: 0;
+  }
   .pretest-page--pilot.pretest-page--pck .qfield__text,
   .pretest-page--pilot.pretest-page--pck .matrix__prompt {
     margin: 0 0 8px;
+  }
+  .pretest-page--pilot.pretest-page--pck .qfield__text {
+    font-weight: 400;
   }
   .pretest-page--pilot.pretest-page--pck .matrix__legend-title {
     margin: 0 0 4px;
@@ -286,7 +310,20 @@
   .pretest-page--pilot.pretest-page--pck .matrix__table .matrix__item {
     min-width: 0;
     padding-right: 12px;
-    font-weight: 500;
+    font-weight: 400;
+    background: transparent;
+  }
+  .pretest-page--pilot.pretest-page--pck .matrix__table thead .matrix__num {
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .pretest-page--pilot.pretest-page--pck .matrix__table td.is-chosen {
+    background: transparent;
+  }
+  .pretest-page--pilot.pretest-page--pck .matrix__table tbody tr:hover {
+    background: #f0f5f4;
   }
   .pretest-page--pilot.pretest-page--pck .matrix__cell {
     min-width: 28px;
@@ -294,6 +331,26 @@
   }
   .pretest-page--pilot.pretest-page--pck .choice__option {
     min-height: 28px;
+    border-radius: 5px;
+  }
+  .pretest-page--pilot.pretest-page--pck .choice__option:has(input:checked) {
+    background: #edf4f2;
+  }
+  .pretest-page--pilot.pretest-page--pck .choice > .small {
+    margin: 4px 0;
+  }
+  .pretest-page--pilot.pretest-page--pck .ranking__item {
+    border-bottom: 1px solid #e3eae9;
+    padding: 8px 0;
+  }
+  .pretest-page--pilot.pretest-page--pck .ranking__actions {
+    gap: 4px;
+  }
+  .pretest-page--pilot.pretest-page--pck .ranking__actions .btn {
+    background: transparent;
+    border: 1px solid #d7e3e0;
+    color: var(--brand-dark);
+    box-shadow: none;
   }
   .pretest-page--pilot.pretest-page--pck .textarea {
     font-size: 16px;
