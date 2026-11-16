@@ -162,3 +162,93 @@ test('failed conversion leaves the existing question available for retry', async
   expect(await within(questions).findByRole('alert')).toHaveTextContent('konnte nicht umgestellt')
   expect(within(questions).getByRole('button', { name: /: debug_1$/ })).toBeEnabled()
 })
+
+test('per-case placements explain reuse rather than suggesting one administration per study', () => {
+  view()
+  for (const placement of ['diagnosis', 'case_outro']) {
+    fireEvent.change(screen.getByLabelText('Platzierung'), { target: { value: placement } })
+    expect(screen.getByText(/Diese Fragen werden bei jedem Fall gestellt/)).toHaveTextContent(
+      'eine gemeinsame Fragebogen-Definition',
+    )
+  }
+  expect(screen.queryByText(/nur einmal pro Studie/)).not.toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'Nach jedem Fall' })).toHaveValue('case_outro')
+})
+
+test('the overview names instruments and routes introduction editing to the first populated page', async () => {
+  const target = {
+    ...savedQuestionnaire,
+    section_key: 'ck_tasks',
+    intro_title: 'CK introduction',
+    intro_body: 'Existing text',
+  }
+  listQuestionnaires.mockResolvedValue([
+    { ...target, id: 50, order_index: 9, title: 'Later page', intro_title: '', intro_body: '' },
+    {
+      ...target,
+      id: 2,
+      order_index: 0,
+      questions: [],
+      title: 'Empty page',
+      intro_title: '',
+      intro_body: 'Ignored text',
+    },
+    target,
+  ])
+  updateQuestionnaire.mockResolvedValue(target)
+  view()
+  const overview = await screen.findByRole('table', { name: 'Vortest-Abschnitte' })
+  for (const name of ['Demographics/participants', 'ck_pre_self', 'ck_pre', 'pck_pre', 'msk_pre']) {
+    expect(
+      within(overview).getByRole('rowheader', { name: new RegExp(`^${name} `) }),
+    ).toBeInTheDocument()
+  }
+  const ckRow = within(overview)
+    .getByRole('rowheader', { name: 'ck_pre Fachwissen Debugging' })
+    .closest('tr')!
+  expect(within(ckRow).getByText('2 Seiten')).toBeInTheDocument()
+  expect(within(ckRow).getByText('Vorhanden')).toBeInTheDocument()
+  expect(within(ckRow).getByText(/leeren oder späteren Seite/)).toBeInTheDocument()
+  // Switching from a placement without introduction fields must still focus the new field.
+  fireEvent.change(screen.getByLabelText('Platzierung'), { target: { value: 'diagnosis' } })
+  fireEvent.click(within(overview).getByRole('button', { name: 'Einleitung bearbeiten: ck_pre' }))
+  expect(screen.getByLabelText('Titel')).toHaveValue(target.title)
+  expect(screen.getByLabelText('Abschnittsfunktion')).toHaveValue('ck_tasks')
+  expect(screen.getByLabelText('Überschrift der Abschnittseinleitung')).toHaveFocus()
+  expect(screen.getByLabelText('Text der Abschnittseinleitung')).toHaveValue('Existing text')
+  fireEvent.change(screen.getByLabelText('Text der Abschnittseinleitung'), {
+    target: { value: 'Corrected introduction' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
+  await waitFor(() => expect(updateQuestionnaire).toHaveBeenCalledTimes(1))
+  expect(updateQuestionnaire).toHaveBeenCalledWith(
+    target.id,
+    expect.objectContaining({
+      section_key: 'ck_tasks',
+      section: target.section,
+      order_index: target.order_index,
+      intro_body: 'Corrected introduction',
+      questions: target.questions,
+    }),
+  )
+})
+
+test('missing introductions remain empty and structural rejection preserves the draft', async () => {
+  const target = { ...savedQuestionnaire, section_key: 'ck_self', intro_title: '', intro_body: '' }
+  listQuestionnaires.mockResolvedValue([target])
+  updateQuestionnaire.mockRejectedValue({ response: { status: 409 } })
+  view()
+  const overview = await screen.findByRole('table', { name: 'Vortest-Abschnitte' })
+  expect(within(overview).getByText('Fehlt')).toBeInTheDocument()
+  fireEvent.click(
+    within(overview).getByRole('button', { name: 'Einleitung bearbeiten: ck_pre_self' }),
+  )
+  expect(screen.getByLabelText('Text der Abschnittseinleitung')).toHaveValue('')
+  expect(updateQuestionnaire).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('Text der Abschnittseinleitung'), {
+    target: { value: 'Researcher draft' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
+  expect(await screen.findByText(/Diese Änderung ist nicht möglich/)).toBeInTheDocument()
+  expect(screen.getByLabelText('Text der Abschnittseinleitung')).toHaveValue('Researcher draft')
+})

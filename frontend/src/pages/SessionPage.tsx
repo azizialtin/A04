@@ -172,7 +172,7 @@ export default function SessionPage() {
   if (me.isLoading || session.isLoading) {
     return <div className="fullpage">{t('session.loading')}</div>
   }
-  if (me.isError || !me.data || session.isError || !session.data) {
+  if (me.isError || !me.data || !session.data) {
     return <div className="fullpage is-danger">{t('session.error')}</div>
   }
 
@@ -345,7 +345,12 @@ export default function SessionPage() {
           infoText={step.info_text}
           studentTaskText={step.student_task_text}
           timeLimitSeconds={step.time_limit_seconds}
-          onComplete={advance}
+          onComplete={() =>
+            updateProgress.mutateAsync({
+              index: current_step_index + 1,
+              expected: current_step_index,
+            })
+          }
         />
       )
       break

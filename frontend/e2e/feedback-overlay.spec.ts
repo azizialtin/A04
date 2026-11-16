@@ -161,21 +161,25 @@ test('a real unsent notice wins over a covered answer but stays behind the super
     window.scrollBy(0, rect.top - (innerHeight - 100))
   })
   const point = await center(page, '.unsent')
+  // Establish that this is a real occlusion, not a banner over empty page space.
+  // Scroll measurements are uploaded after an animation frame. The fixed
+  // banner already matches the old layout, so it cannot signal scroll completion.
+  await expect
+    .poll(() =>
+      data
+        .latest()
+        .aois?.some(
+          (a) =>
+            a.id === 'question.answer_4.answer' &&
+            point.x >= a.x &&
+            point.x < a.x + a.w &&
+            point.y >= a.y &&
+            point.y < a.y + a.h,
+        ),
+    )
+    .toBe(true)
   await expect.poll(() => labelAt(data.latest(), point)).toBe('unsent_notice')
   expect(await visibleId(page, point)).toBe('unsent_notice')
-  // Establish that this is a real occlusion, not a banner over empty page space.
-  expect(
-    data
-      .latest()
-      .aois?.some(
-        (a) =>
-          a.id === 'question.answer_4.answer' &&
-          point.x >= a.x &&
-          point.x < a.x + a.w &&
-          point.y >= a.y &&
-          point.y < a.y + a.h,
-      ),
-  ).toBe(true)
   await screenshot(page, data.latest(), info, 'unsent-over-answer')
 
   await page.keyboard.press('Control+Alt+Shift+KeyB')

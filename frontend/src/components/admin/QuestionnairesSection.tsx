@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { AxiosError } from 'axios'
 
@@ -12,12 +12,18 @@ import {
 } from '../../hooks/admin'
 import { definitionErrors, type Question } from '../../lib/questionnaire'
 import { codeLines } from '../../lib/code'
+import {
+  hasIntroduction,
+  instrumentName,
+  questionnaireSections,
+} from '../../lib/questionnaireSections'
 import QuestionnaireRenderer from '../session/QuestionnaireRenderer'
+import './QuestionnairesSection.css'
 
 const PLACEMENTS = [
   ['pre_test', 'Vortest (eigene Seite, einmal pro Durchlauf)'],
-  ['diagnosis', 'Auf der Diagnose-Seite (nur einmal pro Studie)'],
-  ['case_outro', 'Nach dem Fall (nur einmal pro Studie)'],
+  ['diagnosis', 'Bei jedem Fall auf der Diagnose-Seite'],
+  ['case_outro', 'Nach jedem Fall'],
 ] as const
 
 const SCALE_6 = [
@@ -204,11 +210,21 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
   const [introBody, setIntroBody] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const titleInput = useRef<HTMLInputElement>(null)
+  const introInput = useRef<HTMLInputElement>(null)
+  const [focusRequest, setFocusRequest] = useState<{ intro: boolean } | null>(null)
   const [order, setOrder] = useState('0')
   const [json, setJson] = useState(EXAMPLE)
   const [err, setErr] = useState('')
 
   const parsed = useMemo(() => parseQuestions(json), [json])
+  const sections = useMemo(() => questionnaireSections(qs.data ?? []), [qs.data])
+
+  useEffect(() => {
+    if (!focusRequest) return
+    const input = focusRequest.intro ? introInput.current : titleInput.current
+    input?.focus()
+    input?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+  }, [focusRequest])
 
   const submit = () => {
     if ('error' in parsed) {
@@ -250,7 +266,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
     else create.mutate(body, callbacks)
   }
 
-  const edit = (q: AdminQuestionnaire) => {
+  const edit = (q: AdminQuestionnaire, intro = false) => {
     setEditingId(q.id)
     setPlacement(q.placement)
     setTitle(q.title)
@@ -262,8 +278,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
     setOrder(String(q.order_index))
     setJson(JSON.stringify(q.questions, null, 2))
     setErr('')
-    titleInput.current?.focus()
-    titleInput.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    setFocusRequest({ intro })
   }
 
   const remove = (id: number) => {
@@ -303,13 +318,112 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
         )}
       </div>
 
+      <section
+        className="card questionnaire-sections"
+        aria-labelledby="questionnaire-sections-title"
+      >
+        <h2 id="questionnaire-sections-title">Vortest-Abschnitte und Einleitungen</h2>
+        <p className="muted">
+          Hier sehen Sie die Instrumente aus dem Datenlexikon. Nur Seiten mit Fragen werden im
+          Durchlauf angezeigt. „Einleitung bearbeiten“ öffnet die erste ausgefüllte Seite im
+          vorhandenen Fragebogen-Editor.
+        </p>
+        {qs.isLoading ? (
+          <p className="muted">Abschnitte werden geladen…</p>
+        ) : qs.isError ? (
+          <p className="error-text" role="alert">
+            Abschnitte konnten nicht geladen werden.
+          </p>
+        ) : (
+          <div className="table-scroll">
+            <table className="table" aria-label="Vortest-Abschnitte">
+              <thead>
+                <tr>
+                  <th>Instrument / Tabelle</th>
+                  <th>Im Durchlauf</th>
+                  <th>Abschnittseinleitung</th>
+                  <th>Bearbeiten</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sections.map((item) => (
+                  <tr key={item.key}>
+                    <th scope="row">
+                      {item.name}
+                      <div className="muted small">{item.description}</div>
+                    </th>
+                    <td>
+                      {item.populated.length > 0
+                        ? `${item.populated.length} ${item.populated.length === 1 ? 'Seite' : 'Seiten'}`
+                        : item.pages.length > 0
+                          ? 'Nicht enthalten: Seiten ohne Fragen'
+                          : 'Nicht angelegt'}
+                      {!item.consecutive && (
+                        <p className="error-text small">
+                          Seiten stehen nicht direkt hintereinander. Reihenfolge prüfen.
+                        </p>
+                      )}
+                    </td>
+                    <td>
+                      {item.first
+                        ? hasIntroduction(item.first)
+                          ? 'Vorhanden'
+                          : 'Fehlt'
+                        : 'Keine Einleitung im Durchlauf'}
+                      {item.first && (
+                        <div className="muted small">Erste Seite: {item.first.title}</div>
+                      )}
+                      {item.misplacedIntro && (
+                        <p className="warn-text small">
+                          Einleitung auf einer leeren oder späteren Seite wird nicht angezeigt. Text
+                          auf der ersten ausgefüllten Seite prüfen.
+                        </p>
+                      )}
+                    </td>
+                    <td>
+                      {item.first ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          aria-label={`Einleitung bearbeiten: ${item.name}`}
+                          onClick={() => edit(item.first, true)}
+                        >
+                          Einleitung bearbeiten
+                        </button>
+                      ) : item.pages[0] ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          aria-label={`Fragen ergänzen: ${item.name}`}
+                          onClick={() => edit(item.pages[0])}
+                        >
+                          Fragen ergänzen
+                        </button>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="muted small">
+          Eine neue Einleitungsseite ändert den Ablauf und kann nur vor dem ersten gestarteten
+          Durchlauf hinzugefügt werden. Texte einer vorhandenen Einleitung können weiterhin
+          korrigiert werden. Fehlende Texte werden nicht automatisch ergänzt.
+        </p>
+      </section>
+
       <div className="card form">
         <h2>
           {editingId === null ? 'Fragebogen anlegen' : 'Fragebogen bearbeiten · ' + editingId}
         </h2>
         {editingId !== null && (
           <p className="muted small">
-            Inhalt und Reihenfolge können vor dem ersten Durchlauf geändert werden.
+            Struktur und Reihenfolge können vor dem ersten Durchlauf geändert werden; Formulierungen
+            vorhandener Fragen und Einleitungen auch danach.
           </p>
         )}
         <div className="form-row">
@@ -328,6 +442,12 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
               </option>
             ))}
           </select>
+          {placement !== 'pre_test' && (
+            <p className="muted small">
+              Diese Fragen werden bei jedem Fall gestellt. Pro Studie gibt es für diese Platzierung
+              eine gemeinsame Fragebogen-Definition, die für alle Fälle verwendet wird.
+            </p>
+          )}
         </div>
         <div className="form-row">
           <label className="label" htmlFor="new-page-title">
@@ -399,12 +519,16 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             >
               <option value="">Ohne Abschnittssteuerung</option>
               <option value="ck_tasks">
-                CK-Aufgaben · 7 Minuten, Abschluss durch Studienleitung
+                ck_pre · Fachwissen Debugging · 7 Minuten, Abschluss durch Studienleitung
               </option>
-              <option value="pck">PCK · Ziel nach den CK-Aufgaben</option>
-              <option value="ck_self">CK-Selbsteinschätzung</option>
-              <option value="msk">MSK</option>
-              <option value="demographics">Demographie</option>
+              <option value="pck">
+                pck_pre · Fachdidaktisches Wissen · Ziel nach den CK-Aufgaben
+              </option>
+              <option value="ck_self">
+                ck_pre_self · Selbsteinschätzung Programmierung & Debugging
+              </option>
+              <option value="msk">msk_pre · Metakognitives Strategiewissen</option>
+              <option value="demographics">Demographics/participants · Angaben zur Person</option>
               {sectionKey &&
                 !['ck_tasks', 'pck', 'ck_self', 'msk', 'demographics'].includes(sectionKey) && (
                   <option value={sectionKey}>{sectionKey}</option>
@@ -420,6 +544,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             </label>
             <input
               id="page-intro-title"
+              ref={introInput}
               className="input"
               value={introTitle}
               onChange={(event) => setIntroTitle(event.target.value)}
@@ -534,48 +659,60 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
         )}
       </div>
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Platzierung</th>
-            <th>Titel</th>
-            <th>Abschnitt</th>
-            <th>Fragen</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {(qs.data ?? []).map((q) => (
-            <tr key={q.id}>
-              <td>{q.id}</td>
-              <td>{q.placement}</td>
-              <td>{q.title}</td>
-              <td>
-                <SectionCell key={q.section} studyId={studyId} id={q.id} value={q.section} />
-              </td>
-              <td>
-                <ExistingCodeQuestions studyId={studyId} questionnaire={q} />
-              </td>
-              <td>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => edit(q)}>
-                  Bearbeiten
-                </button>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => remove(q.id)}>
-                  Löschen
-                </button>
-              </td>
-            </tr>
-          ))}
-          {qs.data?.length === 0 && (
+      <div className="table-scroll">
+        <table className="table" aria-label="Alle Fragebogenseiten">
+          <thead>
             <tr>
-              <td colSpan={6} className="muted">
-                Noch keine Fragebögen.
-              </td>
+              <th>ID</th>
+              <th>Platzierung</th>
+              <th>Titel</th>
+              <th>Instrument / Tabelle</th>
+              <th>Abschnitt</th>
+              <th>Fragen</th>
+              <th />
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {(qs.data ?? []).map((q) => (
+              <tr key={q.id}>
+                <td>{q.id}</td>
+                <td>{PLACEMENTS.find(([value]) => value === q.placement)?.[1] ?? q.placement}</td>
+                <td>{q.title}</td>
+                <td>{q.placement === 'pre_test' ? instrumentName(q.section_key) : '—'}</td>
+                <td>
+                  <SectionCell key={q.section} studyId={studyId} id={q.id} value={q.section} />
+                </td>
+                <td>
+                  <ExistingCodeQuestions studyId={studyId} questionnaire={q} />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => edit(q)}
+                  >
+                    Bearbeiten
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => remove(q.id)}
+                  >
+                    Löschen
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {qs.data?.length === 0 && (
+              <tr>
+                <td colSpan={7} className="muted">
+                  Noch keine Fragebögen.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

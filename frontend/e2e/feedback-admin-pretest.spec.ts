@@ -113,14 +113,89 @@ async function setup(page: Page) {
         state.failNext = false
         return route.fulfill({ headers, status: 503, json: { detail: 'Temporary failure' } })
       }
-      state.pages[0] = { ...state.pages[0], ...body }
-      return json(state.pages[0])
+      const index = state.pages.findIndex((item) => item.id === 101)
+      state.pages[index] = { ...state.pages[index], ...body }
+      return json(state.pages[index])
     }
     state.unexpected.push(`${request.method()} ${path}`)
     return route.fulfill({ headers, status: 404, json: { detail: path } })
   })
   return state
 }
+
+test('section overview opens the first populated page and retains a saved introduction after reload', async ({
+  page,
+}, info) => {
+  const state = await setup(page)
+  const ck = { ...state.pages[0], intro_title: '', intro_body: '' }
+  state.pages = [
+    {
+      ...ck,
+      id: 100,
+      title: 'Leere CK-Seite',
+      order_index: 1,
+      questions: [],
+      intro_body: 'Nicht verwendeter Text',
+    },
+    ck,
+    { ...ck, id: 103, title: 'Zweite CK-Seite', order_index: 5 },
+    {
+      ...ck,
+      id: 104,
+      title: 'PCK-Seite',
+      section: 'PCK',
+      section_key: 'pck',
+      order_index: 6,
+      intro_title: 'PCK-Einleitung',
+      intro_body: 'Vorhandene PCK-Einleitung',
+    },
+  ]
+  await page.goto('/admin/studies/8?tab=questionnaires')
+  const overview = page.getByRole('table', { name: 'Vortest-Abschnitte' })
+  const ckRow = overview.getByRole('row').filter({
+    has: page.getByRole('rowheader', { name: 'ck_pre Fachwissen Debugging', exact: true }),
+  })
+  const pckRow = overview.getByRole('row').filter({
+    has: page.getByRole('rowheader', { name: 'pck_pre Fachdidaktisches Wissen', exact: true }),
+  })
+  await expect(ckRow.getByText('2 Seiten', { exact: true })).toBeVisible()
+  await expect(ckRow.getByRole('cell', { name: /^Fehlt / })).toBeVisible()
+  await expect(ckRow.getByText('Erste Seite: CK vor Änderung')).toBeVisible()
+  await expect(ckRow.getByText(/leeren oder späteren Seite/)).toBeVisible()
+  await expect(pckRow.getByRole('cell', { name: /^Vorhanden / })).toBeVisible()
+  await overview.screenshot({ path: info.outputPath('admin-section-overview.png') })
+  await ckRow.getByRole('button', { name: 'Einleitung bearbeiten: ck_pre', exact: true }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Fragebogen bearbeiten · 101', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByLabel('Überschrift der Abschnittseinleitung')).toBeFocused()
+  await expect(page.getByLabel('Text der Abschnittseinleitung')).toHaveValue('')
+  await page.getByLabel('Überschrift der Abschnittseinleitung').fill('Neue CK-Einleitung')
+  await page
+    .getByLabel('Text der Abschnittseinleitung')
+    .fill('Vom Forschungsteam eingetragener Testtext.')
+  await page.getByRole('button', { name: 'Änderungen speichern' }).click()
+  await expect.poll(() => state.updates.length).toBe(1)
+  expect(state.updates[0]).toMatchObject({
+    section_key: 'ck_tasks',
+    section: 'CK-Aufgaben',
+    order_index: 4,
+    intro_title: 'Neue CK-Einleitung',
+    intro_body: 'Vom Forschungsteam eingetragener Testtext.',
+    questions: [question],
+  })
+  expect(state.pages.find(({ id }) => id === 100)?.intro_body).toBe('Nicht verwendeter Text')
+  expect(state.pages.find(({ id }) => id === 103)?.intro_body).toBe('')
+  await expect(ckRow.getByRole('cell', { name: /^Vorhanden / })).toBeVisible()
+  await page.reload()
+  await expect(ckRow.getByRole('cell', { name: /^Vorhanden / })).toBeVisible()
+  await ckRow.getByRole('button', { name: 'Einleitung bearbeiten: ck_pre', exact: true }).click()
+  await expect(page.getByLabel('Text der Abschnittseinleitung')).toHaveValue(
+    'Vom Forschungsteam eingetragener Testtext.',
+  )
+  expect(state.creates).toEqual([])
+  expect(state.unexpected).toEqual([])
+})
 
 test('existing questionnaire edits preserve content and retry keeps draft', async ({
   page,

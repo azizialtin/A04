@@ -10,6 +10,7 @@ import SessionPage from './SessionPage'
 const respond = vi.fn().mockResolvedValue({})
 const stepBack = vi.fn()
 let currentStepIndex = 0
+let sessionRefetchError = false
 let me: { id: string; study_name: string; status: string } | undefined
 
 // The pre-test block: two pages of the same step kind, back to back. Everything
@@ -81,6 +82,7 @@ const STEPS: SessionStep[] = [
 vi.mock('../hooks/participant', () => ({
   useMe: () => ({ data: me }),
   useSession: () => ({
+    isError: sessionRefetchError,
     data: {
       status: 'active',
       current_step_index: currentStepIndex,
@@ -111,6 +113,7 @@ const logged = vi.mocked(enqueue)
 
 beforeEach(() => {
   currentStepIndex = 0
+  sessionRefetchError = false
   me = { id: 'T-1', study_name: 'S', status: 'active' }
   respond.mockClear()
   stepBack.mockClear()
@@ -280,6 +283,14 @@ test('the case screen keeps the progress bar, laid over its top edge', () => {
   const bar = container.querySelector('.shell__progress--overlay > div') as HTMLElement
   expect(bar).not.toBeNull()
   expect(bar.style.width).toBe('80%')
+})
+
+test('a background session refresh failure keeps the acknowledged cached screen usable', () => {
+  currentStepIndex = 4
+  sessionRefetchError = true
+  view()
+  expect(screen.getByText('Fallvideo')).toBeInTheDocument()
+  expect(screen.queryByText('Die Sitzung konnte nicht geladen werden.')).not.toBeInTheDocument()
 })
 
 test('a questionnaire page has the bar in its header, not laid over it', () => {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { participantApi } from '../api/participant'
+import { participantApi, type SessionScript } from '../api/participant'
 
 export function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: participantApi.getMe })
@@ -33,7 +33,22 @@ export function useUpdateProgress() {
       typeof value === 'number'
         ? participantApi.updateProgress(value)
         : participantApi.updateProgress(value.index, value.expected),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
+    onSuccess: (progress) => {
+      // The acknowledged pointer is authoritative even if refreshing the full
+      // script fails. Otherwise a confirmed case can remain locked on its old
+      // screen after the server has already advanced it.
+      qc.setQueryData<SessionScript>(['session'], (session) =>
+        session && session.current_step_index <= progress.current_step_index
+          ? {
+              ...session,
+              current_step_index: progress.current_step_index,
+              total_steps: progress.total_steps,
+              status: progress.status,
+            }
+          : session,
+      )
+      return qc.invalidateQueries({ queryKey: ['session'] })
+    },
   })
 }
 

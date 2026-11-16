@@ -389,6 +389,10 @@ test('questionnaire AOIs follow scrolling and repeated fields; all measured step
   await expect(page.locator('video[data-gaze-video]')).toBeVisible()
   await expect.poll(() => data.recordings.some((r) => r.kind === 'case_video')).toBe(true)
   await page.locator('[data-aoi="continue"]').click()
+  await page
+    .getByRole('dialog', { name: 'Fall abschließen?' })
+    .getByRole('button', { name: 'Zur Diagnose' })
+    .click()
   await expect(page.locator('[data-aoi="diagnosis_answer"]')).toBeVisible()
   await expect.poll(() => data.recordings.some((r) => r.kind === 'diagnosis')).toBe(true)
   await page.locator('#diagnosis-text').fill('Der Fehler betrifft die Variable.')
@@ -396,6 +400,37 @@ test('questionnaire AOIs follow scrolling and repeated fields; all measured step
   await expect.poll(() => data.recordings.some((r) => r.kind === 'case_outro')).toBe(true)
   await page.locator('[data-aoi="continue"]').click()
   await expect.poll(() => data.recordings.every((r) => r.completed)).toBe(true)
+  expect(data.unexpected).toEqual([])
+})
+
+test('confirmed case exit survives a failed session refresh', async ({ page }) => {
+  const data = await participant(page, 2)
+  await page.goto('/session')
+  await expect(page.locator('video[data-gaze-video]')).toBeVisible()
+  await page.locator('[data-aoi="notes"] textarea').fill('Notiz vor dem Seitenwechsel')
+  let failedRefreshes = 0
+  await page.route(`${API}/participant/session`, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    failedRefreshes++
+    await route.fulfill({
+      status: 503,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      json: { detail: 'Synthetic session refresh failure' },
+    })
+  })
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Fall abschließen?' })
+    .getByRole('button', { name: 'Zur Diagnose' })
+    .click()
+  await expect(page.locator('[data-aoi="diagnosis_answer"]')).toBeVisible()
+  // Let the real QueryClient exhaust its refresh retry. The acknowledged
+  // pointer must still render the next screen instead of a fatal query error.
+  await expect.poll(() => failedRefreshes).toBe(2)
+  await page.locator('#diagnosis-text').fill('Die bestätigte Navigation bleibt benutzbar.')
+  await page.locator('[data-aoi="continue"]').click()
+  await expect.poll(() => data.recordings.some((r) => r.kind === 'case_outro')).toBe(true)
+  await expect(page.getByRole('dialog', { name: 'Fall abschließen?' })).not.toBeVisible()
   expect(data.unexpected).toEqual([])
 })
 
@@ -528,6 +563,29 @@ test('laptop fallback encodes and uploads a screen stream while gaze continues',
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('button', { name: 'Schließen' }).click()
   await page.locator('[data-aoi="continue"]').click()
+  const exitDialog = page.getByRole('dialog', { name: 'Fall abschließen?' })
+  await expect(exitDialog).toBeVisible()
+  // Asking to leave must not stop or upload the case recording. Cancelling
+  // preserves the same gaze record and participant notes.
+  expect(data.screenUploads).toHaveLength(0)
+  expect(data.recordings.filter((r) => r.kind === 'case_video').every((r) => !r.completed)).toBe(
+    true,
+  )
+  await expect
+    .poll(() =>
+      data.recordings
+        .filter((r) => r.kind === 'case_video')
+        .some((r) => r.layouts.at(-1)?.aois?.some((a) => a.id === 'case_exit_dialog')),
+    )
+    .toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(exitDialog).not.toBeVisible()
+  await expect(page.locator('[data-aoi="notes"] textarea')).toHaveValue(
+    'Notiz während der Aufnahme',
+  )
+  expect(data.screenUploads).toHaveLength(0)
+  await page.locator('[data-aoi="continue"]').click()
+  await exitDialog.getByRole('button', { name: 'Zur Diagnose' }).click()
   await expect.poll(() => data.screenUploads.length).toBe(1)
   await expect
     .poll(() =>

@@ -15,7 +15,7 @@ interface Props {
   infoText: string
   studentTaskText: string
   timeLimitSeconds: number | null
-  onComplete: () => void
+  onComplete: () => Promise<unknown> | void
 }
 
 /**
@@ -39,6 +39,10 @@ export default function CaseVideoScreen({
   const currentTime = useRef(0)
   const [showInfo, setShowInfo] = useState(false)
   const [showTask, setShowTask] = useState(false)
+  const [showExit, setShowExit] = useState(false)
+  const [completionPending, setCompletionPending] = useState(false)
+  const [completionFailed, setCompletionFailed] = useState(false)
+  const completing = useRef(false)
 
   const log = useCallback(
     (eventType: string, payload: Record<string, unknown> = {}) =>
@@ -74,6 +78,36 @@ export default function CaseVideoScreen({
     setShowTask(false)
     log('student_task_closed')
   }
+  const openExit = () => {
+    if (completing.current || showExit) return
+    setShowExit(true)
+    log('case_exit_opened', { currentTime: currentTime.current })
+  }
+  const closeExit = () => {
+    if (completing.current) return
+    setShowExit(false)
+    log('case_exit_cancelled', { currentTime: currentTime.current })
+  }
+  const complete = async (reason: 'confirm' | 'timer') => {
+    // Timer expiry and a confirmation click may arrive in the same render.
+    // Lock synchronously, and keep the lock after success until navigation
+    // unmounts this screen. A failed request leaves the case available to retry.
+    if (completing.current) return
+    completing.current = true
+    if (reason === 'confirm') log('case_exit_confirmed', { currentTime: currentTime.current })
+    setCompletionPending(true)
+    setCompletionFailed(false)
+    try {
+      await onComplete()
+    } catch {
+      completing.current = false
+      setCompletionPending(false)
+      setCompletionFailed(true)
+      setShowInfo(false)
+      setShowTask(false)
+      setShowExit(true)
+    }
+  }
 
   return (
     <div className="case-screen">
@@ -85,7 +119,7 @@ export default function CaseVideoScreen({
         {timeLimitSeconds ? (
           <div className="rail-block" data-aoi="timer">
             <span className="rail-label">{t('case.timer_label')}</span>
-            <Timer seconds={timeLimitSeconds} onExpire={onComplete} />
+            <Timer seconds={timeLimitSeconds} onExpire={() => void complete('timer')} />
           </div>
         ) : null}
 
@@ -135,7 +169,13 @@ export default function CaseVideoScreen({
           />
         </div>
 
-        <button type="button" className="btn btn-primary" onClick={onComplete} data-aoi="continue">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={openExit}
+          disabled={completionPending}
+          data-aoi="continue"
+        >
           {t('case.next')}
         </button>
       </aside>
@@ -154,6 +194,41 @@ export default function CaseVideoScreen({
           mode="preserve"
           style={{ margin: 0 }}
         />
+      </Modal>
+      {/* The player and all capture hooks remain mounted. Opening or cancelling
+          this dialog does not change playback or restart a recording clock. */}
+      <Modal
+        open={showExit}
+        title={t('case.exit_title')}
+        onClose={closeExit}
+        closeDisabled={completionPending}
+        aoiId="case_exit_dialog"
+      >
+        <p>{t('case.exit_body')}</p>
+        {completionFailed && (
+          <p className="error-text" role="alert">
+            {t('case.exit_error')}
+          </p>
+        )}
+        <div className="modal__actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={closeExit}
+            disabled={completionPending}
+            autoFocus
+          >
+            {t('case.exit_cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void complete('confirm')}
+            disabled={completionPending}
+          >
+            {completionPending ? t('common.loading') : t('case.exit_confirm')}
+          </button>
+        </div>
       </Modal>
     </div>
   )

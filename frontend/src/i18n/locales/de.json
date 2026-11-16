@@ -91,6 +91,11 @@
     "notes_label": "Notizen",
     "notes_placeholder": "Notizen während des Videos…",
     "next": "Weiter",
+    "exit_title": "Fall abschließen?",
+    "exit_body": "Möchten Sie jetzt zur Diagnose wechseln? Wählen Sie „Beim Fall bleiben“, um das Video weiter anzusehen oder Ihre Notizen zu bearbeiten.",
+    "exit_cancel": "Beim Fall bleiben",
+    "exit_confirm": "Zur Diagnose",
+    "exit_error": "Der Wechsel zur Diagnose ist fehlgeschlagen. Ihr Fall bleibt geöffnet. Bitte versuchen Sie es erneut.",
     "info_title": "Information",
     "student_task_title": "Aufgabe der Schüler:innen",
     "no_content": "Kein Inhalt hinterlegt."

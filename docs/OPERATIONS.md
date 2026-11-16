@@ -245,6 +245,13 @@ time measurements.
 
 ## During a session
 
+- **Weiter on the case screen** opens **Fall abschließen?**. **Beim Fall bleiben**,
+  Escape, or closing the dialog keeps the participant on the case with their notes.
+  **Zur Diagnose** confirms the move. Playback, the case timer and any active
+  screen/gaze capture keep running while the dialog is open; opening it does not
+  pause, restart or upload a recording. A configured case time limit still ends
+  the case automatically. If navigation fails, the dialog offers a retry without
+  discarding notes. This is separate from the supervised CK section timer below.
 - **A red banner at the bottom of the participant's screen** means writes are
   not reaching the server. The data is queued locally and will go up when the
   connection returns — do not close the tab or log out, which discards drafts.
@@ -305,6 +312,41 @@ its answers and opens with the stored ones, a video watched again is recorded
 again (the replay shows the newest recording), and the move is logged as an
 `admin_step_back` event naming both screens, so the data shows where a run
 doubled back.
+
+## Questionnaire sections and introductions
+
+In a study's **Fragebögen** tab, the section overview identifies the instruments
+used in the data-collection document:
+
+| Instrument in the document | Stored section function |
+| --- | --- |
+| Demographics/participants | `demographics` |
+| `ck_pre_self` (programming/debugging self-assessment) | `ck_self` |
+| `ck_pre` (debugging tasks) | `ck_tasks` |
+| `pck_pre` | `pck` |
+| `msk_pre` | `msk` |
+
+These are display mappings, not changes to stored question IDs or export values.
+The overview shows populated pages and whether an introduction is configured.
+Its edit action opens the existing page editor at the first populated page of
+the section. Use **Abschnitt und Einleitungsseite** to set its heading and text.
+An empty draft page is skipped by the participant flow, so an introduction there
+does not create an introduction screen. Introductory text on a later page also
+does not replace the first page's introduction; the overview flags that mismatch.
+
+Adding or removing an introduction changes the session sequence and is refused
+once sessions exist. Editing the wording of an already configured introduction
+is allowed. Use a new study for structural changes to a started study; do not
+alter stored participant progress. The diagnosis and post-case questionnaires
+each have one shared definition, administered after **every case**.
+
+The meeting notes dated 21 October and 9 November refer to the
+[data-collection Sheet](https://docs.google.com/spreadsheets/d/1vrXFgk0iZjm_JB4Foyv07zuo5dSguk9yhgb5qjUxHWw/edit?gid=1023464767#gid=1023464767)
+for the additional PCK items. The 21 October entry promises later introduction
+wording but does not include it. The versioned source supplied on 2 November
+contains only `pck_pre_01a`–`pck_pre_01c`; no further PCK items or missing
+Demographics/CK-self/MSK introduction text should be invented. The existing CK
+debugging introduction is already the supplied meeting-note wording.
 
 ## Timed CK pre-test
 

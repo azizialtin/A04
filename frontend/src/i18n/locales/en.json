@@ -91,6 +91,11 @@
     "notes_label": "Notes",
     "notes_placeholder": "Notes while watching…",
     "next": "Continue",
+    "exit_title": "Finish this case?",
+    "exit_body": "Would you like to continue to the diagnosis now? Choose “Stay on this case” to keep watching the video or edit your notes.",
+    "exit_cancel": "Stay on this case",
+    "exit_confirm": "Continue to diagnosis",
+    "exit_error": "We could not continue to the diagnosis. Your case is still open. Please try again.",
     "info_title": "Information",
     "student_task_title": "The students' task",
     "no_content": "No content provided."

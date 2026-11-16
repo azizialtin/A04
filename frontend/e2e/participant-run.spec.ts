@@ -116,6 +116,13 @@ test('a participant works through their cases and reaches the end', async ({ pag
     await notes.blur()
     await inspectScreen(`case-${caseNumber}-04-case-video`)
     await page.getByRole('button', { name: 'Weiter' }).click()
+    const exitDialog = page.getByRole('dialog', { name: 'Fall abschließen?' })
+    await expect(exitDialog).toBeVisible()
+    await inspectScreen(`case-${caseNumber}-04-case-exit-confirmation`)
+    await exitDialog.getByRole('button', { name: 'Beim Fall bleiben' }).click()
+    await expect(notes).toHaveValue(`Die Schleife läuft einmal zu oft (Fall ${caseNumber})`)
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await exitDialog.getByRole('button', { name: 'Zur Diagnose' }).click()
 
     // Diagnosis, with their own notes shown back to them and the confidence
     // rating on the same screen: the write-up alone is not the whole answer.
