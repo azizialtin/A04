@@ -7,7 +7,7 @@ on:
 
 env:
   PY_VERSION: '3.11'
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   backend:
@@ -182,14 +182,11 @@ jobs:
         working-directory: backend
         run: |
           pip install pip-audit
-          pip-audit --requirement requirements.txt --strict
+          pip-audit --requirement requirements-dev.txt --strict
 
-      - name: Node dependencies that actually ship
+      - name: Node runtime and development dependencies
         working-directory: frontend
-        # Only production deps: the known advisories are in the dev toolchain
-        # (vite / vitest / esbuild) and none of it reaches the bundle. Failing
-        # on those would train everyone to ignore this job.
-        run: npm audit --omit=dev --audit-level=moderate
+        run: npm audit --audit-level=moderate
 
   images:
     runs-on: ubuntu-latest

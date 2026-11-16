@@ -1124,6 +1124,23 @@ h3 {
   overflow: hidden;
 }
 
+/* On desktop, let the participant replay shrink into the space left by its
+   variable warning stack, gaze toggle and footer. Narrow or short screens
+   keep a naturally sized video and can scroll to the controls. Admin replay
+   panels keep their independent sizing. */
+@media (min-width: 1000px) and (min-height: 720px) {
+  .think-aloud {
+    height: 100vh;
+  }
+
+  .think-aloud .replay__stage {
+    width: auto;
+    height: 100%;
+    min-height: 0;
+    max-width: 100%;
+  }
+}
+
 .replay__stage:fullscreen {
   /* !important so a viewer that caps the stage inline (the admin sets a
      max-width) still fills the screen when fullscreened. */
@@ -1220,6 +1237,7 @@ h3 {
 
 .think-aloud__foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;

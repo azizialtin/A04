@@ -17,6 +17,7 @@ class Note(Base):
         # Every read of this table is "one participant's notes on one clip, in
         # video-time order" — the diagnosis recap and the think-aloud replay.
         Index("ix_notes_participant_video", "participant_id", "video_id", "video_time_seconds"),
+        Index("uq_notes_participant_request", "participant_id", "request_key", unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -28,5 +29,6 @@ class Note(Base):
     # Browser wall clock, on the same machine as the bridge. The playhead alone
     # cannot place a note in a screen recording, which runs on wall time.
     client_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    request_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

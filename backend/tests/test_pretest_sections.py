@@ -554,7 +554,18 @@ async def test_section_submission_cannot_bypass_visit_identity(
 async def test_progress_expected_source_accepts_retry_and_rejects_stale_advance(
     client, timed_run, participant_headers
 ):
-    _, _, session = timed_run
+    pages, _, session = timed_run
+    visit, _ = await enter(client, participant_headers, pages[0].id)
+    submitted = await client.post(
+        f"/participant/questionnaires/{pages[0].id}/respond",
+        json={
+            "answers": {"ck_0": {"lines": [4], "explanation": "semicolon"}},
+            "visit_id": visit["visit_id"],
+            "client_ts": 1_005_000,
+        },
+        headers=participant_headers,
+    )
+    assert submitted.status_code == 201, submitted.text
     first = {"expected_step_index": 2, "current_step_index": 3}
     assert (
         await client.patch("/participant/session/progress", json=first, headers=participant_headers)

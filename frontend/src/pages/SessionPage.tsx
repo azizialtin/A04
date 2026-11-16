@@ -223,7 +223,10 @@ export default function SessionPage() {
   }
 
   const advance = () =>
-    updateProgress.mutate({ index: current_step_index + 1, expected: current_step_index })
+    updateProgress.mutate(
+      { index: current_step_index + 1, expected: current_step_index },
+      { onError: () => toast.show(t('session.error'), 'error') },
+    )
 
   // Every battery submits the same way: store the answers, then move on. A
   // failure keeps the participant on the page with what they typed intact.
@@ -363,6 +366,7 @@ export default function SessionPage() {
     case 'case_video':
       content = (
         <CaseVideoScreen
+          participantId={me.data?.id}
           pilot={pilot}
           progressLabel={pilot ? pilotLabel : undefined}
           videoId={step.video_id}

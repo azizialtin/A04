@@ -24,6 +24,9 @@ class InteractionLog(Base):
             "event_type",
             "created_at",
         ),
+        Index(
+            "uq_interaction_log_participant_request", "participant_id", "request_id", unique=True
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -41,5 +44,6 @@ class InteractionLog(Base):
     # (both on the lab machine) where created_at — written by the database,
     # after a background task — does not.
     client_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

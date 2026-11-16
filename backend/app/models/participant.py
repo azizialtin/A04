@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -26,6 +26,10 @@ class Participant(Base):
     # in `participant_videos`; deleting the set leaves that copy alone.
     video_set_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("video_sets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Distinguish an intentionally empty run from a not-yet-assigned default.
+    video_sequence_pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
     )
     # The study's think-aloud batch size as it stood when this run opened. Null
     # for a run that started before the setting existed, which then follows the

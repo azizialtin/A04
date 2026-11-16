@@ -3,14 +3,16 @@ import { useTranslation } from 'react-i18next'
 
 import { useVideoNotes } from '../../hooks/participant'
 import { enqueue } from '../../lib/outbox'
+import { latestNote } from '../../lib/notes'
 import Modal from '../Modal'
 import StudyText from '../StudyText'
-import NotesPanel from './NotesPanel'
+import NotesPanel, { type NotesPanelHandle } from './NotesPanel'
 import Timer from './Timer'
 import VideoPlayer from './VideoPlayer'
 
 interface Props {
   videoId: number
+  participantId?: string
   pilot?: boolean
   progressLabel?: string
   taskDescription: string
@@ -29,6 +31,7 @@ interface Props {
  */
 export default function CaseVideoScreen({
   videoId,
+  participantId,
   taskDescription,
   infoText,
   studentTaskText,
@@ -41,6 +44,7 @@ export default function CaseVideoScreen({
   // Empty on a first visit; on a resumed case it brings the notes box back.
   const saved = useVideoNotes(videoId)
   const currentTime = useRef(0)
+  const notes = useRef<NotesPanelHandle>(null)
   const [showInfo, setShowInfo] = useState(false)
   const [showTask, setShowTask] = useState(false)
   const [showExit, setShowExit] = useState(false)
@@ -98,6 +102,7 @@ export default function CaseVideoScreen({
     // unmounts this screen. A failed request leaves the case available to retry.
     if (completing.current) return
     completing.current = true
+    notes.current?.flush()
     if (reason === 'confirm') log('case_exit_confirmed', { currentTime: currentTime.current })
     setCompletionPending(true)
     setCompletionFailed(false)
@@ -159,7 +164,9 @@ export default function CaseVideoScreen({
         <div className="rail-block rail-block--notes" data-aoi="notes">
           <span className="rail-label">{t('case.notes_label')}</span>
           <NotesPanel
-            initialText={saved.data?.length ? saved.data[saved.data.length - 1].text : ''}
+            ref={notes}
+            draftKey={participantId ? `notes.${participantId}.${videoId}` : undefined}
+            initialText={latestNote(saved.data ?? [])?.text ?? ''}
             getVideoTime={() => currentTime.current}
             onFocus={() => log('notes_focused')}
             onTypingBurst={(durationMs, length) => log('notes_typed', { durationMs, length })}

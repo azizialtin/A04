@@ -63,6 +63,17 @@ describe('meanGaze', () => {
     expect(meanGaze([{ x: null, y: null }])).toBeNull()
     expect(meanGaze([])).toBeNull()
   })
+
+  it('excludes incomplete and nonfinite positions from the measured mean', () => {
+    expect(
+      meanGaze([
+        { x: 0.4, y: 0.6 },
+        { x: 0.8, y: null },
+        { x: NaN, y: 0.2 },
+        { x: 0.2, y: Infinity },
+      ]),
+    ).toEqual({ x: 0.4, y: 0.6 })
+  })
 })
 
 describe('offsetOf', () => {

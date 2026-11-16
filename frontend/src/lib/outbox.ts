@@ -15,7 +15,7 @@
 
 import type { AxiosError } from 'axios'
 
-import { participantApi } from '../api/participant'
+import { participantApi, type NoteSnapshot } from '../api/participant'
 import { queryClient } from '../queryClient'
 
 export type OutboxKind = 'note' | 'event'
@@ -66,9 +66,17 @@ function persist() {
 }
 
 /** How many of the current participant's writes have not landed yet. */
-export function pending(): number {
-  if (owner === null || !sending) return 0
-  return queue.filter((job) => job.owner === owner).length
+export function pending(participantId: string | null = owner): number {
+  if (participantId === null) return 0
+  return queue.filter((job) => job.owner === participantId).length
+}
+
+/** Restore a note even while the server is unreachable. */
+export function pendingNote(videoId: number): OutboxJob | undefined {
+  for (let index = queue.length - 1; index >= 0; index--) {
+    const job = queue[index]
+    if (job.owner === owner && job.kind === 'note' && job.body.video_id === videoId) return job
+  }
 }
 
 export function subscribe(fn: (count: number) => void): () => void {
@@ -79,7 +87,12 @@ export function subscribe(fn: (count: number) => void): () => void {
 
 export function enqueue(kind: OutboxKind, body: Record<string, unknown>) {
   if (owner === null) return
-  queue.push({ id: `${Date.now()}-${nextId++}`, owner, kind, body })
+  queue.push({
+    id: `${Date.now()}-${nextId++}`,
+    owner,
+    kind,
+    body: { ...body, request_id: body.request_id ?? crypto.randomUUID() },
+  })
   if (queue.length > MAX_JOBS) queue = queue.slice(-MAX_JOBS)
   persist()
   if (sending) schedule(0)
@@ -120,8 +133,36 @@ export async function drain(): Promise<void> {
         queue = [...queue.slice(mine), ...queue.slice(0, mine)]
         continue
       }
+      // Queues written by earlier clients have no retry key. Persist one before
+      // the first attempt so a reload after a lost acknowledgement reuses it.
+      if (!job.body.request_id) {
+        job.body = { ...job.body, request_id: crypto.randomUUID() }
+        persist()
+      }
       try {
         await send[job.kind](job.body as never)
+        if (job.kind === 'note' && sending && owner === job.owner) {
+          const key = ['notes', job.body.video_id]
+          // A GET started before the save must not replace the acknowledged edit.
+          await queryClient.cancelQueries({ queryKey: key })
+          const snapshot: NoteSnapshot = {
+            video_time_seconds: Number(job.body.video_time_seconds ?? 0),
+            client_ts: typeof job.body.client_ts === 'number' ? job.body.client_ts : null,
+            text: String(job.body.text),
+            created_at: new Date().toISOString(),
+          }
+          if (sending && owner === job.owner)
+            queryClient.setQueryData<NoteSnapshot[]>(key, (notes = []) =>
+              notes.some(
+                (note) =>
+                  note.client_ts === snapshot.client_ts &&
+                  note.video_time_seconds === snapshot.video_time_seconds &&
+                  note.text === snapshot.text,
+              )
+                ? notes
+                : [...notes, snapshot],
+            )
+        }
         queue.shift()
         backoff = BASE_BACKOFF_MS
         persist()
@@ -164,7 +205,7 @@ export function stop() {
   sending = false
   if (timer !== undefined) window.clearTimeout(timer)
   timer = undefined
-  listeners.forEach((fn) => fn(0))
+  listeners.forEach((fn) => fn(pending()))
 }
 
 /** Test seam: reset module state between cases. */

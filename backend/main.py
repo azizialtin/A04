@@ -7,8 +7,11 @@ Local run:
 from __future__ import annotations
 
 import logging
+import math
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -55,6 +58,17 @@ app.add_middleware(
 )
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # JSON's exponent syntax can decode to infinity. Keep the rejected value
+    # readable without making serialization of the validation error fail too.
+    errors = jsonable_encoder(
+        exc.errors(),
+        custom_encoder={float: lambda value: value if math.isfinite(value) else str(value)},
+    )
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.exception_handler(Exception)

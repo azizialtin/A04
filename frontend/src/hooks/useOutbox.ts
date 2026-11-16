@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
 import { drain, pending, start, stop, subscribe } from '../lib/outbox'
 
@@ -8,14 +8,14 @@ import { drain, pending, start, stop, subscribe } from '../lib/outbox'
  * there is still time to do something about it.
  */
 export function useOutbox(participantId: string | undefined): number {
-  const [count, setCount] = useState(() => pending())
-
   // Claimed while rendering rather than in the effect below: React runs child
   // effects before the parent's, so a session resumed straight onto a case
   // screen would log its "entered" event into an outbox with no owner yet, and
   // the queue drops those. start() is idempotent and touches only module state.
   // (Teardown is the mirror image, and stop() keeps the owner for that reason.)
   if (participantId) start(participantId)
+  const snapshot = useCallback(() => (participantId ? pending(participantId) : 0), [participantId])
+  const count = useSyncExternalStore(subscribe, snapshot)
 
   useEffect(() => {
     if (!participantId) return
@@ -31,8 +31,6 @@ export function useOutbox(participantId: string | undefined): number {
       stop()
     }
   }, [participantId])
-
-  useEffect(() => subscribe(setCount), [])
 
   return count
 }

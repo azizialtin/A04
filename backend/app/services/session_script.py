@@ -289,10 +289,10 @@ async def _cases(db: AsyncSession, participant: Participant) -> list[tuple[Phase
             .order_by(ParticipantVideo.slot_index)
         )
     ).all()
-    if rows:
+    if rows or participant.video_sequence_pinned:
         return [(pv.phase_type, video) for pv, video in rows]
 
-    # Fallback: the whole study's videos, in phase then upload order.
+    # Preview before first login: phase then upload order. Login freezes it.
     videos = (
         (await db.execute(select(Video).where(Video.study_id == participant.study_id)))
         .scalars()
@@ -304,9 +304,8 @@ async def _cases(db: AsyncSession, participant: Participant) -> list[tuple[Phase
 async def video_in_run(db: AsyncSession, participant: Participant, video_id: int) -> bool:
     """Is this video part of the participant's run?
 
-    Mirrors _cases(): an explicit sequence wins, and without one the study's
-    videos are the run. The per-video endpoints authorise against this, so it
-    has to stay in step with the script itself.
+    Mirrors _cases(), including a pinned empty run. Before first login, the
+    study default is still a preview.
     """
     assigned = await db.scalar(
         select(ParticipantVideo.id).where(
@@ -317,13 +316,13 @@ async def video_in_run(db: AsyncSession, participant: Participant, video_id: int
     if assigned is not None:
         return True
 
-    # An explicit sequence exists but this video isn't in it — deny.
+    # A frozen or explicit sequence does not include this video.
     has_sequence = await db.scalar(
         select(ParticipantVideo.id)
         .where(ParticipantVideo.participant_id == participant.id)
         .limit(1)
     )
-    if has_sequence is not None:
+    if has_sequence is not None or participant.video_sequence_pinned:
         return False
 
     # Running on the study default: any video of their own study counts.

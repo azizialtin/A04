@@ -14,11 +14,13 @@ export default function CodeBlock({
   lang = 'java',
   startLine = 1,
   preserveBlankLines = false,
+  aoiId,
 }: {
   code: string | string[]
   lang?: string
   startLine?: number
   preserveBlankLines?: boolean
+  aoiId?: string
 }) {
   const lines = codeLines(code, preserveBlankLines)
   if (!lines.length) return null
@@ -26,7 +28,7 @@ export default function CodeBlock({
   const firstLine = Number.isSafeInteger(startLine) && startLine > 0 ? startLine : 1
 
   return (
-    <pre className="code" tabIndex={0}>
+    <pre className="code" tabIndex={0} data-aoi={aoiId}>
       <code>
         {rows.map((tokens, i) => (
           <span key={i} className="code__line" data-line={firstLine + i}>

@@ -4,6 +4,26 @@ import StudyText from './StudyText'
 
 const TEXT = 'Schau dir den Code an.\n\n```java\nint i = 0;\n```\n\nWo liegt der Fehler?'
 
+test('AOI metadata covers each existing prose, list and code segment without changing the rendered structure', () => {
+  const text = `${TEXT}\n\n- Erste Anweisung.\n- Zweite Anweisung.`
+  const { container, rerender } = render(<StudyText text={text} className="matrix__prompt" />)
+  const original = container.innerHTML
+  rerender(<StudyText text={text} className="matrix__prompt" aoiId="matrix.plausibility.prompt" />)
+  expect([...container.querySelectorAll('[data-aoi]')].map((element) => element.tagName)).toEqual([
+    'P',
+    'PRE',
+    'P',
+    'UL',
+  ])
+  expect(
+    [...container.querySelectorAll('[data-aoi]')].every(
+      (element) => element.getAttribute('data-aoi') === 'matrix.plausibility.prompt',
+    ),
+  ).toBe(true)
+  container.querySelectorAll('[data-aoi]').forEach((element) => element.removeAttribute('data-aoi'))
+  expect(container.innerHTML).toBe(original)
+})
+
 test('emphasizes the timed-section instruction without rendering author HTML', () => {
   const { container } = render(
     <StudyText text={'Sie haben **7 Minuten Zeit**. <img src=x onerror=alert(1)>'} />,

@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import NotesPanel from './NotesPanel'
+
+beforeEach(() => localStorage.clear())
+afterEach(() => vi.useRealTimers())
 
 test('saves a snapshot tagged with the video time on blur', () => {
   const onSnapshot = vi.fn()
@@ -103,4 +106,84 @@ test('the typing duration is the same whether the pause or the blur ends it', ()
   expect(onTypingBurst).toHaveBeenCalledWith(300, 'die Schleife'.length)
   unmount()
   vi.useRealTimers()
+})
+
+test.each(['pagehide', 'unmount'] as const)(
+  'flushes the final edit on %s before the debounce',
+  (exit) => {
+    vi.useFakeTimers()
+    const onSnapshot = vi.fn()
+    const view = render(
+      <NotesPanel draftKey="notes.T-001.7" getVideoTime={() => 12} onSnapshot={onSnapshot} />,
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Last edit' } })
+    expect(localStorage.getItem('a04.draft.notes.T-001.7')).toBe('Last edit')
+    expect(onSnapshot).not.toHaveBeenCalled()
+    if (exit === 'pagehide') window.dispatchEvent(new Event('pagehide'))
+    view.unmount()
+    vi.advanceTimersByTime(1000)
+    expect(onSnapshot).toHaveBeenCalledOnce()
+    expect(onSnapshot).toHaveBeenCalledWith(12, 'Last edit')
+    expect(localStorage.getItem('a04.draft.notes.T-001.7')).toBeNull()
+  },
+)
+
+test.each(['Recovered edit', ''])(
+  'recovers an unqueued draft, including cleared text: %j',
+  (draft) => {
+    localStorage.setItem('a04.draft.notes.T-001.7', draft)
+    const onSnapshot = vi.fn()
+    render(
+      <NotesPanel
+        draftKey="notes.T-001.7"
+        getVideoTime={() => 0}
+        onSnapshot={onSnapshot}
+        initialText="Older saved text"
+      />,
+    )
+    expect(screen.getByRole('textbox')).toHaveValue(draft)
+    expect(onSnapshot).toHaveBeenCalledOnce()
+    expect(onSnapshot).toHaveBeenCalledWith(0, draft)
+  },
+)
+
+test('pending flush uses the latest callbacks without resaving on every rerender', () => {
+  vi.useFakeTimers()
+  const first = vi.fn()
+  const latest = vi.fn()
+  const view = render(<NotesPanel getVideoTime={() => 1} onSnapshot={first} />)
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Pending edit' } })
+  view.rerender(<NotesPanel getVideoTime={() => 8} onSnapshot={latest} />)
+  expect(first).not.toHaveBeenCalled()
+  expect(latest).not.toHaveBeenCalled()
+  view.unmount()
+  expect(latest).toHaveBeenCalledOnce()
+  expect(latest).toHaveBeenCalledWith(8, 'Pending edit')
+  expect(first).not.toHaveBeenCalled()
+})
+
+test('does not restore another participant or case draft', () => {
+  localStorage.setItem('a04.draft.notes.OTHER.7', 'Private other note')
+  localStorage.setItem('a04.draft.notes.T-001.8', 'Different case')
+  render(<NotesPanel draftKey="notes.T-001.7" getVideoTime={() => 0} onSnapshot={vi.fn()} />)
+  expect(screen.getByRole('textbox')).toHaveValue('')
+})
+
+test('a recovered empty draft is saved before older server notes arrive', () => {
+  localStorage.setItem('a04.draft.notes.T-001.7', '')
+  const onSnapshot = vi.fn()
+  const view = render(
+    <NotesPanel draftKey="notes.T-001.7" getVideoTime={() => 0} onSnapshot={onSnapshot} />,
+  )
+  expect(onSnapshot).toHaveBeenCalledWith(0, '')
+  view.rerender(
+    <NotesPanel
+      draftKey="notes.T-001.7"
+      getVideoTime={() => 0}
+      onSnapshot={onSnapshot}
+      initialText="Older server note"
+    />,
+  )
+  expect(screen.getByRole('textbox')).toHaveValue('')
+  expect(onSnapshot).toHaveBeenCalledOnce()
 })

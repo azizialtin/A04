@@ -387,6 +387,36 @@ test('every default pretest page fits the lab viewport, including conditional de
       const report = { title: step.title, questionnaire_id: step.questionnaire_id, ...await viewportReport(page) }
       reports.push(report)
       await page.screenshot({ path: info.outputPath('default-pretest-' + step.page + '.png'), fullPage: true })
+      // Measure the intended layout first, then complete any remaining fields.
+      // Every questionnaire must be saved through the participant controls;
+      // moving the progress pointer cannot bypass an unanswered page.
+      for (const question of step.questions) {
+        const field = page.locator(`[data-aoi="question.${question.id}"]`)
+        if (!(await field.isVisible())) continue
+        if (question.type === 'multiple_choice' || question.type === 'likert') {
+          if (!(await field.locator('input:checked').count())) await field.getByRole('radio').first().check()
+        } else if (question.type === 'number') {
+          const input = field.getByRole('spinbutton')
+          if (!(await input.inputValue())) await input.fill(String(Math.max(question.min ?? 0, Math.min(question.max ?? 25, 25))))
+        } else if (question.type === 'free_text') {
+          const input = field.getByRole('textbox')
+          if (!(await input.inputValue())) await input.fill('Antwort zur Browserprüfung.')
+        } else if (question.type === 'multi_select') {
+          if (!(await field.locator('input:checked').count())) {
+            for (let choice = 0; choice < (question.min_selections ?? 1); choice++) await field.getByRole('checkbox').nth(choice).check()
+          }
+        } else if (question.type === 'slider') {
+          await field.getByRole('slider').press('ArrowRight')
+        } else {
+          expect(['debugging', 'ranking']).toContain(question.type)
+        }
+      }
+      await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
+      await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+      await expect.poll(async () =>
+        (await api<SessionScript>(request, '/participant/session', participantToken)).current_step_index,
+      ).toBe(step.index + 1)
+      current = step.index + 1
     }
     await info.attach('default-pretest-viewport.json', { body: JSON.stringify(reports, null, 2), contentType: 'application/json' })
     expect(reports.filter((report) => report.vertical > 1 || report.horizontal > 1 || report.outside.length || report.scrollers.length),

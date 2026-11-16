@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.models.interaction_log import InteractionLog
-from app.services.gaze_analysis import averaged_gaze
+from app.services.gaze_analysis import GazeLayout, averaged_gaze, unsupported_mapping_reason
 
 PLAYBACK_EVENTS = (
     "video_started",
@@ -145,20 +145,8 @@ def _sample_ts_range(samples: list[dict[str, Any]]) -> tuple[float, float] | Non
 
 
 def geometry_at(geometry: list[dict[str, Any]], ts: float) -> dict[str, Any] | None:
-    """The geometry in force when a sample at `ts` was taken.
-
-    Samples can arrive a fraction before the first snapshot is posted, so
-    anything earlier than the whole list uses the first entry.
-    """
-    if not geometry:
-        return None
-    chosen = geometry[0]
-    for snap in geometry:
-        if snap.get("ts", 0) <= ts:
-            chosen = snap
-        else:
-            break
-    return chosen
+    """The historical layout at or before a sample, never a future snapshot."""
+    return GazeLayout(geometry).geometry_for({"ts": ts})
 
 
 def to_video_frame(x: float, y: float, geo: dict[str, Any]) -> tuple[float, float] | None:
@@ -236,6 +224,7 @@ def build_points(
     offscreen = 0
     ordered = sorted(segments)
     starts = [s[0] for s in ordered]
+    layout = GazeLayout(geometry or [])
     for s in samples:
         ts = s.get("ts")
         if not isinstance(ts, (int, float)):
@@ -250,8 +239,19 @@ def build_points(
             continue
 
         x, y = mean
-        geo = geometry_at(geometry or [], ts)
+        # New samples name their actual layout; a missing reference must never
+        # borrow a newer or stale snapshot just to produce a replay dot.
+        geo = layout.geometry_for(s)
+        if geo is None and (geometry or "geometry_ts" in s):
+            unmapped += 1
+            continue
         if geo is not None:
+            if geo.get("visible", True) is False or unsupported_mapping_reason(geo):
+                unmapped += 1
+                continue
+            if geo.get("active_modal"):
+                offscreen += 1
+                continue
             mapped = to_video_frame(x, y, geo)
             if mapped is None:
                 offscreen += 1  # looking at the rail, the timer, anywhere but the clip

@@ -243,7 +243,37 @@ with the lab's tracker, calibrated display and intended browser zoom before
 interpreting small areas. AOI hits are sample labels, not fixations or dwell
 time measurements.
 
+### Fusion lab display
+
+The reported lab setup is a Tobii Pro Fusion at 120 Hz, Windows, Edge, and a
+15.6-inch 1920×1080 display with Windows scaling at 100%. The layout regression
+baseline is a **1920×1080 CSS viewport**, so use Edge at 100% zoom (`Ctrl+0`) and
+fullscreen (`F11`) on the tracker-calibrated display. A maximized window with
+tabs, a toolbar or the Windows taskbar has less usable height. These Edge
+shortcuts are documented by [Microsoft](https://support.microsoft.com/en-us/edge/keyboard-shortcuts-in-microsoft-edge).
+Browser zoom and fullscreen have not yet been confirmed on the physical lab PC.
+
+Calibrate and validate in Eye Tracker Manager before a sitting. Run
+`Check-eye-tracker.cmd` and check that the real device reports Fusion, 120 Hz,
+and valid samples; a successful connection alone is insufficient. The bridge
+reads the device's configured frequency and physical display area. The monitor
+diagonal is not a substitute for that measured/configured area. Tobii lists
+120 Hz support and a 50–80 cm operating distance for
+[Fusion](https://www.tobii.com/products/eye-trackers/screen-based/tobii-pro-fusion).
+
+Before collecting research data, make a short test recording on that PC. Look
+at known targets in the video, instructions, answer controls and a popup, then
+check the recorded gaze, replay and AOI export against those targets. Use the
+same display for the tracker, browser and screen recording. Software tests
+verify the mapping and data path with synthetic samples; they cannot measure
+the participant's calibration accuracy, physical alignment or device latency.
+
 ## During a session
+
+- **Navigation after a connectivity warning.** Requests still try the lab API
+  even when Windows reports no Internet connection. Actual request failures
+  show the existing session error message and keep the current page for retry.
+  The client does not advance without the server's acknowledgement.
 
 - **Weiter on the case screen** opens **Fall abschließen?**. **Beim Fall bleiben**,
   Escape, or closing the dialog keeps the participant on the case with their notes.
@@ -251,7 +281,7 @@ time measurements.
   screen/gaze capture keep running while the dialog is open; opening it does not
   pause, restart or upload a recording. A configured case time limit still ends
   the case automatically. If navigation fails, the dialog offers a retry without
-  discarding notes. This is separate from the supervised CK section timer below.
+  discarding notes. This is separate from the CK section timer below.
 - **A red banner at the bottom of the participant's screen** means writes are
   not reaching the server. The data is queued locally and will go up when the
   connection returns — do not close the tab or log out, which discards drafts.
@@ -262,8 +292,9 @@ time measurements.
 - **The think-aloud shows the clip instead of the screen recording.** A usable
   screen recording was not available when replay loaded. Capture may have
   failed, its upload may still be pending, or its playback URL may be unavailable.
-  While an upload is pending, the page says so and checks again automatically;
-  the screen recording replaces the fallback as soon as it is available.
+  While an upload is pending, the page says so and checks again automatically
+  for up to 60 seconds before selecting the available replay. Once playback is
+  exposed, its source stays fixed; a late upload does not switch it mid-review.
   Check the Bildschirm column in the admin's gaze list and server logs. Missing
   ffmpeg on the lab machine's PATH is one possible cause, reported by the bridge
   at startup. When bridge capture is unavailable, the page can record the display
@@ -324,7 +355,8 @@ used in the data-collection document:
 | `ck_pre_self` (programming/debugging self-assessment) | `ck_self` |
 | `ck_pre` (debugging tasks) | `ck_tasks` |
 | `pck_pre` | `pck` |
-| `msk_pre` | `msk` |
+| `mesp_pre` (November 16 pilot) | `mesp` |
+| `msk_pre` (historical instruments) | `msk` |
 
 These are display mappings, not changes to stored question IDs or export values.
 The overview shows populated pages and whether an introduction is configured.
@@ -340,53 +372,60 @@ is allowed. Use a new study for structural changes to a started study; do not
 alter stored participant progress. The diagnosis and post-case questionnaires
 each have one shared definition, administered after **every case**.
 
-The meeting notes dated 21 October and 9 November refer to the
-[data-collection Sheet](https://docs.google.com/spreadsheets/d/1vrXFgk0iZjm_JB4Foyv07zuo5dSguk9yhgb5qjUxHWw/edit?gid=1023464767#gid=1023464767)
-for the additional PCK items. The 21 October entry promises later introduction
-wording but does not include it. The versioned source supplied on 2 November
-contains only `pck_pre_01a`–`pck_pre_01c`; no further PCK items or missing
-Demographics/CK-self/MSK introduction text should be invented. The existing CK
-debugging introduction is already the supplied meeting-note wording.
+New studies use the November 16 pilot instrument: the revised thirteen CK
+tasks, a PCK introduction and three PCK pages containing ten conceptual items,
+then the full MESP introduction and six pages. The MESP strategy order is fixed.
+The October and 2 November instruments remain available for historical studies;
+their single PCK example and MSK content are not upgraded in place. See the
+[pilot protocol](pilot-20261116.md) for the source documents, approved wording,
+scales and exact page order.
 
 ## Timed CK pre-test
 
-Apply migration `d9f1a3b5c7e2` before running the backend that records section
-attempts and questionnaire visits. It adds the timing schema without changing
-existing questionnaire content or session pointers.
+Apply `alembic upgrade head` before serving the matching backend. Migration
+`d9f1a3b5c7e2` introduced section attempts and questionnaire visits;
+`f8b1c3d5e7a9` added the versioned pilot flow. Existing studies retain their
+legacy protocol and questionnaire content.
 
-New studies include the two existing CK self-assessment pages, the supplied CK
-introduction and thirteen debugging tasks, then an editable PCK introduction
-and the shared PCK example before MSK. The initial PCK intro uses the existing
-generic “Bitte beantworten Sie die folgenden Fragen.” wording. The tasks use
-section function `ck_tasks`, followed by PCK with function
-`pck`. The section name is a display/export label; it does not activate the
-timer. Put any editable section introduction on its first populated page only.
-Empty draft pages remain hidden. Add future PCK items after the shared example
-with the same `pck` function so the section stays consecutive.
+New studies include two CK self-assessment pages, the approved CK introduction
+and thirteen debugging tasks, followed by the PCK and MESP introductions and
+pages described above. CK tasks use section function `ck_tasks`, followed by
+PCK with function `pck`. The section name is a display/export label; it does
+not activate the timer. Put any editable section introduction on its first
+populated page only. Empty draft pages remain hidden.
 Structural edits are refused once a participant has logged into the study;
 prepare a new study for changes to questions, order, options or code.
 
 The seven-minute timer starts when the first CK task opens, excluding the
-introduction. Reload and supervisor back do not restart it. At zero the page
-shows a notice and stays open. The supervisor presses **Ctrl+Alt+Shift+N**
-(Cmd+Alt+Shift+N on a Mac) from a CK task, then confirms **Speichern und zu PCK**.
-This saves the current partial answer and actual exit time and opens the PCK
-introduction or first page. Unvisited tasks receive no answer or timestamps.
-The shortcut has no effect outside CK. Like the existing back shortcut, it
-uses the participant session and is a supervisor convention, not a separate
-administrator authentication check.
+introduction. Reload and supervisor back do not restart it. In the November 16
+pilot, expiry automatically saves the current partial answer, closes its visit
+and the CK attempt, shows a short notice, and opens the PCK introduction or first
+page. The server checks the deadline before accepting `timer_expired`; an early
+request cannot finish the section. Legacy studies keep the earlier behavior:
+at zero the page shows a notice and does not advance automatically. A normal
+valid submission or the supervisor shortcut can still advance it.
 
-If saving fails, keep the tab open and retry in the dialog. Drafts are local to
-the participant. A finished section retains its original timing when reviewed;
-subsequent visits are marked as review. Actual elapsed time may exceed seven
-minutes if the supervisor intervenes late; the export records that overrun.
+In both protocols the supervisor can press **Ctrl+Alt+Shift+N**
+(Cmd+Alt+Shift+N on a Mac) from a CK task and confirm **Speichern und zu PCK**.
+This also saves the current partial answer and actual exit time before opening
+PCK. Unvisited tasks receive no answer or timestamps. The shortcut has no effect
+outside CK. Like the back shortcut, it uses the participant session and is a
+supervisor convention, not a separate administrator authentication check.
+
+If saving fails, keep the tab open and retry using the displayed controls;
+do not bypass the save by navigating away. Drafts are local to the participant.
+A finished section retains its original timing when reviewed; subsequent visits
+are marked as review. Actual elapsed time can exceed seven minutes when saving
+is delayed or the supervisor intervenes late; the export records that overrun.
 
 `responses.csv` stores a CK answer as an object under the question ID, with
-`lines` (at most five numbers) and `explanation` (text). A supervisor exit may
-leave either component absent or incomplete; `response_status=partial`
-distinguishes it from a normal submission. PCK rankings are ordered arrays of
-the configured option values. Multiple-answer checkbox questions use
-`multi_select` and export an array of the selected option values, preserving
+`lines` (at most five numbers) and `explanation` (text). The pilot's explicit skip
+stores `{"lines":[0],"explanation":"","skipped":true}` and
+`response_status=skipped`. An empty answer is not automatically a skip. A timer
+expiry or supervisor exit may leave either component absent or incomplete;
+`response_status=partial` distinguishes it from a normal submission. PCK rankings
+are ordered arrays of the configured option values. Multiple-answer checkbox
+questions use `multi_select` and export an array of the selected option values, preserving
 their number/string types. Existing `multiple_choice` questions remain
 single-choice and export one value. Neither answer keys nor automatic scores are
 sent to participants.
@@ -402,14 +441,12 @@ responses without these records retain blank timing fields. Filter out review
 visits when analysing the original timed attempt.
 
 The versioned source snapshots, ID crosswalk and safe import command are documented
-in [`backend/app/data/README.md`](../backend/app/data/README.md). The CSV supplied
-on 2 November corrects CK IDs to `ck_pre_01`–`ck_pre_13` without changing the
-exercise order or content. New studies use this version; existing studies and
-the October snapshot retain their original IDs. Never combine exports by question
-ID alone across these versions; use the documented exercise crosswalk.
-The PCK example is kept as supplied. The new CSV contains no additional PCK items
-or final section-introduction wording; those can be edited before the first
-participant login when supplied.
+in [`backend/app/data/README.md`](../backend/app/data/README.md). The 2 November
+snapshot corrected CK IDs without changing exercise order; the November 16 pilot
+reorders and revises exercises. Never combine exports by question ID alone across
+these versions; use the documented exercise crosswalk. Pilot MESP uses
+`mesp_pre_*` IDs and section `MESP`; historical `msk_pre_*` answers retain their
+original meaning. CSV filenames remain `responses.csv` and `sections.csv`.
 
 In the admin's participant statistics, **Abschnittszeiten** shows actual section
 start/end, elapsed time, CK overrun and the original visited-page count.
@@ -419,7 +456,10 @@ including partial answers; it is not the original uninterrupted section duration
 In **Videos**, each existing clip's **Bearbeiten** action updates its title,
 task/info/student text, default-text links and timer without re-uploading media.
 
-Existing studies are not changed by the new defaults or schema migration.
+Existing studies keep their protocol and instruments. Migration `f8b1c3d5e7a9`
+updates only four exact stock case-outro strings in studies without sessions or
+responses; custom wording is preserved. Migration `a1d3f5b7c9e2` freezes existing
+started video sequences without changing their current order or saved position.
 The standard-battery seed action skips a pre-test placement that already has
 pages. Use a new study for a new instrument version, or preview the guarded CK
 import for a selected unstarted study whose populated PCK page already follows

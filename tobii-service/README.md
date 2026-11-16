@@ -137,10 +137,12 @@ quiet. A session cannot be repeated, so nothing here throws a recording away.
   degrees rather than as a fraction of the screen.
 - The client sends `{"type":"start_gaze"}` / `{"type":"stop_gaze"}`.
 - Each sample: `{"type":"gaze","ts":<ms>,"lx","ly","rx","ry":0..1|null,"lv","rv":bool,
-  "dz":<eye distance mm|null>,"device_ts":<µs>}` (coordinates are null on blink
+  "lpd","rpd":<pupil diameter mm|null>,"dz":<eye distance mm|null>,"device_ts":<µs>}` (coordinates are null on blink
   / track-loss). Coordinates are fractions of the **whole display**, not of the
   video — the backend maps them onto the clip using the geometry the frontend
   records alongside each gaze recording.
+  Pupil diameters use the SDK's separate pupil-validity flags; invalid or
+  non-finite values become null independently of gaze-point validity.
 
 ### Calibration
 

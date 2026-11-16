@@ -75,7 +75,9 @@ export function notesOnRecording(notes: NoteSnapshot[], epochMs: number): TimedT
 
 /** The same notes on the clip's own timeline, for the fallback replay. */
 export function notesOnClip(notes: NoteSnapshot[]): TimedText[] {
-  return notes.map((n) => ({ t: n.video_time_seconds * 1000, text: n.text }))
+  return notes
+    .map((n) => ({ t: n.video_time_seconds * 1000, text: n.text }))
+    .sort((a, b) => a.t - b.t)
 }
 
 /** The latest entry at or before `tMs`. Assumes `items` is sorted by `t`. */

@@ -41,12 +41,14 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
         <h2>Teilnehmer anlegen</h2>
         <div className="inline-form">
           <input
+            aria-label="ID-Präfix"
             className="input"
             style={{ maxWidth: 130 }}
             value={prefix}
             onChange={(e) => setPrefix(e.target.value)}
           />
           <input
+            aria-label="Anzahl der IDs"
             className="input"
             style={{ maxWidth: 90 }}
             type="number"
@@ -75,8 +77,11 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
           </span>
         </label>
         <div className="form-row" style={{ marginTop: 12 }}>
-          <label className="label">IDs (eine pro Zeile)</label>
+          <label className="label" htmlFor="participant-ids">
+            IDs (eine pro Zeile)
+          </label>
           <textarea
+            id="participant-ids"
             className="textarea"
             value={idsText}
             onChange={(e) => setIdsText(e.target.value)}

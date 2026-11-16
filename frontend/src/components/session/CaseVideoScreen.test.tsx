@@ -255,3 +255,28 @@ test('timer expiry still advances without a click; a failed request is visible a
   expect(screen.getByRole('button', { name: 'Zur Diagnose' })).toBeEnabled()
   expect(capture.stop).not.toHaveBeenCalled()
 })
+
+test('timer expiry queues the last note before requesting navigation', async () => {
+  vi.useFakeTimers()
+  const onComplete = vi.fn(() => {
+    expect(enqueue).toHaveBeenCalledWith(
+      'note',
+      expect.objectContaining({ text: 'Final timer edit' }),
+    )
+  })
+  render(
+    <CaseVideoScreen
+      {...props}
+      participantId="T-001"
+      timeLimitSeconds={1}
+      onComplete={onComplete}
+    />,
+  )
+  await act(async () => vi.advanceTimersByTime(700))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Notizen' }), {
+    target: { value: 'Final timer edit' },
+  })
+  await act(async () => vi.advanceTimersByTime(300))
+  expect(onComplete).toHaveBeenCalledOnce()
+  expect(localStorage.getItem('a04.draft.notes.T-001.7')).toBeNull()
+})

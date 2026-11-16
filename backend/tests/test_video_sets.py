@@ -187,11 +187,12 @@ async def test_a_second_login_does_not_deal_again(client, db, seed_participant, 
     assert coin.tosses == 1
 
 
-async def test_a_study_without_sets_runs_as_before(client, db, seed_participant, videos):
+async def test_a_study_without_sets_copies_its_default_order(client, db, seed_participant, videos):
     headers = await _login(client, seed_participant.id)
     await db.refresh(seed_participant)
     assert seed_participant.video_set_id is None
-    assert await _sequence(db, seed_participant.id) == []
+    assert seed_participant.video_sequence_pinned
+    assert await _sequence(db, seed_participant.id) == [v.id for v in videos]
     # The study default: every video, phase order.
     steps = (await client.get("/participant/session", headers=headers)).json()["steps"]
     assert len([s for s in steps if s["kind"] == "case_video"]) == len(videos)

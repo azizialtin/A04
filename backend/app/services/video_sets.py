@@ -24,6 +24,7 @@ from app.models.participant_video import ParticipantVideo
 from app.models.study import Study
 from app.models.video import Video
 from app.models.video_set import VideoSet, VideoSetItem
+from app.services.session_script import default_order
 
 # Swapped out by tests that want a predictable tie-break.
 rng = random.SystemRandom()
@@ -119,10 +120,8 @@ async def apply_set(db: AsyncSession, participant: Participant, video_set: Video
 async def deal_on_first_login(db: AsyncSession, participant: Participant) -> VideoSet | None:
     """Give a participant with no sequence of their own one of the study's sets.
 
-    Nothing happens when the researcher has hand-picked their run — that is the
-    personalisation and it wins — or when the study has no filled set, in which
-    case the script falls back to the study's videos as before. Returns the set
-    dealt, if any. Caller commits.
+    A hand-picked sequence wins. Without a filled set, copy the study default
+    instead, including its phases. Even an empty run is pinned. Caller commits.
     """
     # Two participants logging in at the same moment would both see the same
     # counts and could both take the same set; a participant who double-clicked
@@ -131,17 +130,35 @@ async def deal_on_first_login(db: AsyncSession, participant: Participant) -> Vid
     # it, or the lock is decoration.
     await db.execute(select(Study.id).where(Study.id == participant.study_id).with_for_update())
 
+    if participant.video_sequence_pinned:
+        return None
+
     has_sequence = await db.scalar(
         select(ParticipantVideo.id)
         .where(ParticipantVideo.participant_id == participant.id)
         .limit(1)
     )
     if has_sequence is not None:
+        participant.video_sequence_pinned = True
         return None
 
     sets = await _dealable(db, participant.study_id)
     chosen = pick_balanced(sets, await participants_per_set(db, participant.study_id))
     if chosen is None:
+        videos = list(
+            (await db.scalars(select(Video).where(Video.study_id == participant.study_id))).all()
+        )
+        for index, video in enumerate(default_order(videos)):
+            db.add(
+                ParticipantVideo(
+                    participant_id=participant.id,
+                    video_id=video.id,
+                    slot_index=index,
+                    phase_type=video.phase_type,
+                )
+            )
+        participant.video_sequence_pinned = True
         return None
     await apply_set(db, participant, chosen)
+    participant.video_sequence_pinned = True
     return chosen

@@ -74,8 +74,9 @@ class VideoUrlResponse(BaseModel):
 
 
 class NoteCreate(BaseModel):
+    request_id: UUID | None = None
     video_id: int
-    video_time_seconds: float = Field(ge=0)
+    video_time_seconds: float = Field(ge=0, allow_inf_nan=False)
     # Browser wall clock. The playhead places a note in the clip; only this can
     # place it in a screen recording, which runs on wall time.
     client_ts: int | None = None
@@ -85,7 +86,7 @@ class NoteCreate(BaseModel):
 class DiagnosisCreate(BaseModel):
     video_id: int
     text: str = Field(min_length=1)
-    time_spent_seconds: int | None = None
+    time_spent_seconds: int | None = Field(default=None, ge=0)
     # The rating questions shown under the write-up (confidence, and whatever
     # else the study adds). They are stored in the same transaction as the text.
     answers: dict[str, Any] = Field(default_factory=dict)
@@ -102,6 +103,7 @@ class QuestionnaireRespondRequest(BaseModel):
 
 
 class EventCreate(BaseModel):
+    request_id: UUID | None = None
     event_type: str = Field(min_length=1, max_length=64)
     video_id: int | None = None
     payload: dict[str, Any] = Field(default_factory=dict)

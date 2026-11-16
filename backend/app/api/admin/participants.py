@@ -198,7 +198,7 @@ async def set_sequence(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     p = await _participant_for_update(db, participant_id)
-    if p.status.value != "registered":
+    if p.status.value != "registered" or p.video_sequence_pinned:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Participant has already started; sequence is locked."
         )
@@ -226,7 +226,7 @@ async def set_video_set(
     for a re-run, or a pair the researcher wants matched. Same rule as the
     sequence: only before they have started."""
     p = await _participant_for_update(db, participant_id)
-    if p.status.value != "registered":
+    if p.status.value != "registered" or p.video_sequence_pinned:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Participant has already started; sequence is locked."
         )
@@ -275,7 +275,7 @@ async def bulk_assign(
     skipped: list[str] = []
     for pid in body.participant_ids:
         p = found.get(pid)
-        if p is None or p.status.value != "registered":
+        if p is None or p.status.value != "registered" or p.video_sequence_pinned:
             skipped.append(pid)
             continue
         await _assign_sequence(db, p, body.items)

@@ -17,6 +17,17 @@ export interface BridgeGaze {
 
 const DEFAULT_TIMEOUT_MS = 15_000
 
+function readStatus(msg: Record<string, unknown>): BridgeStatus {
+  const positive = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+  return {
+    connected: msg.connected === true,
+    frequency: positive(msg.frequency) ?? 0,
+    display_w_mm: positive(msg.display_w_mm),
+    display_h_mm: positive(msg.display_h_mm),
+  }
+}
+
 /**
  * Request/response wrapper over the bridge socket, for the calibration
  * exchange. The gaze stream stays a callback — it is a firehose, not a reply.
@@ -35,6 +46,7 @@ export class Bridge {
   }
 
   onGaze: ((sample: BridgeGaze) => void) | null = null
+  onStatus: ((status: BridgeStatus) => void) | null = null
 
   static connect(url: string, timeoutMs = 5000): Promise<Bridge> {
     return new Promise((resolve, reject) => {
@@ -61,14 +73,7 @@ export class Bridge {
           const msg = JSON.parse(event.data as string)
           if (msg.type !== 'status') return
           window.clearTimeout(timer)
-          resolve(
-            new Bridge(ws, {
-              connected: !!msg.connected,
-              frequency: Number(msg.frequency) || 0,
-              display_w_mm: msg.display_w_mm ?? null,
-              display_h_mm: msg.display_h_mm ?? null,
-            }),
-          )
+          resolve(new Bridge(ws, readStatus(msg)))
         } catch {
           /* ignore malformed frame */
         }
@@ -83,11 +88,27 @@ export class Bridge {
     } catch {
       return
     }
+    if (msg.type === 'status') {
+      Object.assign(this.status, readStatus(msg))
+      this.onStatus?.(this.status)
+      return
+    }
     if (msg.type === 'gaze') {
+      const eyes = [
+        { valid: msg.lv, x: msg.lx, y: msg.ly },
+        { valid: msg.rv, x: msg.rx, y: msg.ry },
+      ].filter(
+        (eye): eye is { valid: true; x: number; y: number } =>
+          eye.valid === true &&
+          typeof eye.x === 'number' &&
+          Number.isFinite(eye.x) &&
+          typeof eye.y === 'number' &&
+          Number.isFinite(eye.y),
+      )
       this.onGaze?.({
-        x: typeof msg.lx === 'number' ? msg.lx : null,
-        y: typeof msg.ly === 'number' ? msg.ly : null,
-        dz: typeof msg.dz === 'number' ? msg.dz : null,
+        x: eyes.length ? eyes.reduce((sum, eye) => sum + eye.x, 0) / eyes.length : null,
+        y: eyes.length ? eyes.reduce((sum, eye) => sum + eye.y, 0) / eyes.length : null,
+        dz: typeof msg.dz === 'number' && Number.isFinite(msg.dz) && msg.dz > 0 ? msg.dz : null,
       })
       return
     }
@@ -127,6 +148,7 @@ export class Bridge {
   close() {
     this.pending.clear()
     this.onGaze = null
+    this.onStatus = null
     try {
       this.ws.close()
     } catch {

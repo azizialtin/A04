@@ -58,6 +58,27 @@ def sample(valid=True):
     }
 
 
+def test_pupil_diameters_keep_their_own_validity_independently_of_gaze_points():
+    raw = {
+        **sample(False),
+        "left_pupil_diameter": 3.1,
+        "left_pupil_validity": 1,
+        "right_pupil_diameter": 4.2,
+        "right_pupil_validity": 0,
+    }
+    frame = gaze_frame(raw)
+    assert frame["lpd"] == 3.1 and frame["rpd"] is None
+    assert frame["lv"] is False and frame["lx"] is None
+    assert json.loads(json.dumps(frame, allow_nan=False))["lpd"] == 3.1
+
+
+@pytest.mark.parametrize("diameter", [float("nan"), float("inf"), None, True, "3.1"])
+def test_invalid_pupil_values_never_break_the_json_gaze_stream(diameter):
+    frame = gaze_frame({**sample(), "left_pupil_diameter": diameter, "left_pupil_validity": 1})
+    assert frame["lpd"] is None and frame["rpd"] is None
+    json.dumps(frame, allow_nan=False)
+
+
 class SDK:
     __version__ = "2.1.0-test"
     EYETRACKER_GAZE_DATA = "gaze"
@@ -100,6 +121,22 @@ def source(sdk, **options):
     return TobiiSource(
         sdk, retry_seconds=0.015, sample_timeout=0.08, status_seconds=0.02, **options
     )
+
+
+@pytest.mark.asyncio
+async def test_fusion_uses_sdk_display_area_and_actual_120hz_without_mock_dimensions():
+    class Fusion(Tracker):
+        model = "Tobii Pro Fusion"
+
+        def get_display_area(self):
+            return SimpleNamespace(width=345.35, height=194.26)
+
+    gaze = source(SDK([Fusion()]))
+    await gaze.refresh()
+    assert gaze.connected and gaze.frequency == 120
+    assert gaze.display_area_mm == (345.35, 194.26)
+    assert gaze.status()["frequency"] == 120 and gaze.status()["model"] == "Tobii Pro Fusion"
+    await gaze.close()
 
 
 @pytest.mark.asyncio

@@ -22,5 +22,15 @@ class Session(Base):
         index=True,
     )
     current_step_index: Mapped[int] = mapped_column(Integer, default=0)
+    # A browser clock cannot establish which reload or review visit is current.
+    current_questionnaire_visit_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "questionnaire_visits.id",
+            name="fk_sessions_current_questionnaire_visit",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -258,7 +258,9 @@ function Matrix({
     })
   return (
     <div className={`matrix${labelsInHeaders ? ' matrix--labels-in-headers' : ''}`}>
-      {prompt && <StudyText text={prompt} className="matrix__prompt" />}
+      {prompt && (
+        <StudyText text={prompt} className="matrix__prompt" aoiId={`matrix.${block.key}.prompt`} />
+      )}
       {hasLabels && !promptIncludesLegend && !labelsInHeaders && (
         <>
           <p className="matrix__legend-title">{t('questionnaire.legend')}</p>

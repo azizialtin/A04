@@ -3,6 +3,7 @@ from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.models.enums import ParticipantStatus, PhaseType, QuestionnairePlacement
+from app.models.interaction_log import InteractionLog
 from app.models.note import Note
 from app.models.participant_video import ParticipantVideo
 from app.models.questionnaire import Questionnaire, QuestionnaireResponse
@@ -163,7 +164,8 @@ async def test_an_unwritten_page_is_not_shown(client, db, run, participant_heade
     assert [s["kind"] for s in steps].count("questionnaire") == 1
 
 
-async def test_progress_is_forward_only(client, run, participant_headers):
+async def test_progress_is_forward_only(client, db, run, participant_headers):
+    await _position(db, run, 4)
     await client.patch(
         "/participant/session/progress", json={"current_step_index": 5}, headers=participant_headers
     )
@@ -178,6 +180,7 @@ async def test_progress_completes_at_thanks(client, db, run, participant_headers
     total = (await client.get("/participant/session", headers=participant_headers)).json()[
         "total_steps"
     ]
+    await _position(db, run, total - 2)
     r = await client.patch(
         "/participant/session/progress",
         json={"current_step_index": total - 1},
@@ -422,17 +425,10 @@ async def test_events_accepted(client, run, participant_headers):
     assert r.status_code == 202
 
 
-async def test_event_keeps_the_browsers_timestamp(client, run, participant_headers, monkeypatch):
+async def test_event_keeps_the_browsers_timestamp(client, db, run, participant_headers):
     # The gaze replay lines playback events up against bridge samples, so the
     # browser's clock has to survive the trip rather than being replaced by the
     # database's.
-    logged: list[dict] = []
-
-    async def _record(**kwargs):
-        logged.append(kwargs)
-
-    monkeypatch.setattr("app.api.participant.log_event", _record)
-
     r = await client.post(
         "/participant/events",
         json={
@@ -444,7 +440,7 @@ async def test_event_keeps_the_browsers_timestamp(client, run, participant_heade
         headers=participant_headers,
     )
     assert r.status_code == 202
-    assert logged[0]["client_ts"] == 1_755_000_000_123
+    assert (await db.scalar(select(InteractionLog))).client_ts == 1_755_000_000_123
 
 
 async def test_case_video_step_carries_content(client, run, participant_headers):
@@ -590,6 +586,12 @@ async def test_an_advance_records_the_screen_it_finished(
     assert (await advance(1))["completed_step"]["kind"] == "welcome"
 
     # Step 1 is the pre-test page — the event the researchers were reading.
+    saved = await client.post(
+        f"/participant/questionnaires/{run['questionnaires']['pre_test'].id}/respond",
+        headers=participant_headers,
+        json={"answers": {"age": 34}},
+    )
+    assert saved.status_code == 201
     finished = await advance(2)
     assert finished["completed_step"] == {
         "index": 1,
@@ -608,7 +610,7 @@ async def test_an_advance_records_the_screen_it_finished(
     assert "completed_step" not in await advance(1)
 
 
-async def test_a_case_advance_names_its_video(client, run, participant_headers, monkeypatch):
+async def test_a_case_advance_names_its_video(client, db, run, participant_headers, monkeypatch):
     logged: list[dict] = []
 
     async def record(**kwargs):
@@ -618,6 +620,7 @@ async def test_a_case_advance_names_its_video(client, run, participant_headers, 
 
     steps = (await client.get("/participant/session", headers=participant_headers)).json()["steps"]
     clip = next(s for s in steps if s["kind"] == "case_video")
+    await _position(db, run, clip["index"] - 1)
 
     for target in (clip["index"], clip["index"] + 1):
         await client.patch(
@@ -642,8 +645,16 @@ async def _move_to(client, headers, index: int) -> None:
     assert r.status_code == 200
 
 
-async def test_the_supervisor_can_step_a_run_back_one_screen(client, run, participant_headers):
-    await _move_to(client, participant_headers, 5)
+async def _position(db, run, index: int) -> None:
+    session = await db.scalar(
+        select(Session).where(Session.participant_id == run["participant"].id)
+    )
+    session.current_step_index = index
+    await db.flush()
+
+
+async def test_the_supervisor_can_step_a_run_back_one_screen(client, db, run, participant_headers):
+    await _position(db, run, 5)
 
     r = await client.post("/participant/session/step-back", headers=participant_headers)
     assert r.status_code == 200
@@ -665,8 +676,9 @@ async def test_the_first_screen_has_nothing_behind_it(client, run, participant_h
     assert (await _session(client, participant_headers))["current_step_index"] == 0
 
 
-async def test_a_finished_run_steps_back_onto_its_last_screen(client, run, participant_headers):
+async def test_a_finished_run_steps_back_onto_its_last_screen(client, db, run, participant_headers):
     total = (await _session(client, participant_headers))["total_steps"]
+    await _position(db, run, total - 2)
     await _move_to(client, participant_headers, total - 1)
 
     r = await client.post("/participant/session/step-back", headers=participant_headers)

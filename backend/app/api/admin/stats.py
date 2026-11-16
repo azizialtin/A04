@@ -620,7 +620,7 @@ async def study_stats(
     roster = []
     for p in participants:
         session = sessions.get(p.id)
-        phases = assigned.get(p.id) or default_phases
+        phases = assigned.get(p.id, [] if p.video_sequence_pinned else default_phases)
         flow_version, mode, narration_count = flow_settings(p, study)
         total_steps = count_steps(
             pre_pages,
@@ -1067,7 +1067,7 @@ async def participant_stats(
     )
     ordered = (
         [(pv.slot_index, pv.phase_type, titles.get(pv.video_id)) for pv in sequence]
-        if sequence
+        if sequence or p.video_sequence_pinned
         else [(i, v.phase_type, v) for i, v in enumerate(default_order(list(titles.values())))]
     )
 

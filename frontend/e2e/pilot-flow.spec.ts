@@ -366,8 +366,19 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
         await expect(
           page.getByRole('heading', { name: `Fall ${step.case_number}`, exact: true }),
         ).toBeVisible()
+        // An Internet connectivity hint must not pause requests to a reachable lab API.
+        if (step.case_number === 2)
+          await page.evaluate(() => window.dispatchEvent(new Event('offline')))
         await next.click()
         await page.getByRole('button', { name: 'Ohne Blickdaten fortfahren', exact: true }).click()
+        if (step.case_number === 2) {
+          try {
+            await expect.poll(async () => (await getSession()).current_step_index).toBe(index + 1)
+            await expect(page.getByLabel('Notizen', { exact: true })).toBeVisible()
+          } finally {
+            await page.evaluate(() => window.dispatchEvent(new Event('online')))
+          }
+        }
         break
       case 'case_video': {
         await expect(

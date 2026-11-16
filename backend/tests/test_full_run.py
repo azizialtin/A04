@@ -219,7 +219,7 @@ async def test_a_completed_participant_cannot_start_again(client, nine_case_stud
     assert r.status_code == 403
 
 
-async def test_a_run_resumes_where_it_was_left(client, nine_case_study):
+async def test_a_run_resumes_where_it_was_left(client, db, nine_case_study):
     headers = {
         "Authorization": "Bearer "
         + (await client.post("/auth/participant/login", json={"participant_id": "RUN-001"})).json()[
@@ -227,9 +227,11 @@ async def test_a_run_resumes_where_it_was_left(client, nine_case_study):
         ]
     }
 
-    await client.patch(
-        "/participant/session/progress", json={"current_step_index": 14}, headers=headers
+    session = await db.scalar(
+        select(Session).where(Session.participant_id == nine_case_study["participant"].id)
     )
+    session.current_step_index = 14
+    await db.flush()
 
     # As if the browser had been closed and reopened.
     resumed = (await client.get("/participant/session", headers=headers)).json()

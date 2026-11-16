@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../../contexts/AuthContext'
+import { pending } from '../../lib/outbox'
 
 interface Props {
   /** Writes from this run that have not reached the server yet. */
@@ -20,10 +21,11 @@ interface Props {
  */
 export default function ThanksScreen({ pendingWrites = 0 }: Props) {
   const { t } = useTranslation()
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const navigate = useNavigate()
 
   const startNext = () => {
+    if (pendingWrites > 0 || (user && pending(user.id) > 0)) return
     logout()
     navigate('/login', { replace: true })
   }

@@ -32,8 +32,11 @@ export default function AdminStudyListPage() {
       <form className="card form" onSubmit={submit}>
         <h2>Neue Studie</h2>
         <div className="form-row">
-          <label className="label">Name</label>
+          <label className="label" htmlFor="new-study-name">
+            Name
+          </label>
           <input
+            id="new-study-name"
             maxLength={255}
             className="input"
             value={name}
@@ -41,8 +44,11 @@ export default function AdminStudyListPage() {
           />
         </div>
         <div className="form-row">
-          <label className="label">SoSci-Link (Vortest)</label>
+          <label className="label" htmlFor="new-study-sosci-pretest">
+            SoSci-Link (Vortest)
+          </label>
           <input
+            id="new-study-sosci-pretest"
             className="input"
             maxLength={1000}
             value={pre}
@@ -51,8 +57,11 @@ export default function AdminStudyListPage() {
           />
         </div>
         <div className="form-row">
-          <label className="label">SoSci-Link (Nachtest)</label>
+          <label className="label" htmlFor="new-study-sosci-posttest">
+            SoSci-Link (Nachtest)
+          </label>
           <input
+            id="new-study-sosci-posttest"
             className="input"
             maxLength={1000}
             value={post}

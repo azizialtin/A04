@@ -36,9 +36,9 @@ Incremental, each phase runnable and tested before the next.
 - [x] **P7 — Hardening.** ESLint (flat config) + prettier + lint gate; GitHub
   Actions CI (backend pytest + `alembic check`; frontend lint/typecheck/test/
   build); `docs/DEPLOY.md`; admin gaze replay viewer; python-jose → PyJWT (kills
-  the deprecation warnings); README pass. Deferred by choice: a deeper a11y
-  audit, the vite 6 / vitest 3 major bump (dev-only advisories), and named
-  sequence templates.
+  the deprecation warnings); README pass. The frontend tooling upgrade is now
+  complete (Vite 7.3 / Vitest 5), with runtime and development dependency audit
+  gates. A deeper a11y audit and named sequence templates remain deferred.
 - [x] **P8 — Production blockers.** The six things standing between a working
   demo and a deployable study: an admin bootstrap CLI (there was no way to make
   the first account); gaze samples mapped onto the *picture* rather than plotted
@@ -220,10 +220,8 @@ Incremental, each phase runnable and tested before the next.
 Ordered roughly by cost of getting it wrong. See the production-readiness review
 for the detail.
 
-- **Deferred by choice.** The vite 6 / vitest 3 major bump — the remaining npm
-  advisories are dev-toolchain only and never reach the bundle. A deeper
-  accessibility audit. Named sequence templates beyond the video sets
-  (bulk-assign covers the rest of the need).
+- **Deferred by choice.** A deeper accessibility audit. Named sequence templates
+  beyond the video sets (bulk-assign covers the rest of the need).
 - **The browser capture asks.** Chrome shows its screen-share picker once per
   page load and a "sharing your screen" bar for the rest of the session. Both
   can be suppressed with a managed-browser policy on the lab machines

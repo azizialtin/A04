@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { participantApi } from '../api/participant'
-import { __reset, drain, enqueue, pending, start, stop, subscribe } from './outbox'
+import { __reset, drain, enqueue, pending, pendingNote, start, stop, subscribe } from './outbox'
 
 vi.mock('../api/participant', () => ({
   participantApi: { createNote: vi.fn(), logEvent: vi.fn() },
@@ -150,6 +150,31 @@ describe('ownership', () => {
 })
 
 describe('durability', () => {
+  it('persists one immutable retry ID before sending and reuses it after failure', async () => {
+    start('T-001')
+    createNote.mockRejectedValueOnce(new Error('lost acknowledgement'))
+    enqueue('note', { video_id: 1, text: 'once', client_ts: 123 })
+    const stored = JSON.parse(localStorage.getItem('a04.outbox')!)[0].body
+    expect(stored.request_id).toMatch(/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+    await drain()
+    await drain()
+    expect(createNote.mock.calls.map(([body]) => body)).toEqual([stored, stored])
+  })
+
+  it('restores the latest queued note for only the current participant and case', () => {
+    start('OTHER')
+    enqueue('note', { video_id: 1, text: 'private' })
+    start('T-001')
+    enqueue('note', { video_id: 1, text: 'older' })
+    enqueue('note', { video_id: 2, text: 'another case' })
+    enqueue('note', { video_id: 1, text: '' })
+    expect(pendingNote(1)?.body.text).toBe('')
+    stop()
+    expect(pending('T-001')).toBe(3)
+    expect(pending('OTHER')).toBe(1)
+    start('NEW')
+    expect(pendingNote(1)).toBeUndefined()
+  })
   it('keeps unsent writes across a reload', async () => {
     start('T-001')
     createNote.mockRejectedValue(new Error('offline'))

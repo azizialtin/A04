@@ -40,6 +40,7 @@ from app.schemas.participant import (
     VideoUrlResponse,
 )
 from app.services.event_logger import log_event
+from app.services.participant_writes import save_event, save_note
 from app.services.questionnaires import (
     expired_ck_answers,
     invalid_partial_answers,
@@ -181,6 +182,8 @@ async def enter_questionnaire(
         ),
     )
     db.add(visit)
+    await db.flush()
+    session.current_questionnaire_visit_id = visit.id
     await db.commit()
     return QuestionnaireVisitResponse(visit_id=visit.id, section_timing=timing_response(attempt))
 
@@ -220,6 +223,10 @@ async def finish_ck(
         visit.questionnaire_id != step["questionnaire_id"]
         or visit.step_index != index
         or visit.exited_client_ts is not None
+        or (
+            session.current_questionnaire_visit_id is not None
+            and session.current_questionnaire_visit_id != visit.id
+        )
     ):
         raise HTTPException(409, "This page visit is no longer active.")
     attempt = await ck_attempt(db, participant.id)
@@ -267,6 +274,7 @@ async def finish_ck(
     )
     end_attempt(attempt, body.client_ts, exit_reason)
     session.current_step_index = target
+    session.current_questionnaire_visit_id = None
     await db.commit()
     background_tasks.add_task(
         log_event,
@@ -293,6 +301,84 @@ async def finish_ck(
     )
 
 
+async def _submitted_visit_for_progress(
+    db: AsyncSession, session: Session, step: dict, step_index: int
+) -> QuestionnaireVisit:
+    # The server's visit marker, never browser clock order, identifies the save.
+    visit = await db.scalar(
+        select(QuestionnaireVisit).where(
+            QuestionnaireVisit.id == session.current_questionnaire_visit_id,
+            QuestionnaireVisit.participant_id == session.participant_id,
+            QuestionnaireVisit.questionnaire_id == step["questionnaire_id"],
+            QuestionnaireVisit.step_index == step_index,
+        )
+    )
+    if visit is None or visit.exited_client_ts is None or visit.exit_reason != "submitted":
+        raise HTTPException(409, "Save the current questionnaire before advancing.")
+    response = await db.scalar(
+        select(QuestionnaireResponse).where(
+            QuestionnaireResponse.participant_id == session.participant_id,
+            QuestionnaireResponse.questionnaire_id == visit.questionnaire_id,
+            QuestionnaireResponse.video_id.is_(None),
+        )
+    )
+    if (
+        response is None
+        or response.response_status not in {"submitted", "skipped"}
+        or response.answers != visit.submitted_answers
+        or missing_required_answers(step["questions"], response.answers)
+    ):
+        raise HTTPException(409, "Save the current questionnaire before advancing.")
+    return visit
+
+
+async def _submitted_ck_visit_for_progress(
+    db: AsyncSession,
+    session: Session,
+    raw: list[dict],
+    was_at: int,
+    target: int,
+) -> QuestionnaireVisit | None:
+    crossed = [
+        step
+        for step in raw[was_at:target]
+        if step["kind"] == "questionnaire" and step.get("section_key") == CK_SECTION
+    ]
+    if not crossed:
+        return None
+    if target != was_at + 1 or raw[was_at] != crossed[0]:
+        raise HTTPException(409, "Submit the current CK task or use the CK section finish.")
+
+    return await _submitted_visit_for_progress(db, session, crossed[0], was_at)
+
+
+async def _require_non_ck_submissions(
+    db: AsyncSession, session: Session, raw: list[dict], was_at: int, target: int
+) -> None:
+    for index in range(was_at, target):
+        step = raw[index]
+        kind = step["kind"]
+        if kind not in {"questionnaire", "diagnosis", "case_outro"}:
+            continue
+        if kind == "questionnaire" and step.get("section_key") == CK_SECTION:
+            continue
+        if kind == "case_outro" and not step.get("questions"):
+            continue
+        if target != was_at + 1 or index != was_at:
+            raise HTTPException(409, "Complete each questionnaire and diagnosis before advancing.")
+        if kind == "questionnaire" and step.get("section_key"):
+            await _submitted_visit_for_progress(db, session, step, index)
+            continue
+        answers = step.get("previous_answers")
+        if kind == "diagnosis":
+            if not (step.get("previous_text") or "").strip():
+                raise HTTPException(409, "Save the current diagnosis before advancing.")
+        elif answers is None:
+            raise HTTPException(409, "Save the current questionnaire before advancing.")
+        if missing_required_answers(step.get("questions", []), answers or {}):
+            raise HTTPException(409, "Answer every required question before advancing.")
+
+
 @router.patch("/session/progress", response_model=ProgressResult)
 async def update_progress(
     body: ProgressUpdateRequest,
@@ -315,25 +401,17 @@ async def update_progress(
     ):
         raise HTTPException(409, "The current page has changed. Reload the session.")
     if target > was_at:
+        submitted_visit = await _submitted_ck_visit_for_progress(db, session, raw, was_at, target)
+        await _require_non_ck_submissions(db, session, raw, was_at, target)
         session.current_step_index = target
-        if (
-            was_at < total
-            and raw[was_at].get("section_key") == CK_SECTION
-            and (target >= total or raw[target].get("section_key") != CK_SECTION)
+        session.current_questionnaire_visit_id = None
+        if submitted_visit is not None and (
+            target >= total or raw[target].get("section_key") != CK_SECTION
         ):
             attempt = await ck_attempt(db, participant.id)
             client_ts = body.client_ts
             if client_ts is None:
-                client_ts = await db.scalar(
-                    select(QuestionnaireVisit.exited_client_ts)
-                    .where(
-                        QuestionnaireVisit.participant_id == participant.id,
-                        QuestionnaireVisit.step_index == was_at,
-                        QuestionnaireVisit.exited_client_ts.is_not(None),
-                    )
-                    .order_by(QuestionnaireVisit.exited_client_ts.desc())
-                    .limit(1)
-                )
+                client_ts = submitted_visit.exited_client_ts
             if client_ts is not None:
                 end_attempt(attempt, client_ts, "completed")
 
@@ -386,10 +464,14 @@ async def step_back(
     target = min(was_at, len(raw)) - 1
     if body and body.visit_id and body.client_ts is not None:
         visit = await get_visit(db, participant.id, str(body.visit_id))
-        if visit.step_index != was_at:
+        if visit.step_index != was_at or (
+            session.current_questionnaire_visit_id is not None
+            and session.current_questionnaire_visit_id != visit.id
+        ):
             raise HTTPException(409, "Page visit does not match the current page.")
         close_visit(visit, body.client_ts, "step_back")
     session.current_step_index = target
+    session.current_questionnaire_visit_id = None
     await db.commit()
     background_tasks.add_task(
         log_event,
@@ -495,29 +577,11 @@ async def get_video_notes(
 @router.post("/notes", response_model=IdResponse, status_code=status.HTTP_201_CREATED)
 async def create_note(
     body: NoteCreate,
-    background_tasks: BackgroundTasks,
     participant: Participant = Depends(get_current_participant),
     db: AsyncSession = Depends(get_db),
 ) -> IdResponse:
     await _require_assigned(db, participant, body.video_id)
-    note = Note(
-        participant_id=participant.id,
-        video_id=body.video_id,
-        video_time_seconds=body.video_time_seconds,
-        client_ts=body.client_ts,
-        text=body.text,
-    )
-    db.add(note)
-    await db.commit()
-    await db.refresh(note)
-    background_tasks.add_task(
-        log_event,
-        participant_id=participant.id,
-        event_type="note_saved",
-        video_id=body.video_id,
-        payload={"video_time_seconds": body.video_time_seconds},
-    )
-    return IdResponse(id=note.id)
+    return IdResponse(id=await save_note(db, participant.id, body))
 
 
 def _reject_missing(questions: list[dict], answers: dict) -> None:
@@ -679,6 +743,11 @@ async def respond_questionnaire(
             raise HTTPException(409, "This page visit is already closed.")
         if visit.step_index != session.current_step_index:
             raise HTTPException(409, "The current page has changed.")
+        if (
+            session.current_questionnaire_visit_id is not None
+            and session.current_questionnaire_visit_id != visit.id
+        ):
+            raise HTTPException(409, "This page visit is no longer current. Reload the session.")
         if questionnaire.section_key == CK_SECTION:
             attempt = await ck_attempt(db, participant.id)
             if attempt and attempt.ended_client_ts is None and now_ms() >= attempt.deadline_ms:
@@ -706,6 +775,7 @@ async def respond_questionnaire(
             ):
                 end_attempt(await ck_attempt(db, participant.id), body.client_ts, "completed")
             session.current_step_index = target
+            session.current_questionnaire_visit_id = None
             progress_payload = _progress_payload(raw, index, target, False)
         body.time_spent_seconds = close_visit(visit, body.client_ts, "submitted")
         visit.submitted_answers = body.answers
@@ -751,15 +821,10 @@ async def respond_questionnaire(
 @router.post("/events", status_code=status.HTTP_202_ACCEPTED)
 async def log_participant_event(
     body: EventCreate,
-    background_tasks: BackgroundTasks,
     participant: Participant = Depends(get_current_participant),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    background_tasks.add_task(
-        log_event,
-        participant_id=participant.id,
-        event_type=body.event_type,
-        video_id=body.video_id,
-        payload=body.payload,
-        client_ts=body.client_ts,
-    )
+    if body.video_id is not None:
+        await _require_assigned(db, participant, body.video_id)
+    await save_event(db, participant.id, body)
     return {"status": "accepted"}

@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSyncExternalStore } from 'react'
 
 import { isCKDeadlineExpired, participantApi, type SessionScript } from '../api/participant'
+import { pendingNote, subscribe } from '../lib/outbox'
 
 export function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: participantApi.getMe })
@@ -11,10 +13,25 @@ export function useSession() {
 }
 
 export function useVideoNotes(videoId: number) {
-  return useQuery({
+  const queued = useSyncExternalStore(subscribe, () => pendingNote(videoId))
+  const query = useQuery({
     queryKey: ['notes', videoId],
     queryFn: () => participantApi.getVideoNotes(videoId),
   })
+  if (!queued) return query
+  return {
+    ...query,
+    isLoading: false,
+    data: [
+      ...(query.data ?? []),
+      {
+        video_time_seconds: Number(queued.body.video_time_seconds),
+        client_ts: typeof queued.body.client_ts === 'number' ? queued.body.client_ts : null,
+        text: String(queued.body.text),
+        created_at: '',
+      },
+    ],
+  }
 }
 
 export function useVideoReplay(videoId: number, enabled = true, pollPending = true) {

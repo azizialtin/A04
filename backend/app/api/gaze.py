@@ -101,7 +101,7 @@ class StartRecordingRequest(BaseModel):
     step_kind: Literal["case_video", "questionnaire", "diagnosis", "case_outro"] = "case_video"
     step_index: int | None = Field(default=None, ge=0)
     questionnaire_id: int | None = None
-    sampling_rate_hz: float = Field(gt=0)
+    sampling_rate_hz: float = Field(ge=1, le=2_147_483_647, allow_inf_nan=False)
     geometry: GazeGeometry | None = None
 
 

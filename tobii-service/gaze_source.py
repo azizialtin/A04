@@ -35,6 +35,15 @@ def gaze_frame(gaze: dict) -> dict:
                 f"{prefix}y": point[1] if valid else None,
             }
         )
+        pupil = gaze.get(f"{side}_pupil_diameter")
+        frame[f"{prefix}pd"] = (
+            pupil
+            if gaze.get(f"{side}_pupil_validity") == 1
+            and isinstance(pupil, (int, float))
+            and not isinstance(pupil, bool)
+            and math.isfinite(pupil)
+            else None
+        )
         origin = gaze.get(f"{side}_gaze_origin_in_user_coordinate_system", ())
         if (
             gaze.get(f"{side}_gaze_origin_validity") == 1

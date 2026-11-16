@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 from itertools import pairwise
 from types import SimpleNamespace
 
+import pytest
+
 from app.services.gaze_replay import (
     build_points,
     geometry_at,
@@ -148,12 +150,70 @@ def test_a_degenerate_geometry_maps_nothing():
     assert to_video_frame(0.5, 0.5, _geo(video=(0, 0, 0, 0))) is None
 
 
+def test_clip_replay_uses_the_samples_exact_layout_reference_after_a_resize():
+    first = _geo(ts=1000)
+    moved = _geo(ts=2000, video=(1000, 0, 1000, 1000))
+    sample = {"ts": 2100, "geometry_ts": 1000, "lx": 0.25, "ly": 0.5, "lv": True}
+    points, invalid, unmapped, offscreen = build_points([sample], [(1000, 3000, 0)], [first, moved])
+    assert points == [{"t": 1100, "x": 0.5, "y": 0.5}]
+    assert (invalid, unmapped, offscreen) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("reference", [None, 999, 3000])
+def test_clip_replay_never_substitutes_an_unknown_layout(reference):
+    sample = {"ts": 2100, "geometry_ts": reference, "lx": 0.25, "ly": 0.5, "lv": True}
+    assert build_points([sample], [(1000, 3000, 0)], [_geo(ts=1000)]) == ([], 0, 1, 0)
+
+
+def test_clip_replay_refuses_ambiguous_layout_timestamps():
+    sample = {"ts": 2100, "geometry_ts": 1000, "lx": 0.25, "ly": 0.5, "lv": True}
+    geometry = [_geo(ts=1000), _geo(ts=1000, video=(1000, 0, 1000, 1000))]
+    assert build_points([sample], [(1000, 3000, 0)], geometry) == ([], 0, 1, 0)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"visible": False},
+        {"screen": {"w": 2000, "h": 1000, "is_extended": True}},
+        {"visual_viewport": {"x": 0, "y": 0, "w": 1000, "h": 800, "scale": 2}},
+        {"visual_viewport": {"x": 5, "y": 0, "w": 1000, "h": 800, "scale": 1}},
+        {"window": None},
+    ],
+)
+def test_clip_replay_does_not_claim_known_unsupported_geometry_is_mapped(changes):
+    sample = {"ts": 2100, "geometry_ts": 1000, "lx": 0.25, "ly": 0.5, "lv": True}
+    assert build_points([sample], [(1000, 3000, 0)], [{**_geo(ts=1000), **changes}]) == (
+        [],
+        0,
+        1,
+        0,
+    )
+
+
+def test_clip_replay_does_not_paint_modal_reading_as_gaze_at_the_stimulus():
+    sample = {"ts": 2100, "geometry_ts": 1000, "lx": 0.25, "ly": 0.5, "lv": True}
+    assert build_points(
+        [sample], [(1000, 3000, 0)], [{**_geo(ts=1000), "active_modal": "info"}]
+    ) == ([], 0, 0, 1)
+
+
 def test_geometry_at_picks_the_layout_in_force():
     snaps = [_geo(ts=100), _geo(ts=200), _geo(ts=300)]
-    assert geometry_at(snaps, 50)["ts"] == 100  # before the first: use the first
+    assert geometry_at(snaps, 50) is None
     assert geometry_at(snaps, 250)["ts"] == 200
     assert geometry_at(snaps, 9999)["ts"] == 300
     assert geometry_at([], 250) is None
+
+
+def test_legacy_replay_uses_only_known_past_layouts_and_preserves_no_geometry_fallback():
+    sample = {"ts": 1500, "lx": 0.25, "ly": 0.5}
+    segments = [(1000, 3000, 0)]
+    assert build_points([sample], segments, [_geo(ts=2000)]) == ([], 0, 1, 0)
+    assert build_points([sample], segments, [_geo(ts=2000), _geo(ts=1000)])[0] == [
+        {"t": 500, "x": 0.5, "y": 0.5}
+    ]
+    assert build_points([sample], segments, [])[0] == [{"t": 500, "x": 0.25, "y": 0.5}]
 
 
 def test_build_points_counts_gaze_that_left_the_clip():

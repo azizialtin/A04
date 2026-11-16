@@ -50,13 +50,22 @@ export function toDisplay(target: Target): Target {
   }
 }
 
+export function hasGazePosition<T extends { x: number | null; y: number | null }>(
+  sample: T,
+): sample is T & { x: number; y: number } {
+  return (
+    typeof sample.x === 'number' &&
+    Number.isFinite(sample.x) &&
+    typeof sample.y === 'number' &&
+    Number.isFinite(sample.y)
+  )
+}
+
 /** Mean of the valid samples collected while a target was showing. */
 export function meanGaze(
   samples: { x: number | null; y: number | null }[],
 ): { x: number; y: number } | null {
-  const valid = samples.filter(
-    (s): s is { x: number; y: number } => typeof s.x === 'number' && typeof s.y === 'number',
-  )
+  const valid = samples.filter(hasGazePosition)
   if (!valid.length) return null
   return {
     x: valid.reduce((sum, s) => sum + s.x, 0) / valid.length,

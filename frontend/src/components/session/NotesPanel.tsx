@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { DRAFT_PREFIX, clearDraft } from '../../hooks/useLocalDraft'
 
 interface Props {
   getVideoTime: () => number
@@ -10,30 +12,41 @@ interface Props {
   onTypingBurst?: (durationMs: number, length: number) => void
   initialText?: string
   debounceMs?: number
+  draftKey?: string
 }
 
-/**
- * Notes box for the case screen. Saves debounced snapshots (and one on blur)
- * tagged with the current video time, so the think-aloud replay can reveal the
- * notes in sync with the clip.
- *
- * On a refresh mid-case it comes back with the last saved snapshot: the
- * step pointer resumes the run, and this resumes what the participant could
- * see while writing.
- */
-export default function NotesPanel({
-  getVideoTime,
-  onSnapshot,
-  onFocus,
-  onTypingBurst,
-  initialText = '',
-  debounceMs = 800,
-}: Props) {
+export interface NotesPanelHandle {
+  flush: () => void
+}
+
+function readDraft(key: string | undefined): string | null {
+  try {
+    return key ? window.localStorage.getItem(DRAFT_PREFIX + key) : null
+  } catch {
+    return null
+  }
+}
+
+/** Debounced replay snapshots, with each keystroke retained locally until queued. */
+const NotesPanel = forwardRef<NotesPanelHandle, Props>(function NotesPanel(
+  {
+    getVideoTime,
+    onSnapshot,
+    onFocus,
+    onTypingBurst,
+    initialText = '',
+    debounceMs = 800,
+    draftKey,
+  },
+  ref,
+) {
   const { t } = useTranslation()
-  const [text, setText] = useState(initialText)
-  const latest = useRef(initialText)
-  const saved = useRef(initialText)
-  const touched = useRef(false)
+  const [restored] = useState(() => readDraft(draftKey))
+  const [text, setText] = useState(restored ?? initialText)
+  const latest = useRef(restored ?? initialText)
+  // An empty recovered draft can mean the participant deleted older notes.
+  const saved = useRef<string | null>(restored === null ? initialText : null)
+  const touched = useRef(restored !== null)
   const timer = useRef<number | undefined>(undefined)
   const burstStart = useRef<number | null>(null)
   const burstEnd = useRef(0)
@@ -48,24 +61,36 @@ export default function NotesPanel({
   }, [initialText])
 
   const flush = () => {
+    window.clearTimeout(timer.current)
     const started = burstStart.current
     burstStart.current = null
-    if (latest.current === saved.current) return
-    saved.current = latest.current
-    // First to last keystroke. Measuring to here instead would add the debounce
-    // on one path and not the other, and the two would not be comparable.
-    if (started !== null) onTypingBurst?.(burstEnd.current - started, latest.current.length)
-    onSnapshot(getVideoTime(), latest.current)
+    if (latest.current !== saved.current) {
+      // Exclude the debounce from the measured typing duration.
+      if (started !== null) onTypingBurst?.(burstEnd.current - started, latest.current.length)
+      onSnapshot(getVideoTime(), latest.current)
+      saved.current = latest.current
+    }
+    if (draftKey) clearDraft(draftKey)
   }
+  const flushRef = useRef(flush)
+  flushRef.current = flush
+  useImperativeHandle(ref, () => ({ flush }))
 
   const handleChange = (value: string) => {
     touched.current = true
     setText(value)
     latest.current = value
+    if (draftKey) {
+      try {
+        window.localStorage.setItem(DRAFT_PREFIX + draftKey, value)
+      } catch {
+        /* Keep the in-memory draft if local storage is unavailable. */
+      }
+    }
     burstEnd.current = Date.now()
     if (burstStart.current === null) burstStart.current = burstEnd.current
     if (timer.current) window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(flush, debounceMs)
+    timer.current = window.setTimeout(() => flushRef.current(), debounceMs)
   }
 
   const handleBlur = () => {
@@ -73,7 +98,21 @@ export default function NotesPanel({
     flush()
   }
 
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  useEffect(() => {
+    // Recover a draft even when the previous page never received pagehide.
+    if (restored !== null) flushRef.current()
+    const save = () => flushRef.current()
+    const hide = () => {
+      if (document.visibilityState === 'hidden') save()
+    }
+    window.addEventListener('pagehide', save)
+    document.addEventListener('visibilitychange', hide)
+    return () => {
+      window.removeEventListener('pagehide', save)
+      document.removeEventListener('visibilitychange', hide)
+      save()
+    }
+  }, [restored])
 
   return (
     <textarea
@@ -86,4 +125,6 @@ export default function NotesPanel({
       aria-label={t('case.notes_label')}
     />
   )
-}
+})
+
+export default NotesPanel

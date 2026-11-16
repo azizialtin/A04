@@ -339,7 +339,7 @@
    Smaller windows retain that same DOM and keyboard order in normal flow. */
 @media (min-width: 1600px) {
   .shell__main:has(.pretest-page--pilot.pretest-page--pck) {
-    padding: 16px 24px;
+    padding: 16px 24px 15px;
   }
   .pretest-page--pilot.pretest-page--pck .panel--form {
     max-width: 1840px;

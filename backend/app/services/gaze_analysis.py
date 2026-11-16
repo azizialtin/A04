@@ -25,6 +25,38 @@ def averaged_gaze(sample: dict, *, allow_unknown: bool = False) -> tuple[float, 
     return sum(x for x, _ in eyes) / len(eyes), sum(y for _, y in eyes) / len(eyes)
 
 
+def unsupported_mapping_reason(geometry: dict) -> str | None:
+    screen, window = geometry.get("screen"), geometry.get("window")
+    if (
+        not isinstance(screen, dict)
+        or not isinstance(window, dict)
+        or any(not finite_number(screen.get(key)) for key in ("w", "h"))
+        or any(
+            not finite_number(window.get(key))
+            for key in ("x", "y", "outer_w", "outer_h", "inner_w", "inner_h")
+        )
+    ):
+        return "incomplete_geometry"
+    viewport = geometry.get("visual_viewport")
+    if viewport is not None and (
+        not isinstance(viewport, dict)
+        or viewport.get("scale") != 1
+        or viewport.get("x") != 0
+        or viewport.get("y") != 0
+    ):
+        return "unsupported_visual_viewport"
+    if screen.get("is_extended") is True:
+        return "multiple_displays"
+    if (
+        window["x"] >= screen["w"]
+        or window["y"] >= screen["h"]
+        or window["x"] + window["outer_w"] <= 0
+        or window["y"] + window["outer_h"] <= 0
+    ):
+        return "window_outside_screen"
+    return None
+
+
 class GazeLayout:
     def __init__(self, geometry: list[dict]):
         self.snapshots = sorted(
@@ -38,6 +70,17 @@ class GazeLayout:
                 self.by_timestamp[ts] = None
             else:
                 self.by_timestamp[ts] = snapshot
+
+    def geometry_for(self, sample: dict) -> dict | None:
+        if not finite_number(sample.get("ts")):
+            return None
+        if "geometry_ts" in sample:
+            reference = sample["geometry_ts"]
+            if not finite_number(reference) or reference > sample["ts"]:
+                return None
+            return self.by_timestamp.get(reference)
+        index = bisect_right(self.timestamps, sample["ts"]) - 1
+        return self.snapshots[index] if index >= 0 else None
 
     def locate(self, sample: dict) -> dict:
         result: dict[str, Any] = {
@@ -53,18 +96,9 @@ class GazeLayout:
         if not (0 <= x <= 1 and 0 <= y <= 1):
             return {**result, "aoi": "offscreen", "aoi_status": "offscreen"}
         result.update(aoi="unmapped", aoi_status="unmapped")
-        if "geometry_ts" in sample:
-            reference = sample["geometry_ts"]
-            if not finite_number(reference) or reference > sample["ts"]:
-                return result
-            geometry = self.by_timestamp.get(reference)
-            if geometry is None:
-                return result
-        else:
-            i = bisect_right(self.timestamps, sample["ts"]) - 1
-            if i < 0:
-                return result
-            geometry = self.snapshots[i]
+        geometry = self.geometry_for(sample)
+        if geometry is None:
+            return result
         result.update(layout_ts=geometry["ts"], active_modal=geometry.get("active_modal"))
         try:
             screen, window = geometry["screen"], geometry["window"]
@@ -85,23 +119,9 @@ class GazeLayout:
         # These signals disprove the simple transform. Keep its candidate
         # coordinates for inspection, but do not assign a research AOI.
         # Missing signals (or is_extended=False) do not verify the transform.
-        viewport = geometry.get("visual_viewport")
-        if viewport is not None and (
-            not isinstance(viewport, dict)
-            or viewport.get("scale") != 1
-            or viewport.get("x") != 0
-            or viewport.get("y") != 0
-        ):
-            return {**result, "mapping_reason": "unsupported_visual_viewport"}
-        if screen.get("is_extended") is True:
-            return {**result, "mapping_reason": "multiple_displays"}
-        if (
-            window["x"] >= screen["w"]
-            or window["y"] >= screen["h"]
-            or window["x"] + window["outer_w"] <= 0
-            or window["y"] + window["outer_h"] <= 0
-        ):
-            return {**result, "mapping_reason": "window_outside_screen"}
+        reason = unsupported_mapping_reason(geometry)
+        if reason is not None:
+            return {**result, "mapping_reason": reason}
         aois = geometry.get("aois")
         if "geometry_ts" not in sample or geometry.get("visible", True) is False or aois is None:
             return result

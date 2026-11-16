@@ -34,6 +34,7 @@ export default function StudyText({
   startLine = 1,
   restartCodeBlocks = false,
   layout,
+  aoiId,
 }: {
   text: string
   className?: string
@@ -43,6 +44,7 @@ export default function StudyText({
   restartCodeBlocks?: boolean
   /** A shared task stimulus can place its prose beside its single code window. */
   layout?: 'stimulus'
+  aoiId?: string
 }) {
   const segments = splitCodeBlocks(text)
   let nextLine = Number.isSafeInteger(startLine) && startLine > 0 ? startLine : 1
@@ -53,17 +55,35 @@ export default function StudyText({
   })
   const content = numbered.map(({ segment, firstLine }, i) => {
     if (segment.kind === 'code')
-      return <CodeBlock key={i} code={segment.lines} lang={segment.lang} startLine={firstLine} />
+      return (
+        <CodeBlock
+          key={i}
+          code={segment.lines}
+          lang={segment.lang}
+          startLine={firstLine}
+          aoiId={aoiId}
+        />
+      )
     const prose =
       mode === 'preserve' ? (
-        <p key={i} className={className} style={{ whiteSpace: 'pre-wrap', ...style }}>
+        <p
+          key={i}
+          className={className}
+          style={{ whiteSpace: 'pre-wrap', ...style }}
+          data-aoi={aoiId}
+        >
           {emphasis(segment.text.replace(/^\n+|\n+$/g, ''))}
         </p>
       ) : (
         paragraphs(segment.text).map((paragraph, j) => {
           const items = bullets(paragraph)
           return items ? (
-            <ul key={`${i}-${j}`} className={cx('prose-list', className)} style={style}>
+            <ul
+              key={`${i}-${j}`}
+              className={cx('prose-list', className)}
+              style={style}
+              data-aoi={aoiId}
+            >
               {items.map((item, k) => (
                 <li key={k}>{emphasis(item)}</li>
               ))}
@@ -78,6 +98,7 @@ export default function StudyText({
                   : undefined,
               )}
               style={style}
+              data-aoi={aoiId}
             >
               {emphasis(paragraph)}
             </p>

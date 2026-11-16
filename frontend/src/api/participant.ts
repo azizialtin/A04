@@ -244,6 +244,7 @@ export const participantApi = {
   getVideoReplay: (videoId: number) =>
     apiClient.get<ReplayData>(`/gaze/videos/${videoId}/replay`).then((r) => r.data),
   createNote: (body: {
+    request_id?: string
     video_id: number
     video_time_seconds: number
     client_ts?: number
@@ -271,6 +272,7 @@ export const participantApi = {
       .post(`/participant/questionnaires/${questionnaireId}/respond`, body)
       .then((r) => r.data),
   logEvent: (body: {
+    request_id?: string
     event_type: string
     video_id?: number
     payload?: Record<string, unknown>

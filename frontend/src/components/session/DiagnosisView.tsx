@@ -5,6 +5,7 @@ import type { NoteSnapshot } from '../../api/participant'
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
 import { useLocalDraft } from '../../hooks/useLocalDraft'
 import { studyCodeLineCount } from '../../lib/code'
+import { latestNote } from '../../lib/notes'
 import { missingRequired, type Answers, type Question } from '../../lib/questionnaire'
 import StudyText from '../StudyText'
 import { QuestionnaireFields } from './QuestionnaireRenderer'
@@ -48,8 +49,7 @@ export default function DiagnosisView({
   }, [text, initialText, setText])
   const elapsed = useElapsedSeconds()
 
-  // The last snapshot is the fullest version of what they wrote.
-  const notesText = notes.length ? notes[notes.length - 1].text : ''
+  const notesText = latestNote(notes)?.text ?? ''
   const incomplete = !text.trim() || missingRequired(questions, answers).length > 0
 
   return (

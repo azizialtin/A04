@@ -5,6 +5,7 @@ import { gazeApi } from '../../api/gaze'
 import {
   CALIBRATION_TARGETS,
   VALIDATION_TARGETS,
+  hasGazePosition,
   meanGaze,
   meanOffset,
   offsetInDegrees,
@@ -44,9 +45,7 @@ export default function CalibrationScreen({ onComplete }: Props) {
   const [phase, setPhase] = useState<Phase>('connecting')
   const [target, setTarget] = useState<Target | null>(null)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
-  const [result, setResult] = useState<{ offset: number | null; degrees: number | null } | null>(
-    null,
-  )
+  const [result, setResult] = useState<{ offset: number; degrees: number | null } | null>(null)
   const [error, setError] = useState('')
 
   const bridgeRef = useRef<Bridge | null>(null)
@@ -62,6 +61,16 @@ export default function CalibrationScreen({ onComplete }: Props) {
         }
         bridgeRef.current = bridge
         bridge.onGaze = (sample) => collected.current.push(sample)
+        bridge.onStatus = (status) => {
+          if (!cancelled)
+            setPhase((current) =>
+              ['connecting', 'ready', 'no_tracker'].includes(current)
+                ? status.connected
+                  ? 'ready'
+                  : 'no_tracker'
+                : current,
+            )
+        }
         setPhase(bridge.status.connected ? 'ready' : 'no_tracker')
       })
       .catch(() => {
@@ -102,7 +111,7 @@ export default function CalibrationScreen({ onComplete }: Props) {
     collected.current = []
     await wait(MEASURE_MS)
 
-    const samples = collected.current.slice()
+    const samples = collected.current.filter(hasGazePosition)
     const display = toDisplay(at)
     const gaze = meanGaze(samples)
     const point: ValidationPoint = {
@@ -111,9 +120,11 @@ export default function CalibrationScreen({ onComplete }: Props) {
       gaze_x: gaze?.x ?? null,
       gaze_y: gaze?.y ?? null,
       offset: gaze ? offsetOf(display, gaze, aspect) : null,
-      samples: samples.filter((s) => s.x !== null).length,
+      samples: samples.length,
     }
-    const distances = samples.map((s) => s.dz).filter((d): d is number => d !== null)
+    const distances = samples
+      .map((s) => s.dz)
+      .filter((d): d is number => d !== null && Number.isFinite(d) && d > 0)
     return {
       point,
       distance: distances.length ? distances.reduce((a, b) => a + b, 0) / distances.length : null,
@@ -126,6 +137,8 @@ export default function CalibrationScreen({ onComplete }: Props) {
 
     setPhase('running')
     setError('')
+    setResult(null)
+    const points: ValidationPoint[] = []
     try {
       await document.documentElement.requestFullscreen?.().catch(() => {})
 
@@ -152,7 +165,6 @@ export default function CalibrationScreen({ onComplete }: Props) {
       // was not calibrated against.
       bridge.send('start_gaze')
       const aspect = (window.screen.width || 16) / (window.screen.height || 9)
-      const points: ValidationPoint[] = []
       const distances: number[] = []
       for (const [i, at] of VALIDATION_TARGETS.entries()) {
         const { point, distance } = await measure(at, aspect)
@@ -167,6 +179,14 @@ export default function CalibrationScreen({ onComplete }: Props) {
       setTarget(null)
 
       const offset = meanOffset(points)
+      // Averaging the remaining targets must not hide a missing measurement.
+      if (
+        offset === null ||
+        !Number.isFinite(offset) ||
+        points.some((point) => point.samples === 0 || !Number.isFinite(point.offset))
+      ) {
+        throw new Error(t('calibration.error_generic'))
+      }
       const degrees = offsetInDegrees(
         offset,
         bridge.status.display_w_mm,
@@ -176,10 +196,11 @@ export default function CalibrationScreen({ onComplete }: Props) {
       setResult({ offset, degrees })
       setPhase('done')
     } catch (err) {
+      bridge.send('stop_gaze')
       bridge.send('calibrate_abort')
       setTarget(null)
       setError(err instanceof Error ? err.message : t('calibration.error_generic'))
-      await save('failed')
+      await save('failed', points)
       setPhase('failed')
     } finally {
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
@@ -261,12 +282,10 @@ export default function CalibrationScreen({ onComplete }: Props) {
               {result.degrees !== null
                 ? t('calibration.accuracy_degrees', { value: result.degrees.toFixed(2) })
                 : t('calibration.accuracy_fraction', {
-                    value: ((result.offset ?? 0) * 100).toFixed(1),
+                    value: (result.offset * 100).toFixed(1),
                   })}
             </p>
-            {(result.offset ?? 0) > OFFSET_WARN && (
-              <p className="error-text">{t('calibration.poor')}</p>
-            )}
+            {result.offset > OFFSET_WARN && <p className="error-text">{t('calibration.poor')}</p>}
             <div className="panel__actions">
               <button type="button" className="btn btn-secondary" onClick={() => void run()}>
                 {t('calibration.repeat')}

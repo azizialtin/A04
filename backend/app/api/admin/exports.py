@@ -326,16 +326,19 @@ def _with_case(stmt, participant_col, video_col, study_id: int):
     the training clips in opposite orders, so clip 8 is one person's second
     case and another's eighth. The position comes from the sequence copied onto
     the participant — the order they actually met the cases in, whichever set
-    was dealt or whatever was hand-picked. A run with no sequence at all is on
-    the study's default order and is numbered like that. Rows with no case, a
+    was dealt or whatever was hand-picked. Only an unpinned preview can use
+    the study's default order. Rows with no case, a
     login or a pre-test page, leave all three empty.
 
     The four columns land at the end of the row, where `_case_cells` reads them.
     """
     slot = aliased(ParticipantVideo)
     any_slot = aliased(ParticipantVideo)
+    pinned = aliased(Participant)
     positions = _default_positions(study_id)
-    has_sequence = exists().where(any_slot.participant_id == participant_col)
+    has_sequence = exists().where(any_slot.participant_id == participant_col) | exists().where(
+        pinned.id == participant_col, pinned.video_sequence_pinned
+    )
     position = case(
         (slot.slot_index.is_not(None), slot.slot_index + 1),
         (and_(video_col.is_not(None), ~has_sequence), positions.c.position),

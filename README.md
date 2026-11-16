@@ -34,7 +34,7 @@ docs/            plan and notes
 ## Prerequisites
 
 - Docker (for Postgres)
-- Python 3.11+ and Node 20+
+- Python 3.11+ and Node 22.12+ on the 22.x or 24.x LTS lines
 - ffmpeg, if you want the screen recording from the bridge (the bridge carries
   on without it; when bridge capture is unavailable, the browser can record
   the display after the participant grants screen sharing)
@@ -143,9 +143,17 @@ rate limited per address. Admin sessions can be ended server-side with
 `revoke-sessions`. CSV exports escape spreadsheet formula characters, and video
 uploads are checked against their own container header before being stored.
 
-`npm audit` flags advisories in the **dev toolchain only** (vite / vitest /
-esbuild) — none of it ships in the built bundle. The only remedy is a breaking
-vite 6 / vitest 3 upgrade, deferred deliberately.
+CI audits both runtime and development dependencies with `npm audit` and
+`pip-audit`. The frontend uses the maintained Vite 7.3 line and Vitest 5;
+its browser build targets remain unchanged. A scoped `minimatch` 11 override
+for `@typescript-eslint/typescript-estree` closes
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+while that parser still requests version 10. Remove the override when the
+upstream dependency range includes the patched version. Python test tooling
+uses pytest 9.0.3 with pytest-asyncio 1.3 to include the
+[temporary-directory security fix](https://github.com/pytest-dev/pytest/releases/tag/9.0.3).
+Use fresh installs from the lockfile/pinned requirements when auditing; an older
+local environment can contain stale or unrelated packages.
 
 ## Ports
 
