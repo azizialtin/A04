@@ -47,7 +47,13 @@ from app.models.video import Video
 from app.models.video_set import VideoSet, VideoSetItem
 from app.services.log_data import variable_name
 from app.services.section_timing import CK_SECONDS, CK_SECTION
-from app.services.session_script import build_steps, count_steps, default_order, pre_test_step_count
+from app.services.session_script import (
+    build_steps,
+    count_steps,
+    default_order,
+    flow_settings,
+    pre_test_step_count,
+)
 from app.services.stats import (
     CASE_EVENTS,
     EMPTY_CASE,
@@ -615,7 +621,15 @@ async def study_stats(
     for p in participants:
         session = sessions.get(p.id)
         phases = assigned.get(p.id) or default_phases
-        total_steps = count_steps(pre_pages, phases, calibration_step)
+        flow_version, mode, narration_count = flow_settings(p, study)
+        total_steps = count_steps(
+            pre_pages,
+            phases,
+            calibration_step,
+            flow_version=flow_version,
+            think_aloud_mode=mode,
+            think_aloud_count=narration_count,
+        )
         step = session.current_step_index if session else 0
         note_count, note_chars = _got(p_notes, p.id, (0, 0))
         event_count, first_event, last_event = p_events.get(p.id) or (0, None, None)

@@ -164,6 +164,9 @@ async def participant_detail(
         video_set_id=p.video_set_id,
         video_set_name=video_set.name if video_set else None,
         think_aloud_batch_size=p.think_aloud_batch_size,
+        flow_version=p.flow_version,
+        think_aloud_mode=p.think_aloud_mode,
+        think_aloud_count=p.think_aloud_count,
     )
 
 

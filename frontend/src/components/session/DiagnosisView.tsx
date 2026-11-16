@@ -10,6 +10,7 @@ import StudyText from '../StudyText'
 import { QuestionnaireFields } from './QuestionnaireRenderer'
 
 interface Props {
+  pilot?: boolean
   taskDescription: string
   notes: NoteSnapshot[]
   draftKey: string
@@ -24,6 +25,7 @@ interface Props {
 
 export default function DiagnosisView({
   taskDescription,
+  pilot = false,
   notes,
   draftKey,
   questions = [],
@@ -53,14 +55,14 @@ export default function DiagnosisView({
   return (
     <div className="panel panel--form">
       <h2 data-aoi="page_title">{t('diagnosis.title')}</h2>
-      {taskDescription ? (
+      {!pilot && taskDescription ? (
         <div data-aoi="task">
           <StudyText text={taskDescription} className="muted" />
         </div>
       ) : null}
 
       <label className="label" htmlFor="diagnosis-text" data-aoi="diagnosis_prompt">
-        {t('diagnosis.prompt')}
+        {t(pilot ? 'pilot.diagnosis_prompt' : 'diagnosis.prompt')}
       </label>
       <textarea
         id="diagnosis-text"
@@ -76,7 +78,7 @@ export default function DiagnosisView({
         questions={questions}
         answers={answers}
         onChange={setAnswers}
-        startLine={1 + studyCodeLineCount(taskDescription)}
+        startLine={pilot ? 1 : 1 + studyCodeLineCount(taskDescription)}
       />
 
       <div className="notes-recap" data-aoi="notes">

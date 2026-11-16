@@ -28,6 +28,7 @@ export interface QuestionCodeBlock {
 export interface DebuggingAnswer {
   lines: number[]
   explanation: string
+  skipped?: true
 }
 
 export interface Question {
@@ -44,6 +45,10 @@ export interface Question {
   max?: number
   /** Number of reported locations, independently of the largest code line. */
   max_entries?: number
+  allow_skip?: boolean
+  min_selections?: number
+  max_selections?: number
+  matrix_prompt?: string
   /**
    * Consecutive single-choice questions with the same key and the same options
    * are shown as one table — a row each, the options listed once — rather
@@ -119,6 +124,28 @@ export function definitionErrors(questions: unknown): string[] {
         !('equals' in condition))
     ) {
       errors.push(`${prefix}: Bedingung braucht eine Frage dieser Seite und einen Vergleichswert.`)
+    }
+    if (
+      'allow_skip' in question &&
+      (kind !== 'debugging' || typeof question.allow_skip !== 'boolean')
+    )
+      errors.push(`${prefix}: allow_skip ist nur als Wahrheitswert für Debugging-Aufgaben erlaubt.`)
+    if ('matrix_prompt' in question && typeof question.matrix_prompt !== 'string')
+      errors.push(`${prefix}: matrix_prompt muss Text sein.`)
+    for (const field of ['min_selections', 'max_selections']) {
+      if (field in question && (kind !== 'multi_select' || !positiveInteger(question[field])))
+        errors.push(`${prefix}: ${field} muss eine positive ganze Zahl für Mehrfachauswahl sein.`)
+    }
+    if (kind === 'multi_select') {
+      const min = question.min_selections
+      const max = question.max_selections
+      const count = Array.isArray(question.options) ? question.options.length : 0
+      if (
+        (typeof min === 'number' && min > count) ||
+        (typeof max === 'number' && max > count) ||
+        (typeof min === 'number' && typeof max === 'number' && min > max)
+      )
+        errors.push(`${prefix}: Auswahlgrenzen müssen zur Anzahl der Antwortoptionen passen.`)
     }
     for (const field of ['max_entries', 'code_start_line']) {
       if (field in question && !positiveInteger(question[field])) {
@@ -335,12 +362,28 @@ export function lineEntryLimit(question: Question): number | undefined {
 export function validDebuggingAnswer(question: Question, value: unknown): value is DebuggingAnswer {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   const answer = value as Record<string, unknown>
+  if ('skipped' in answer) return validSkippedDebuggingAnswer(question, answer)
   return (
     Object.keys(answer).every((key) => key === 'lines' || key === 'explanation') &&
     Array.isArray(answer.lines) &&
     validLineNumbers(question, answer.lines) &&
     typeof answer.explanation === 'string' &&
     answer.explanation.trim() !== ''
+  )
+}
+
+export function validSkippedDebuggingAnswer(question: Question, value: unknown): boolean {
+  if (!question.allow_skip || !value || typeof value !== 'object' || Array.isArray(value))
+    return false
+  const answer = value as Record<string, unknown>
+  return (
+    question.type === 'debugging' &&
+    answer.skipped === true &&
+    answer.explanation === '' &&
+    Array.isArray(answer.lines) &&
+    answer.lines.length === 1 &&
+    answer.lines[0] === 0 &&
+    Object.keys(answer).every((key) => ['lines', 'explanation', 'skipped'].includes(key))
   )
 }
 
@@ -361,7 +404,11 @@ export function validRanking(question: Question, value: unknown): value is (stri
 }
 
 /** Checkbox selections retain authored value types; an empty selection is valid input. */
-export function validMultiSelect(question: Question, value: unknown): value is (string | number)[] {
+export function validMultiSelect(
+  question: Question,
+  value: unknown,
+  partial = false,
+): value is (string | number)[] {
   const options = (question.options ?? []).map(normaliseOption).map((option) => option.value)
   return (
     options.length > 0 &&
@@ -372,6 +419,8 @@ export function validMultiSelect(question: Question, value: unknown): value is (
     new Set(options).size === options.length &&
     Array.isArray(value) &&
     new Set(value).size === value.length &&
+    (partial || question.min_selections === undefined || value.length >= question.min_selections) &&
+    (question.max_selections === undefined || value.length <= question.max_selections) &&
     value.every((option) => options.includes(option))
   )
 }
@@ -391,11 +440,12 @@ export function invalidPartialAnswers(questions: Question[], answers: Answers): 
     .filter((question) => {
       const value = answers[question.id]
       if (!visible.has(question.id) || value === undefined) return false
-      if (question.type === 'multi_select') return !validMultiSelect(question, value)
+      if (question.type === 'multi_select') return !validMultiSelect(question, value, true)
       if (value === null) return false
       if (question.type === 'debugging') {
         if (typeof value !== 'object' || Array.isArray(value)) return true
         const answer = value as Record<string, unknown>
+        if ('skipped' in answer) return !validSkippedDebuggingAnswer(question, answer)
         return (
           Object.keys(answer).some((key) => key !== 'lines' && key !== 'explanation') ||
           (answer.explanation != null && typeof answer.explanation !== 'string') ||

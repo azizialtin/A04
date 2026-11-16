@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios'
 import type { AudioCaptureMeta } from './screen'
 import apiClient from './client'
 import type { Question } from '../lib/questionnaire'
@@ -47,6 +48,8 @@ export interface ReplayData extends Partial<AudioCaptureMeta> {
 interface StepBase {
   index: number
   completed: boolean
+  case_number?: number
+  case_total?: number
 }
 
 /** The welcome page's wording as the study has it; empty strings mean the app's default. */
@@ -59,6 +62,7 @@ export interface WelcomeTexts {
 
 export type SessionStep =
   | (StepBase & { kind: 'welcome'; texts?: WelcomeTexts })
+  | (StepBase & { kind: 'text_page'; key: string; title: string; body: string })
   | (StepBase & {
       kind: 'section_intro'
       section_key: string
@@ -103,7 +107,7 @@ export type SessionStep =
   | (StepBase & {
       kind: 'case_video'
       video_id: number
-      title: string
+      title?: string
       task_description: string
       info_text: string
       student_task_text: string
@@ -112,7 +116,7 @@ export type SessionStep =
   | (StepBase & {
       kind: 'diagnosis'
       video_id: number
-      title: string
+      title?: string
       task_description: string
       section: string
       // Rating questions shown under the write-up and submitted with it.
@@ -139,7 +143,7 @@ export type SessionStep =
   | (StepBase & {
       kind: 'think_aloud'
       video_id: number
-      title: string
+      title?: string
       // Where this case sits in its phase, and which of the block's recordings
       // this is. A block is one screen unless the study batches the training
       // phase, so `batch_size` is 1 for most runs.
@@ -154,6 +158,7 @@ export type SessionStep =
   | (StepBase & { kind: 'thanks' })
 
 export interface SessionScript {
+  flow_version?: string
   status: string
   current_step_index: number
   total_steps: number
@@ -193,6 +198,14 @@ export const authApi = {
       .then((r) => r.data),
 }
 
+export function isCKDeadlineExpired(error: unknown): boolean {
+  return (
+    isAxiosError<{ detail?: { code?: string } }>(error) &&
+    error.response?.status === 409 &&
+    error.response.data?.detail?.code === 'ck_deadline_expired'
+  )
+}
+
 export const participantApi = {
   getMe: () => apiClient.get<Me>('/participant/me').then((r) => r.data),
   getSession: () => apiClient.get<SessionScript>('/participant/session').then((r) => r.data),
@@ -222,6 +235,7 @@ export const participantApi = {
     request_id: string
     client_ts: number
     answers: Record<string, unknown>
+    reason?: 'supervisor' | 'timer_expired'
   }) => apiClient.post<ProgressResult>('/participant/session/finish-ck', body).then((r) => r.data),
   getVideoUrl: (videoId: number) =>
     apiClient.get<{ signed_url: string }>(`/participant/videos/${videoId}/url`).then((r) => r.data),

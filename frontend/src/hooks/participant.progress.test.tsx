@@ -4,7 +4,7 @@ import type { PropsWithChildren } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { participantApi, type SessionScript } from '../api/participant'
-import { useSession, useUpdateProgress } from './participant'
+import { useFinishCK, useRespondQuestionnaire, useSession, useUpdateProgress } from './participant'
 
 const script: SessionScript = {
   status: 'active',
@@ -120,4 +120,78 @@ test('a delayed progress response cannot rewind a more recent cached pointer', a
   expect(client.getQueryData<SessionScript>(['session'])?.status).toBe('completed')
   unmount()
   client.clear()
+})
+
+test('deadline rejection skips transport retries and reconciles before timer takeover', async () => {
+  const error = Object.assign(new Error('deadline'), {
+    isAxiosError: true,
+    response: { status: 409, data: { detail: { code: 'ck_deadline_expired' } } },
+  })
+  const respond = vi.spyOn(participantApi, 'respondQuestionnaire').mockRejectedValue(error)
+  const getSession = vi.spyOn(participantApi, 'getSession').mockResolvedValue(script)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: PropsWithChildren) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const { result, unmount } = renderHook(() => useRespondQuestionnaire(), { wrapper })
+  await act(async () => {
+    await expect(
+      result.current.mutateAsync({
+        questionnaireId: 1,
+        video_id: null,
+        answers: {},
+        advance: true,
+      }),
+    ).rejects.toThrow('deadline')
+  })
+  expect(respond).toHaveBeenCalledOnce()
+  expect(getSession).toHaveBeenCalledOnce()
+  expect(result.current.isPending).toBe(false)
+  unmount()
+  client.clear()
+})
+
+test('lost manual finish acknowledgements keep the retry dialog while timer exits reconcile', async () => {
+  vi.useFakeTimers()
+  try {
+    const finish = vi
+      .spyOn(participantApi, 'finishCK')
+      .mockRejectedValue(new Error('lost acknowledgement'))
+    const getSession = vi
+      .spyOn(participantApi, 'getSession')
+      .mockResolvedValue({ ...script, current_step_index: 1 })
+    for (const reason of ['supervisor', 'timer_expired'] as const) {
+      finish.mockClear()
+      getSession.mockClear()
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      client.setQueryData(['session'], script)
+      const wrapper = ({ children }: PropsWithChildren) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      )
+      const { result, unmount } = renderHook(() => useFinishCK(), { wrapper })
+      const body = {
+        expected_step_index: 0,
+        visit_id: 'visit',
+        request_id: 'immutable',
+        client_ts: 100,
+        answers: { ck: { lines: [2] } },
+        reason,
+      }
+      await act(async () => {
+        const attempt = result.current.mutateAsync(body).catch((error: unknown) => error)
+        await vi.advanceTimersByTimeAsync(2000)
+        await attempt
+      })
+      expect(finish).toHaveBeenCalledTimes(3)
+      for (const [sent] of finish.mock.calls) expect(sent).toEqual(body)
+      expect(getSession).toHaveBeenCalledTimes(reason === 'timer_expired' ? 1 : 0)
+      expect(client.getQueryData<SessionScript>(['session'])?.current_step_index).toBe(
+        reason === 'timer_expired' ? 1 : 0,
+      )
+      unmount()
+      client.clear()
+    }
+  } finally {
+    vi.useRealTimers()
+  }
 })

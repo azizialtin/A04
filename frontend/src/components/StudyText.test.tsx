@@ -82,3 +82,22 @@ test('an explicit starting line applies to the exercise and a separate exercise 
     ),
   ).toEqual(['8', '9', '1', '2'])
 })
+
+test('inline code stays escaped and student-task blocks can restart without changing CK defaults', () => {
+  const text =
+    'Klasse `Heizung` und `<img src=x>`.\n\n```java\nint a;\nint b;\n```\n\n```java\nreturn a;\n```'
+  const { container, rerender } = render(<StudyText text={text} restartCodeBlocks />)
+  expect(container.querySelector('p code')).toHaveTextContent('Heizung')
+  expect(container.querySelector('img')).toBeNull()
+  expect(
+    Array.from(container.querySelectorAll('.code__line')).map((line) =>
+      line.getAttribute('data-line'),
+    ),
+  ).toEqual(['1', '2', '1'])
+  rerender(<StudyText text={text} />)
+  expect(
+    Array.from(container.querySelectorAll('.code__line')).map((line) =>
+      line.getAttribute('data-line'),
+    ),
+  ).toEqual(['1', '2', '3'])
+})

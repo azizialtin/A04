@@ -41,10 +41,13 @@ failure that looks like a broken login.
 - **The screen recording.** Headless Chromium has no bridge and refuses the
   display picker, so the case intro's capture attempt is declined and the
   think-aloud falls back to the clip — which is the path this exercises.
-- **Video playback.** The seeded clip is a valid container header and nothing
-  more; the case screen is exercised, the decoder is not.
-- **The admin UI.** The seeding goes through the admin *API*, so those
-  endpoints are exercised, but nobody clicks through the admin screens.
+- **Study video content.** The pilot suite uses a short test-pattern clip, so
+  playback and decoded dimensions are exercised, but production recordings are
+  not loaded.
+- **All admin workflows.** Most seeding uses the admin API. The pilot suite
+  also edits think-aloud settings and text pages through the real admin UI,
+  checks persistence after reload, and verifies that saved texts reach the
+  participant. Other admin screen checks use synthetic API responses below.
 
 ## Feedback browser checks
 
@@ -78,7 +81,7 @@ sums, partial answers, review snapshots and unobserved exits.
 
 `timed-pretest.spec.ts` runs through the real API and Postgres in the ordinary
 `npm run e2e` suite. It checks persisted timing and partial answers against CSV
-exports, and captures all 24 default pre-test pages with conditional fields and
+exports, and captures all 24 legacy pre-test pages with conditional fields and
 five CK line entries visible at 1920×1080. This is a browser viewport assumption for regression
 checks; the actual lab monitor, scaling and zoom still need verification.
 
@@ -86,3 +89,22 @@ The ordinary participant walkthrough also captures welcome, survey handoffs,
 phase/case introductions, case screens and popup, diagnosis, unanswered/answered
 post-case forms, think-aloud and completion at that viewport. The overflow
 assertion runs after the full walk so a tall page does not hide later findings.
+
+## November 16 pilot
+
+`pilot-flow.spec.ts` creates a fresh study using the new defaults and walks the
+full 69-page script: five training cases plus pre/post cases, with the last
+three cases replayed in the discussion phase. It verifies explicit CK skip
+values in CSV, all PCK pages including the exact-two selection, all six MESP
+pages with 30 independently rated statements, neutral participant labels, and
+student-task code formatting. It captures PCK/MESP pages, transition pages and
+the video rail, and checks horizontal overflow.
+
+A separate reload/expiry test preserves a partial CK answer, finishes the
+section automatically, and enters PCK. To avoid a seven-minute test wait, it
+changes the deadline only in the isolated test database; the database name
+must contain `e2e`. There is no production clock-override endpoint. Existing
+walkthroughs explicitly create legacy studies to check compatibility.
+
+See [pilot rollout notes](../../docs/pilot-20261116.md) for the versioned
+content, migration and lab checks.

@@ -260,11 +260,18 @@ function SequenceEditor({
           {detail.data?.video_set_name && (
             <span className="muted"> · Set {detail.data.video_set_name}</span>
           )}
-          {(detail.data?.think_aloud_batch_size ?? 1) > 1 && (
+          {detail.data?.think_aloud_mode === 'bundled' ? (
             <span className="muted">
               {' '}
-              · lautes Denken in Blöcken von {detail.data?.think_aloud_batch_size}
+              · lautes Denken zu den letzten {detail.data.think_aloud_count} Fällen
             </span>
+          ) : (
+            (detail.data?.think_aloud_batch_size ?? 1) > 1 && (
+              <span className="muted">
+                {' '}
+                · lautes Denken in Blöcken von {detail.data?.think_aloud_batch_size}
+              </span>
+            )
           )}
         </h3>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>

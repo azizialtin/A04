@@ -13,15 +13,18 @@ around them is translated; the instrument is not.
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import QuestionnairePlacement
-from app.models.questionnaire import Questionnaire
-from app.services.pretest_content import load_pretest_manifest, mapped_ck_tasks
+from app.models.participant import Participant
+from app.models.questionnaire import Questionnaire, QuestionnaireResponse
+from app.models.session import Session
+from app.models.study import Study
+from app.services.pretest_content import PILOT_SOURCE_KEY, load_pretest_manifest, mapped_ck_tasks
 
 Question = dict[str, Any]
 
@@ -617,6 +620,110 @@ DEFAULT_BATTERIES: list[Battery] = [
 ]
 
 
+PILOT_PRETEST_CONTENT = load_pretest_manifest(PILOT_SOURCE_KEY)
+PILOT_CK_TASKS = mapped_ck_tasks(source_key=PILOT_SOURCE_KEY)
+PILOT_CASE_OUTRO = deepcopy(CASE_OUTRO)
+_PILOT_OUTRO_TEXTS = {
+    "td_demand": (
+        "Wie viel Anstrengung müssen Sie in den eben bearbeiteten Fall investieren, "
+        "um die bestmögliche Leistung zu erzielen?"
+    ),
+    "td_effort": (
+        "Im Vergleich dazu: Wie viel Anstrengung haben Sie in den eben bearbeiteten Fall investiert?"
+    ),
+    "auth1": "Ich empfand die Situation als authentisch",
+    "auth2": "Die Situation hat wie eine echte berufliche Anforderungssituation gewirkt",
+}
+for _question in PILOT_CASE_OUTRO:
+    _question["text"] = _PILOT_OUTRO_TEXTS[_question["id"]]
+
+PILOT_BATTERIES: list[Battery] = [
+    *DEFAULT_BATTERIES[:3],
+    *(
+        Battery(
+            QuestionnairePlacement.pre_test,
+            3 + index,
+            f"CK: Aufgabe {index + 1}",
+            "",
+            [question],
+            section="CK-Debugging",
+            section_key="ck_tasks",
+            intro_title=PILOT_PRETEST_CONTENT["ck_intro"]["title"] if index == 0 else "",
+            intro_body=PILOT_PRETEST_CONTENT["ck_intro"]["body"] if index == 0 else "",
+        )
+        for index, question in enumerate(PILOT_CK_TASKS)
+    ),
+    *(
+        Battery(
+            QuestionnairePlacement.pre_test,
+            16 + index,
+            page["title"],
+            page["description"],
+            page["questions"],
+            section="PCK-Pretest",
+            section_key="pck",
+            intro_title=PILOT_PRETEST_CONTENT["pck_intro"]["title"] if index == 0 else "",
+            intro_body=PILOT_PRETEST_CONTENT["pck_intro"]["body"] if index == 0 else "",
+        )
+        for index, page in enumerate(PILOT_PRETEST_CONTENT["pck_pages"])
+    ),
+    *(
+        Battery(
+            QuestionnairePlacement.pre_test,
+            19 + index,
+            page["title"],
+            page["description"],
+            page["questions"],
+            section="MESP",
+            section_key="mesp",
+            intro_title=PILOT_PRETEST_CONTENT["mesp_intro"]["title"] if index == 0 else "",
+            intro_body=PILOT_PRETEST_CONTENT["mesp_intro"]["body"] if index == 0 else "",
+        )
+        for index, page in enumerate(PILOT_PRETEST_CONTENT["mesp_pages"])
+    ),
+    DEFAULT_BATTERIES[-2],
+    replace(DEFAULT_BATTERIES[-1], questions=PILOT_CASE_OUTRO),
+]
+
+
+async def refresh_unstarted_case_outro(db: AsyncSession, study_id: int) -> int:
+    """Update only untouched stock wording, never responses or a started study."""
+    started = await db.scalar(
+        select(Session.id)
+        .join(Participant, Participant.id == Session.participant_id)
+        .where(Participant.study_id == study_id)
+        .limit(1)
+    )
+    answered = await db.scalar(
+        select(QuestionnaireResponse.id)
+        .join(Questionnaire, Questionnaire.id == QuestionnaireResponse.questionnaire_id)
+        .where(Questionnaire.study_id == study_id)
+        .limit(1)
+    )
+    if started is not None or answered is not None:
+        return 0
+    pages = await db.scalars(
+        select(Questionnaire).where(
+            Questionnaire.study_id == study_id,
+            Questionnaire.placement == QuestionnairePlacement.case_outro,
+        )
+    )
+    old_texts = {question["id"]: question["text"] for question in CASE_OUTRO}
+    changed = 0
+    for page in pages:
+        questions = deepcopy(page.questions)
+        dirty = False
+        for question in questions:
+            qid = question.get("id")
+            if qid in old_texts and question.get("text") == old_texts[qid]:
+                question["text"] = _PILOT_OUTRO_TEXTS[qid]
+                dirty = True
+        if dirty:
+            page.questions = questions
+            changed += 1
+    return changed
+
+
 async def seed_batteries(db: AsyncSession, study_id: int) -> list[Questionnaire]:
     """Give a study the standard batteries it does not already have.
 
@@ -640,8 +747,12 @@ async def seed_batteries(db: AsyncSession, study_id: int) -> list[Questionnaire]
         .all()
     )
 
+    study = await db.get(Study, study_id)
+    pilot = getattr(study, "flow_version", "legacy") == "pilot_20261116"
+    if pilot and QuestionnairePlacement.case_outro in taken:
+        await refresh_unstarted_case_outro(db, study_id)
     created = []
-    for battery in DEFAULT_BATTERIES:
+    for battery in PILOT_BATTERIES if pilot else DEFAULT_BATTERIES:
         if battery.placement in taken:
             continue
         q = Questionnaire(

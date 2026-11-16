@@ -1,24 +1,9 @@
-"""Builds a participant's linear step-script from their assigned video sequence.
+"""Build each participant's script using the protocol pinned at first login.
 
-The run opens with a welcome, the pre-test pages (demographics, PCK, CK) and the
-SoSci hand-off, then calibrates the eye tracker once and works through the nine
-cases. Each case is intro text → clip → written diagnosis → outro questions →
-think-aloud, and a `phase_transition` marks where the phase changes.
-
-The think-aloud does not have to come straight after its own case. A study sets
-how many *training* cases are worked through before their think-aloud screens
-run back to back (`think_aloud_batch_size`, 1 by default, which is the layout
-above). The pre-test and post-test case never batch — those two are always
-narrated immediately, because the point of them is the diagnosis while it is
-fresh. See `think_aloud_groups`.
-
-If a participant has no explicit sequence, we fall back to the study's videos in
-phase order (pre-test → training → post-test, then upload order) so that
-uploading videos to a study "just works". A per-participant sequence, when set,
-overrides that default — that's where the personalisation lives. A study's
-video sets arrive here as such a sequence too: one is copied into the
-participant's slots at their first login (see `services/video_sets.py`), so by
-the time the script is built there is nothing set-specific left to decide.
+Legacy runs retain phase transitions and training-only think-aloud batches.
+The pilot separates questionnaires, cases and (in bundled mode) the final X
+replays. Assigned video slots preserve a participant's case order independently
+of later edits to the study's video sets.
 """
 
 from __future__ import annotations
@@ -74,7 +59,25 @@ def think_aloud_groups(phases: Sequence[PhaseType], batch_size: int) -> list[lis
     return groups
 
 
-def count_steps(pre_test_pages: int, phases: Sequence[PhaseType], calibration: bool) -> int:
+PILOT_FLOW = "pilot_20261116"
+
+
+def flow_settings(participant: Participant, study: Study | None) -> tuple[str, str, int]:
+    version = participant.flow_version or (study.flow_version if study else "legacy")
+    mode = participant.think_aloud_mode or (study.think_aloud_mode if study else "block")
+    count = participant.think_aloud_count or (study.think_aloud_count if study else 3)
+    return version, mode if version == PILOT_FLOW else "block", max(1, count)
+
+
+def count_steps(
+    pre_test_pages: int,
+    phases: Sequence[PhaseType],
+    calibration: bool,
+    *,
+    flow_version: str = "legacy",
+    think_aloud_mode: str = "block",
+    think_aloud_count: int = 3,
+) -> int:
     """How many steps `build_steps` produces for a run with these ingredients.
 
     The admin participant list wants everyone's progress as a fraction, and
@@ -85,6 +88,17 @@ def count_steps(pre_test_pages: int, phases: Sequence[PhaseType], calibration: b
     The think-aloud batch size is not an ingredient: batching moves the
     think-aloud screens about but never adds or removes one.
     """
+    if flow_version == PILOT_FLOW:
+        bundled = think_aloud_mode == "bundled"
+        narrations = min(len(phases), think_aloud_count) if bundled else len(phases)
+        return (
+            4
+            + pre_test_pages
+            + (bool(phases) and calibration)
+            + (6 if bundled else 4)
+            + 4 * len(phases)
+            + narrations
+        )
     transitions = sum(1 for i, p in enumerate(phases) if i == 0 or p != phases[i - 1])
     return (
         1  # welcome
@@ -151,7 +165,6 @@ def _case_video_step(video: Video, defaults: StudyVideoDefaults) -> dict:
     return {
         "kind": "case_video",
         "video_id": video.id,
-        "title": video.title,
         "task_description": task_text(video, defaults),
         "info_text": info_text(video, defaults),
         "student_task_text": video.student_task_text,
@@ -171,7 +184,6 @@ def _diagnosis_step(
     return {
         "kind": "diagnosis",
         "video_id": video.id,
-        "title": video.title,
         "task_description": task_text(video, defaults),
         "section": ratings.section if ratings else "",
         "questions": ratings.questions if ratings else [],
@@ -218,6 +230,9 @@ _DESCRIBING_KEYS = (
     "page_count",
     "phase_type",
     "variant",
+    "key",
+    "case_number",
+    "case_total",
 )
 
 
@@ -350,6 +365,9 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
 
     cases = await _cases(db, participant)
     batch_size = think_aloud_batch_size(participant, study)
+    version, mode, narration_count = flow_settings(participant, study)
+    pilot = version == PILOT_FLOW
+    bundled = pilot and mode == "bundled"
     answered = await _answered(db, participant)
     written = await _diagnoses(db, participant)
 
@@ -377,6 +395,9 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
     steps.append(
         _sosci_step("pretest", study.sosci_pretest_url if study else "", id_param, participant.id)
     )
+    if pilot:
+        for key in ("questionnaire_end", "video_start", "video_intro"):
+            steps.append(_text_page(texts, key))
     # Calibrate once, right before the first clip: any earlier and the
     # participant has a SoSci tab to get through before the tracker is used.
     # Skipped entirely when the tracker is calibrated outside the app.
@@ -391,10 +412,11 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
     numbers = _case_numbers(phases)
 
     prev_phase: PhaseType | None = None
-    for group in think_aloud_groups(phases, batch_size):
+    groups = [list(range(len(cases)))] if bundled else think_aloud_groups(phases, batch_size)
+    for group in groups:
         for i in group:
             phase, video = cases[i]
-            if phase != prev_phase:
+            if not pilot and phase != prev_phase:
                 steps.append(
                     {
                         "kind": "phase_transition",
@@ -410,10 +432,16 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
                     "phase_type": phase.value,
                     "video_id": video.id,
                     "title": (
-                        texts.pre_test_case_intro_title if phase == PhaseType.pre_test else ""
+                        texts.pre_test_case_intro_title
+                        if not pilot and phase == PhaseType.pre_test
+                        else ""
                     )
                     or texts.case_intro_title,
-                    "body": (texts.pre_test_case_intro_body if phase == PhaseType.pre_test else "")
+                    "body": (
+                        texts.pre_test_case_intro_body
+                        if not pilot and phase == PhaseType.pre_test
+                        else ""
+                    )
                     or texts.case_intro_body,
                 }
             )
@@ -438,13 +466,15 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
             )
 
         # Then the group's think-alouds, in the order the cases were worked on.
-        for position, i in enumerate(group, start=1):
+        if bundled:
+            steps.extend(_text_page(texts, key) for key in ("video_end", "discussion_start"))
+        narrated = group[-narration_count:] if bundled else group
+        for position, i in enumerate(narrated, start=1):
             phase, video = cases[i]
             steps.append(
                 {
                     "kind": "think_aloud",
                     "video_id": video.id,
-                    "title": video.title,
                     "phase_type": phase.value,
                     "case_number": numbers[i],
                     "case_total": per_phase_total[phase],
@@ -452,12 +482,19 @@ async def build_steps(db: AsyncSession, participant: Participant) -> list[dict]:
                     # the think-aloud follows its own case, as it always does
                     # outside the training phase.
                     "batch_position": position,
-                    "batch_size": len(group),
+                    "batch_size": len(narrated),
                     "heading": texts.think_aloud_title,
                     "body": texts.think_aloud_body,
                 }
             )
 
+    if pilot:
+        steps.append(_text_page(texts, "post_intro"))
+        global_numbers = {video.id: i + 1 for i, (_, video) in enumerate(cases)}
+        for step in steps:
+            if step.get("video_id") in global_numbers:
+                step["case_number"] = global_numbers[step["video_id"]]
+                step["case_total"] = len(cases)
     steps.append(
         _sosci_step("posttest", study.sosci_posttest_url if study else "", id_param, participant.id)
     )
@@ -494,4 +531,13 @@ def _sosci_step(variant: str, url: str, id_param: str, participant_id: str) -> d
         "url": url,
         "id_param": id_param,
         "participant_id": participant_id,
+    }
+
+
+def _text_page(texts: StudyTexts, key: str) -> dict:
+    return {
+        "kind": "text_page",
+        "key": key,
+        "title": getattr(texts, f"{key}_title"),
+        "body": getattr(texts, f"{key}_body"),
     }

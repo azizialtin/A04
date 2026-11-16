@@ -40,7 +40,12 @@ from app.schemas.participant import (
     VideoUrlResponse,
 )
 from app.services.event_logger import log_event
-from app.services.questionnaires import invalid_partial_answers, missing_required_answers
+from app.services.questionnaires import (
+    expired_ck_answers,
+    invalid_partial_answers,
+    is_debugging_skip,
+    missing_required_answers,
+)
 from app.services.section_timing import (
     CK_SECONDS,
     CK_SECTION,
@@ -52,7 +57,13 @@ from app.services.section_timing import (
     now_ms,
     timing_response,
 )
-from app.services.session_script import build_steps, describe_step, video_in_run
+from app.services.session_script import (
+    PILOT_FLOW,
+    build_steps,
+    describe_step,
+    flow_settings,
+    video_in_run,
+)
 from app.services.video_url import resolve_video_url, sign_blob_url
 
 logger = logging.getLogger(__name__)
@@ -100,10 +111,18 @@ async def get_session(
             passed
             and step["kind"] == "questionnaire"
             and step.get("section_key") == CK_SECTION
-            and step.get("previous_answers") is None
+            and (
+                step.get("previous_answers") is None
+                or any(
+                    is_debugging_skip(q, (step.get("previous_answers") or {}).get(q.get("id")))
+                    for q in step.get("questions", [])
+                )
+            )
         )
         steps.append({"index": i, "completed": passed and not skipped, "skipped": skipped, **step})
+    study = await db.get(Study, participant.study_id)
     return SessionScriptResponse(
+        flow_version=flow_settings(participant, study)[0],
         status=participant.status.value,
         current_step_index=session.current_step_index,
         total_steps=len(raw),
@@ -176,11 +195,13 @@ async def finish_ck(
     session = await lock_session(db, participant.id)
     raw = await build_steps(db, participant)
     visit = await get_visit(db, participant.id, str(body.visit_id))
+    exit_reason = "timer_expired" if body.reason == "timer_expired" else "supervisor_finish"
     if visit.finish_request_id == str(body.request_id):
         if (
             visit.submitted_answers != body.answers
             or visit.exited_client_ts != body.client_ts
             or visit.step_index != body.expected_step_index
+            or visit.exit_reason != exit_reason
         ):
             raise HTTPException(409, "A retry must match the original section finish.")
         return ProgressResult(
@@ -201,6 +222,13 @@ async def finish_ck(
         or visit.exited_client_ts is not None
     ):
         raise HTTPException(409, "This page visit is no longer active.")
+    attempt = await ck_attempt(db, participant.id)
+    if body.reason == "timer_expired":
+        study = await db.get(Study, participant.study_id)
+        if flow_settings(participant, study)[0] != PILOT_FLOW:
+            raise HTTPException(409, "This run uses supervisor-controlled CK completion.")
+        if attempt is None or attempt.ended_client_ts is not None or now_ms() < attempt.deadline_ms:
+            raise HTTPException(409, "The CK deadline has not expired for this attempt.")
     target = next(
         (
             i
@@ -214,12 +242,17 @@ async def finish_ck(
         raise HTTPException(
             409, "No PCK section follows the CK tasks. Ask the supervisor to check the study."
         )
-    invalid = invalid_partial_answers(step["questions"], body.answers)
+    answers = (
+        expired_ck_answers(step["questions"], body.answers)
+        if body.reason == "timer_expired"
+        else body.answers
+    )
+    invalid = invalid_partial_answers(step["questions"], answers)
     if invalid:
         raise HTTPException(422, {"message": "Some answers are invalid.", "missing": invalid})
     questionnaire = await db.get(Questionnaire, step["questionnaire_id"])
     assert questionnaire is not None
-    seconds = close_visit(visit, body.client_ts, "supervisor_finish")
+    seconds = close_visit(visit, body.client_ts, exit_reason)
     visit.submitted_answers = body.answers
     visit.finish_request_id = str(body.request_id)
     await _store_answers(
@@ -227,20 +260,21 @@ async def finish_ck(
         questionnaire,
         participant,
         None,
-        body.answers,
+        answers,
         replace=True,
         time_spent_seconds=seconds,
         response_status="partial",
     )
-    end_attempt(await ck_attempt(db, participant.id), body.client_ts, "supervisor_finish")
+    end_attempt(attempt, body.client_ts, exit_reason)
     session.current_step_index = target
     await db.commit()
     background_tasks.add_task(
         log_event,
         participant_id=participant.id,
-        event_type="admin_finish_ck",
+        event_type="ck_timer_expired" if body.reason == "timer_expired" else "admin_finish_ck",
         client_ts=body.client_ts,
         payload={
+            "reason": body.reason,
             "left_step": describe_step(step, index),
             "current_step": describe_step(raw[target], target),
             "visit_id": visit.id,
@@ -645,6 +679,18 @@ async def respond_questionnaire(
             raise HTTPException(409, "This page visit is already closed.")
         if visit.step_index != session.current_step_index:
             raise HTTPException(409, "The current page has changed.")
+        if questionnaire.section_key == CK_SECTION:
+            attempt = await ck_attempt(db, participant.id)
+            if attempt and attempt.ended_client_ts is None and now_ms() >= attempt.deadline_ms:
+                study = await db.get(Study, participant.study_id)
+                if flow_settings(participant, study)[0] == PILOT_FLOW:
+                    raise HTTPException(
+                        409,
+                        {
+                            "code": "ck_deadline_expired",
+                            "message": "The CK deadline has expired. Finish the current page before continuing.",
+                        },
+                    )
         if body.advance:
             raw = await build_steps(db, participant)
             index = session.current_step_index
@@ -675,6 +721,12 @@ async def respond_questionnaire(
         # The latest answer is the answer: the supervisor can step a run back onto a page.
         replace=True,
         time_spent_seconds=body.time_spent_seconds,
+        response_status="skipped"
+        if questionnaire.questions
+        and all(
+            is_debugging_skip(q, body.answers.get(q.get("id"))) for q in questionnaire.questions
+        )
+        else "submitted",
     )
     try:
         await db.commit()

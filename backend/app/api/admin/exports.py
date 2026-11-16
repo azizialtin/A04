@@ -379,6 +379,9 @@ def _participants_query(study_id: int, participant_ids: list[str] | None = None)
             ).filter(ParticipantVideo.id.is_not(None)),
             Participant.think_aloud_batch_size,
             Participant.created_at,
+            Participant.flow_version,
+            Participant.think_aloud_mode,
+            Participant.think_aloud_count,
         )
         .outerjoin(VideoSet, VideoSet.id == Participant.video_set_id)
         .outerjoin(ParticipantVideo, ParticipantVideo.participant_id == Participant.id)
@@ -689,9 +692,23 @@ _EXPORTS = {
             "sequence",
             "think_aloud_batch_size",
             "created_at",
+            "flow_version",
+            "think_aloud_mode",
+            "think_aloud_count",
         ],
         _participants_query,
-        lambda r: [r[0], r[1].value, r[2], r[3], json.dumps(list(r[4] or [])), r[5], _iso(r[6])],
+        lambda r: [
+            r[0],
+            r[1].value,
+            r[2],
+            r[3],
+            json.dumps(list(r[4] or [])),
+            r[5],
+            _iso(r[6]),
+            r[7],
+            r[8],
+            r[9],
+        ],
     ),
     "videos": (
         "videos.csv",

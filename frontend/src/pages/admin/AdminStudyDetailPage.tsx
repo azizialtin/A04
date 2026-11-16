@@ -9,8 +9,9 @@ import QuestionnairesSection from '../../components/admin/QuestionnairesSection'
 import StatsSection from '../../components/admin/StatsSection'
 import VideoSetsSection from '../../components/admin/VideoSetsSection'
 import VideosSection from '../../components/admin/VideosSection'
-import { useStudy, useUpdateStudy, useVideos } from '../../hooks/admin'
-import { thinkAloudBlocks } from '../../lib/thinkAloud'
+import { useStudy, useUpdateStudy } from '../../hooks/admin'
+import ThinkAloudSection from '../../components/admin/ThinkAloudSection'
+import de from '../../i18n/locales/de.json'
 
 const TABS = [
   ['stats', 'Statistik'],
@@ -193,6 +194,16 @@ const TEXT_DEFAULTS = {
  * both interface languages, like the rest of the instrument.
  */
 function TextsSection({ study }: { study: Study }) {
+  const pilot = study.flow_version === 'pilot_20261116'
+  const defaults = pilot
+    ? {
+        ...TEXT_DEFAULTS,
+        welcome_intro: de.pilot.welcome_intro,
+        case_intro_title: de.pilot.case_intro_title,
+        case_intro_body: de.pilot.case_intro_body,
+        case_outro_body: de.pilot.case_outro_body,
+      }
+    : TEXT_DEFAULTS
   const update = useUpdateStudy(study.id)
   const [texts, setTexts] = useState<StudyTexts>(study.texts)
   const [steps, setSteps] = useState(study.texts.welcome_steps.join('\n'))
@@ -225,6 +236,12 @@ function TextsSection({ study }: { study: Study }) {
       case_outro_body: '',
       think_aloud_title: '',
       think_aloud_body: '',
+      ...Object.fromEntries(
+        Object.keys(de.pilot.text_pages).flatMap((key) => [
+          [`${key}_title`, ''],
+          [`${key}_body`, ''],
+        ]),
+      ),
     })
     setSteps('')
   }
@@ -246,7 +263,7 @@ function TextsSection({ study }: { study: Study }) {
           id="welcome-title"
           className="input"
           value={texts.welcome_title}
-          placeholder={TEXT_DEFAULTS.welcome_title}
+          placeholder={defaults.welcome_title}
           onChange={set('welcome_title')}
         />
       </div>
@@ -259,22 +276,26 @@ function TextsSection({ study }: { study: Study }) {
           className="textarea"
           style={{ minHeight: 140 }}
           value={texts.welcome_intro}
-          placeholder={TEXT_DEFAULTS.welcome_intro}
+          placeholder={defaults.welcome_intro}
           onChange={set('welcome_intro')}
         />
       </div>
-      <div className="form-row">
-        <label className="label" htmlFor="welcome-steps">
-          „Der Ablauf" (ein Schritt pro Zeile)
-        </label>
-        <textarea
-          id="welcome-steps"
-          className="textarea"
-          value={steps}
-          placeholder={TEXT_DEFAULTS.welcome_steps.join('\n')}
-          onChange={(e) => setSteps(e.target.value)}
-        />
-      </div>
+      {!pilot && (
+        <>
+          <div className="form-row">
+            <label className="label" htmlFor="welcome-steps">
+              „Der Ablauf" (ein Schritt pro Zeile)
+            </label>
+            <textarea
+              id="welcome-steps"
+              className="textarea"
+              value={steps}
+              placeholder={defaults.welcome_steps.join('\n')}
+              onChange={(e) => setSteps(e.target.value)}
+            />
+          </div>
+        </>
+      )}
       <div className="form-row">
         <label className="label" htmlFor="welcome-note">
           Hinweis unter der Teilnehmer-ID
@@ -283,25 +304,33 @@ function TextsSection({ study }: { study: Study }) {
           id="welcome-note"
           className="input"
           value={texts.welcome_note}
-          placeholder={TEXT_DEFAULTS.welcome_note}
+          placeholder={defaults.welcome_note}
           onChange={set('welcome_note')}
         />
       </div>
 
       <h3>Vor jedem Fall</h3>
       <p className="muted small">Die kurze Seite zwischen den Fällen, vor jedem Video.</p>
-      <div className="form-row">
-        <label className="label" htmlFor="case-intro-title">
-          Überschrift
-        </label>
-        <input
-          id="case-intro-title"
-          className="input"
-          value={texts.case_intro_title}
-          placeholder={TEXT_DEFAULTS.case_intro_title}
-          onChange={set('case_intro_title')}
-        />
-      </div>
+      {pilot ? (
+        <p className="muted small">
+          Die Überschrift „Fall x“ verwendet automatisch die fortlaufende Fallnummer.
+        </p>
+      ) : (
+        <>
+          <div className="form-row">
+            <label className="label" htmlFor="case-intro-title">
+              Überschrift
+            </label>
+            <input
+              id="case-intro-title"
+              className="input"
+              value={texts.case_intro_title}
+              placeholder={defaults.case_intro_title}
+              onChange={set('case_intro_title')}
+            />
+          </div>
+        </>
+      )}
       <div className="form-row">
         <label className="label" htmlFor="case-intro-body">
           Text (Absätze durch eine Leerzeile trennen)
@@ -310,36 +339,39 @@ function TextsSection({ study }: { study: Study }) {
           id="case-intro-body"
           className="textarea"
           value={texts.case_intro_body}
-          placeholder={TEXT_DEFAULTS.case_intro_body}
+          placeholder={defaults.case_intro_body}
           onChange={set('case_intro_body')}
         />
       </div>
 
-      <h3>Vor dem Vortest-Video</h3>
-      <p className="muted small">Leer übernimmt den Text „Vor jedem Fall“.</p>
-      <div className="form-row">
-        <label className="label" htmlFor="pretest-case-title">
-          Überschrift für das Vortest-Video
-        </label>
-        <input
-          id="pretest-case-title"
-          className="input"
-          value={texts.pre_test_case_intro_title ?? ''}
-          onChange={set('pre_test_case_intro_title')}
-        />
-      </div>
-      <div className="form-row">
-        <label className="label" htmlFor="pretest-case-body">
-          Einleitung für das Vortest-Video
-        </label>
-        <textarea
-          id="pretest-case-body"
-          className="textarea"
-          value={texts.pre_test_case_intro_body ?? ''}
-          onChange={set('pre_test_case_intro_body')}
-        />
-      </div>
-
+      {!pilot && (
+        <>
+          <h3>Vor dem Vortest-Video</h3>
+          <p className="muted small">Leer übernimmt den Text „Vor jedem Fall“.</p>
+          <div className="form-row">
+            <label className="label" htmlFor="pretest-case-title">
+              Überschrift für das Vortest-Video
+            </label>
+            <input
+              id="pretest-case-title"
+              className="input"
+              value={texts.pre_test_case_intro_title ?? ''}
+              onChange={set('pre_test_case_intro_title')}
+            />
+          </div>
+          <div className="form-row">
+            <label className="label" htmlFor="pretest-case-body">
+              Einleitung für das Vortest-Video
+            </label>
+            <textarea
+              id="pretest-case-body"
+              className="textarea"
+              value={texts.pre_test_case_intro_body ?? ''}
+              onChange={set('pre_test_case_intro_body')}
+            />
+          </div>
+        </>
+      )}
       <h3>Nach jedem Fall</h3>
       <p className="muted small">
         Die Seite „Fall abgeschlossen“ mit den kurzen Fragen zum Fall; die Fragen selbst stehen
@@ -353,7 +385,7 @@ function TextsSection({ study }: { study: Study }) {
           id="case-outro-title"
           className="input"
           value={texts.case_outro_title}
-          placeholder={TEXT_DEFAULTS.case_outro_title}
+          placeholder={defaults.case_outro_title}
           onChange={set('case_outro_title')}
         />
       </div>
@@ -365,10 +397,49 @@ function TextsSection({ study }: { study: Study }) {
           id="case-outro-body"
           className="textarea"
           value={texts.case_outro_body}
-          placeholder={TEXT_DEFAULTS.case_outro_body}
+          placeholder={defaults.case_outro_body}
           onChange={set('case_outro_body')}
         />
       </div>
+
+      {pilot &&
+        Object.entries(de.pilot.text_pages).map(([key, text]) => {
+          const titleKey = `${key}_title` as keyof StudyTexts
+          const bodyKey = `${key}_body` as keyof StudyTexts
+          return (
+            <fieldset className="form" key={key}>
+              <legend>{text.title}</legend>
+              <label className="label" htmlFor={`text-${key}-title`}>
+                Überschrift: {text.title}
+              </label>
+              <input
+                id={`text-${key}-title`}
+                className="input"
+                maxLength={200}
+                value={(texts[titleKey] as string | undefined) ?? ''}
+                placeholder={text.title}
+                onChange={set(titleKey)}
+              />
+              <label className="label" htmlFor={`text-${key}-body`}>
+                Text: {text.title}
+              </label>
+              <textarea
+                id={`text-${key}-body`}
+                className="textarea"
+                maxLength={8000}
+                style={{ minHeight: key === 'video_intro' ? 240 : 120 }}
+                value={(texts[bodyKey] as string | undefined) ?? ''}
+                placeholder={text.body}
+                onChange={set(bodyKey)}
+              />
+              {(key === 'video_end' || key === 'discussion_start') && (
+                <p className="muted small">
+                  Diese Pausenseite erscheint beim gebündelten lauten Denken nach dem Nachtest.
+                </p>
+              )}
+            </fieldset>
+          )
+        })}
 
       <h3>Lautes Denken</h3>
       <p className="muted small">
@@ -382,7 +453,7 @@ function TextsSection({ study }: { study: Study }) {
           id="think-aloud-title"
           className="input"
           value={texts.think_aloud_title}
-          placeholder={TEXT_DEFAULTS.think_aloud_title}
+          placeholder={defaults.think_aloud_title}
           onChange={set('think_aloud_title')}
         />
       </div>
@@ -394,7 +465,7 @@ function TextsSection({ study }: { study: Study }) {
           id="think-aloud-body"
           className="textarea"
           value={texts.think_aloud_body}
-          placeholder={TEXT_DEFAULTS.think_aloud_body}
+          placeholder={defaults.think_aloud_body}
           onChange={set('think_aloud_body')}
         />
       </div>
@@ -414,78 +485,6 @@ function TextsSection({ study }: { study: Study }) {
         {update.isSuccess && <span className="muted">Gespeichert.</span>}
         {update.isError && <span className="error-text">Konnte nicht gespeichert werden.</span>}
       </div>
-    </div>
-  )
-}
-
-/**
- * How many training cases run before their think-aloud screens. One — the
- * default — is a think-aloud straight after each case, which is how the study
- * was originally designed; a larger block delays them all to the end of the
- * block. The pre-test and post-test case are never batched.
- */
-function ThinkAloudSection({ study }: { study: Study }) {
-  const update = useUpdateStudy(study.id)
-  const videos = useVideos(study.id)
-  const [size, setSize] = useState(String(study.think_aloud_batch_size))
-
-  const chosen = Number(size)
-  const valid = Number.isInteger(chosen) && chosen >= 1 && chosen <= 20
-  const training = (videos.data ?? []).filter((v) => v.phase_type === 'training').length
-  const blocks = thinkAloudBlocks(training, valid ? chosen : 1)
-
-  return (
-    <div className="card form" style={{ marginTop: 16 }}>
-      <h2>Lautes Denken</h2>
-      <p className="muted">
-        Wie viele Trainingsfälle bearbeitet werden, bevor das laute Denken dazu kommt. Bei 1 folgt
-        es direkt auf jeden Fall; bei 3 werden erst drei Fälle bearbeitet und danach die drei
-        Aufzeichnungen nacheinander gezeigt. Vor- und Nachtest sind davon ausgenommen – dort folgt
-        das laute Denken immer unmittelbar auf den Fall.
-      </p>
-      <div className="form-row">
-        <label className="label" htmlFor="think-aloud-batch">
-          Fälle pro Block (1–20)
-        </label>
-        <input
-          id="think-aloud-batch"
-          className="input"
-          type="number"
-          min={1}
-          max={20}
-          value={size}
-          onChange={(e) => setSize(e.target.value)}
-          style={{ maxWidth: 160 }}
-        />
-      </div>
-
-      {training > 0 && valid && (
-        <p className="muted small">
-          {blocks.length === 1 && blocks[0] === 1
-            ? `Bei ${training} Trainingsvideos: nach jedem Fall ein lautes Denken.`
-            : `Bei ${training} Trainingsvideos: ${blocks
-                .map((n) => `${n} ${n === 1 ? 'Fall' : 'Fälle'} → ${n}× lautes Denken`)
-                .join(' · ')}`}
-        </p>
-      )}
-      {!valid && <p className="error-text">Bitte eine Zahl zwischen 1 und 20 eintragen.</p>}
-
-      <div className="inline-form">
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={!valid || update.isPending}
-          onClick={() => update.mutate({ think_aloud_batch_size: chosen })}
-        >
-          Speichern
-        </button>
-        {update.isSuccess && <span className="muted">Gespeichert.</span>}
-        {update.isError && <span className="error-text">Konnte nicht gespeichert werden.</span>}
-      </div>
-      <p className="muted small">
-        Gilt für Teilnehmer, die sich danach zum ersten Mal anmelden. Wer bereits begonnen hat,
-        behält den Ablauf, mit dem er gestartet ist.
-      </p>
     </div>
   )
 }

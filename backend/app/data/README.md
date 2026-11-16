@@ -1,6 +1,15 @@
 # Versioned pre-test sources
 
-`pretest_nov2026.json` is the current participant-facing content, from
+`pretest_pilot20261116.json` supplies new pilot studies. Its source key is
+`a04-pretest-2026-11-16`; it records source hashes, row references, the CK
+reordering, three PCK tasks and six MESP tasks. Approved editorial decisions
+are recorded in the manifest. CK solutions are metadata and are not seeded into
+participant questions. See the [pilot protocol and rollout notes](../../../docs/pilot-20261116.md)
+for the flow version, source materials and historical-data guarantees.
+
+## Legacy November and October instruments
+
+`pretest_nov2026.json` remains the legacy participant-facing content, from
 `A04_DataCollection - [TODO] Pre-Test Inside Tool (1).csv`, supplied on
 2 November 2026. It preserves all thirteen CK exercises in CSV row order, now
 named `ck_pre_01` through `ck_pre_13`. Only the CK IDs changed in the updated
@@ -12,7 +21,7 @@ not change. Its source key is `a04-pretest-2026-11-02`.
 duplicate CSV IDs: retain the first `ck_pre_12`/`ck_pre_13` and name the later
 duplicates `ck_pre_08`/`ck_pre_10`. Do not reinterpret an existing response's ID
 using the new manifest. Each task's `source_ref` identifies its source version,
-CSV row and original variable. The current manifest's `ck_id_mapping.crosswalk`
+CSV row and original variable. The November manifest's `ck_id_mapping.crosswalk`
 records the corresponding exercise across versions:
 
 | CSV row | October study ID | November study ID |
@@ -31,13 +40,13 @@ records the corresponding exercise across versions:
 | 25 | `ck_pre_08` | `ck_pre_12` |
 | 26 | `ck_pre_10` | `ck_pre_13` |
 
-Neither manifest contains expected error lines, solutions or scoring rationale.
+Neither legacy manifest contains expected error lines, solutions or scoring rationale.
 The shared PCK example is under `pck_example`; its supplied code, wording and
 three subquestions remain together on one page. The new CSV still supplies only
 `pck_pre_01a`, `pck_pre_01b` and `pck_pre_01c`; it adds no further PCK questions,
 final introduction text or AOI definitions.
 
-New studies receive demographics, the two existing CK self-assessment pages,
+Legacy-flow studies receive demographics, the two existing CK self-assessment pages,
 the supplied CK introduction and thirteen tasks, an editable PCK introduction
 and the shared PCK example, and the seven existing MSK pages. The initial PCK
 intro reuses the generic “Bitte beantworten Sie die folgenden Fragen.” text.
@@ -47,7 +56,9 @@ the referenced pupil explanation are kept as source metadata; they do not block
 loading the supplied example and are not shown as participant instructions.
 No missing text, code correction or additional PCK item is invented.
 
-Existing studies are unchanged. The admin's standard-battery seed action skips
+Existing instrument structures are unchanged. The pilot migration updates only
+four exact stock case-outro wordings on studies without sessions or responses;
+custom wording and started studies are preserved. The admin's standard-battery seed action skips
 an entire placement that already contains a page, so it is not an instrument
 upgrade button. For an explicitly selected unstarted study, put a populated PCK
 page after the existing CK self-assessment. The guarded CK importer needs that
@@ -63,7 +74,9 @@ command with `--apply` to insert the thirteen CK pages and their introduction
 before the selected PCK page. Existing pages retain their relative order and
 content. The import marks the CK and selected PCK sections for supervised timing
 and navigation; it does not replace the selected PCK content or rename existing
-self-assessment variables. It uses the November mapping by default. An optional
+self-assessment variables. For a new import it selects the manifest from the
+study's flow version; existing imports are checked against their original
+manifest. An optional
 `--mapping /path/to/row-ids.json` overrides it with a complete, unique mapping
 whose keys are the CSV row numbers `14` through `26` as strings.
 

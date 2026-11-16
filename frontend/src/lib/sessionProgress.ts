@@ -39,3 +39,33 @@ export function caseAt(steps: SessionStep[], index: number): CasePosition | null
     total: phases.filter((p) => p === phaseOfIndex).length,
   }
 }
+
+export interface PilotPosition {
+  phase: 'questionnaire' | 'video' | 'discussion'
+  current?: number
+  total?: number
+}
+
+export function pilotPositionAt(steps: SessionStep[], index: number): PilotPosition {
+  const step = steps[index]
+  const cases = steps.filter((item) => item.kind === 'case_intro')
+  const total = cases.length
+  if (step?.kind === 'think_aloud')
+    return { phase: 'discussion', current: step.case_number, total: step.case_total ?? total }
+  if (step?.kind === 'text_page') {
+    if (['discussion_start', 'post_intro'].includes(step.key)) return { phase: 'discussion' }
+    if (['video_start', 'video_intro', 'video_end'].includes(step.key))
+      return { phase: 'video', current: step.key === 'video_end' ? total : 1, total }
+    return { phase: 'questionnaire' }
+  }
+  if (step && ['case_intro', 'case_video', 'diagnosis', 'case_outro'].includes(step.kind)) {
+    return {
+      phase: 'video',
+      current: step.case_number ?? cases.filter((item) => item.index <= index).length,
+      total: step.case_total ?? total,
+    }
+  }
+  if (step?.kind === 'thanks' || (step?.kind === 'sosci' && step.variant === 'posttest'))
+    return { phase: 'discussion' }
+  return { phase: 'questionnaire' }
+}

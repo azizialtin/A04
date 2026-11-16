@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, ValidationInfo, field_validator
 
@@ -35,6 +35,18 @@ class StudyTexts(BaseModel):
     case_outro_body: str = Field(default="", max_length=4000)
     think_aloud_title: str = Field(default="", max_length=200)
     think_aloud_body: str = Field(default="", max_length=4000)
+    questionnaire_end_title: str = Field(default="", max_length=200)
+    questionnaire_end_body: str = Field(default="", max_length=8000)
+    video_start_title: str = Field(default="", max_length=200)
+    video_start_body: str = Field(default="", max_length=8000)
+    video_intro_title: str = Field(default="", max_length=200)
+    video_intro_body: str = Field(default="", max_length=8000)
+    video_end_title: str = Field(default="", max_length=200)
+    video_end_body: str = Field(default="", max_length=8000)
+    discussion_start_title: str = Field(default="", max_length=200)
+    discussion_start_body: str = Field(default="", max_length=8000)
+    post_intro_title: str = Field(default="", max_length=200)
+    post_intro_body: str = Field(default="", max_length=8000)
 
 
 class StudyVideoDefaults(BaseModel):
@@ -52,7 +64,14 @@ class StudyVideoDefaults(BaseModel):
 MAX_THINK_ALOUD_BATCH = 20
 
 
+FlowVersion = Literal["legacy", "pilot_20261116"]
+ThinkAloudMode = Literal["block", "bundled"]
+
+
 class StudyCreate(BaseModel):
+    flow_version: FlowVersion = "pilot_20261116"
+    think_aloud_mode: ThinkAloudMode = "bundled"
+    think_aloud_count: int = Field(default=3, ge=1, le=MAX_THINK_ALOUD_BATCH)
     name: MetadataTitle
     description: str = ""
     sosci_pretest_url: str = Field(default="", max_length=1000)
@@ -62,6 +81,8 @@ class StudyCreate(BaseModel):
 
 
 class StudyUpdate(BaseModel):
+    think_aloud_mode: ThinkAloudMode | None = None
+    think_aloud_count: int | None = Field(default=None, ge=1, le=MAX_THINK_ALOUD_BATCH)
     name: MetadataTitle | None = None
     description: str | None = None
     sosci_pretest_url: str | None = Field(default=None, max_length=1000)
@@ -82,6 +103,9 @@ class StudyUpdate(BaseModel):
 
 
 class StudyResponse(BaseModel):
+    flow_version: str
+    think_aloud_mode: str
+    think_aloud_count: int
     id: int
     name: str
     description: str
@@ -160,6 +184,9 @@ class ParticipantResponse(BaseModel):
 
 
 class ParticipantDetail(BaseModel):
+    flow_version: str | None = None
+    think_aloud_mode: str | None = None
+    think_aloud_count: int | None = None
     id: str
     status: str
     current_step_index: int | None

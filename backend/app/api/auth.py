@@ -78,6 +78,9 @@ async def participant_login(
         dealt = await deal_on_first_login(db, participant)
         study = await db.get(Study, participant.study_id)
         participant.think_aloud_batch_size = study.think_aloud_batch_size if study else 1
+        participant.flow_version = study.flow_version if study else "legacy"
+        participant.think_aloud_mode = study.think_aloud_mode if study else "block"
+        participant.think_aloud_count = study.think_aloud_count if study else 3
         db.add(Session(participant_id=participant.id))
         participant.status = ParticipantStatus.active
     # The background login event uses another transaction with a participant FK.

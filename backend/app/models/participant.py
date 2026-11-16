@@ -32,4 +32,7 @@ class Participant(Base):
     # study. Pinned so that editing the study cannot reorder a sitting that is
     # already under way.
     think_aloud_batch_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    flow_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    think_aloud_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    think_aloud_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

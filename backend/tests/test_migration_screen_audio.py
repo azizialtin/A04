@@ -18,7 +18,8 @@ def test_audio_migration_extends_the_production_liveness_head():
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["e6a2b8c4d0f1"]
+    assert scripts.get_heads() == ["f8b1c3d5e7a9"]
+    assert scripts.get_revision("f8b1c3d5e7a9").down_revision == "e6a2b8c4d0f1"
     assert scripts.get_revision("e6a2b8c4d0f1").down_revision == "f6a8c0e2b4d6"
 
 

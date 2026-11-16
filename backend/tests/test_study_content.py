@@ -107,17 +107,19 @@ async def test_a_new_study_arrives_with_the_standard_batteries(client, db, admin
     assert sorted(placements) == [
         (QuestionnairePlacement.case_outro, 0),
         (QuestionnairePlacement.diagnosis, 0),
-        # Demographics, two CK self-assessments, thirteen tasks, PCK, seven MSK.
-        *((QuestionnairePlacement.pre_test, i) for i in range(24)),
+        # Demographics, two CK self-assessments, thirteen tasks, three PCK, six MESP.
+        *((QuestionnairePlacement.pre_test, i) for i in range(25)),
     ]
 
 
-async def test_new_study_has_the_corrected_instrument_once(client, db, admin_headers):
+async def test_legacy_study_keeps_the_november_2_instrument_once(client, db, admin_headers):
     from app.services.pretest_content import SOURCE_KEY, load_pretest_manifest, mapped_ck_tasks
     from app.services.study_content_import import import_ck_pretest
 
     created = await client.post(
-        "/admin/studies", json={"name": "Oktober-Instrument"}, headers=admin_headers
+        "/admin/studies",
+        json={"name": "Oktober-Instrument", "flow_version": "legacy", "think_aloud_mode": "block"},
+        headers=admin_headers,
     )
     study_id = created.json()["id"]
     pages = await _pre_test_pages(db, study_id)

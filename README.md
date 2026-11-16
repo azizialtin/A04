@@ -1,15 +1,20 @@
 # A04
 
 Web platform for a personalised-learning study with programming teachers.
-A run opens with a short in-tool pre-test (background, pedagogical content
-knowledge, content knowledge), hands off to a SoSciSurvey questionnaire, and
-optionally calibrates the eye tracker in-app. Calibration defaults off when
-the lab calibrates externally. Participants then work through nine debugging cases
-(one pre-test, seven training, one post-test): for each they watch a short clip
-of students struggling with code, take timed notes, write a diagnosis with a
-confidence rating, answer a short battery about the case, and talk a study
-manager through what they looked at — over a screen recording of the case with
-their gaze drawn on top. A second SoSciSurvey questionnaire closes the run.
+A new study uses the November 2026 pilot flow: an in-tool pre-test covering
+background, CK, PCK and MESP, followed by a SoSciSurvey questionnaire and the
+video phase. The pilot example has seven debugging cases (one pre-test, five
+training, one post-test). For each case, participants watch a clip of students
+struggling with code, take timed notes, write a diagnosis with a confidence
+rating, and answer a short case questionnaire. By default, the last three cases
+are discussed together after the video phase, using screen recordings with gaze
+overlays. A second SoSciSurvey questionnaire closes the run. Case assignments
+and the think-aloud settings remain configurable.
+
+In-app eye-tracker calibration is optional and defaults off when the lab
+calibrates externally. Existing studies and started runs retain their legacy
+flow. See the [pilot protocol and rollout notes](docs/pilot-20261116.md) for
+versioning, source content, migration limits and verification.
 
 The stack is a FastAPI backend, a React + TypeScript frontend, and a small
 bridge that runs on the lab machine and handles both the Tobii eye tracker and
@@ -85,9 +90,9 @@ fixed orders participants are dealt half and half at their first login), add
 participants — and, where one person needs something else, hand-pick their
 sequence or their set — edit the question batteries and the welcome page's
 wording, and export the raw data as CSV. A new study arrives with the standard
-batteries from `A04_DataCollection.xlsx` and the MSK instrument from
-`MSK_items.docx` already on it (pre-test pages, the diagnosis confidence rating,
-the questions after each case); the "Fragebögen" tab is where they are edited,
+batteries from the versioned pilot manifest, including the six-task MESP
+instrument from `MESP_clean_mb.docx` (pre-test pages, the diagnosis confidence
+rating, and the questions after each case); the "Fragebögen" tab is where they are edited,
 and where an older study can be given the ones it is missing.
 
 The gaze exports are separate: `gaze.csv` contains every stored sample at the

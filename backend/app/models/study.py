@@ -41,6 +41,13 @@ class Study(Base):
     # that has already begun.
     think_aloud_batch_size: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
+    # Existing instruments retain their original script; the create API opts into the pilot.
+    flow_version: Mapped[str] = mapped_column(String(32), default="legacy", server_default="legacy")
+    think_aloud_mode: Mapped[str] = mapped_column(
+        String(16), default="block", server_default="block"
+    )
+    think_aloud_count: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("researchers.id", ondelete="SET NULL"), nullable=True

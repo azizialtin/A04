@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -22,6 +22,7 @@ class SectionTimingResponse(BaseModel):
 
 
 class SessionScriptResponse(BaseModel):
+    flow_version: str = "legacy"
     status: str
     current_step_index: int
     total_steps: int
@@ -48,6 +49,7 @@ class QuestionnaireVisitResponse(BaseModel):
 
 
 class FinishCkRequest(BaseModel):
+    reason: Literal["supervisor", "timer_expired"] = "supervisor"
     expected_step_index: int = Field(ge=0)
     visit_id: UUID
     request_id: UUID

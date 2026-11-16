@@ -105,6 +105,18 @@ async def test_the_welcome_wording_can_be_written_per_study(
         "case_outro_body": "",
         "think_aloud_title": "",
         "think_aloud_body": "",
+        **{
+            f"{key}_{suffix}": ""
+            for key in (
+                "questionnaire_end",
+                "video_start",
+                "video_intro",
+                "video_end",
+                "discussion_start",
+                "post_intro",
+            )
+            for suffix in ("title", "body")
+        },
     }
 
     # And the participant's script opens with exactly that wording.
@@ -313,6 +325,18 @@ async def test_a_study_without_its_own_wording_says_so(client, study, admin_head
         "case_outro_body": "",
         "think_aloud_title": "",
         "think_aloud_body": "",
+        **{
+            f"{key}_{suffix}": ""
+            for key in (
+                "questionnaire_end",
+                "video_start",
+                "video_intro",
+                "video_end",
+                "discussion_start",
+                "post_intro",
+            )
+            for suffix in ("title", "body")
+        },
     }
     assert r.json()["video_defaults"] == {
         "time_limit_seconds": None,

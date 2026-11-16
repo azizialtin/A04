@@ -324,7 +324,7 @@ test('every default pretest page fits the lab viewport, including conditional de
   test.setTimeout(90_000)
   await page.setViewportSize({ width: 1920, height: 1080 })
   const token = await admin(request)
-  const study = await api<{ id: number }>(request, '/admin/studies', token, 'POST', { name: 'E2E default pretest viewport ' + Date.now() })
+  const study = await api<{ id: number }>(request, '/admin/studies', token, 'POST', { name: 'E2E legacy pretest viewport ' + Date.now(), flow_version: 'legacy', think_aloud_mode: 'block' })
   const participantId = 'E2E-VIEW-' + Date.now()
   try {
     await api(request, `/admin/studies/${study.id}/participants`, token, 'POST', { ids: [participantId] })

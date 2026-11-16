@@ -23,7 +23,8 @@ async function api(path: string, init: RequestInit & { token?: string } = {}) {
       ...rest.headers,
     },
   })
-  if (!res.ok) throw new Error(`${init.method ?? 'GET'} ${path} -> ${res.status} ${await res.text()}`)
+  if (!res.ok)
+    throw new Error(`${init.method ?? 'GET'} ${path} -> ${res.status} ${await res.text()}`)
   return res.status === 204 ? null : res.json()
 }
 
@@ -52,6 +53,8 @@ export async function seedStudy(adminEmail: string, adminPassword: string): Prom
     token,
     body: JSON.stringify({
       name: `E2E ${stamp}`,
+      flow_version: 'legacy',
+      think_aloud_mode: 'block',
       sosci_pretest_url: 'https://sosci.example/pre',
       sosci_posttest_url: 'https://sosci.example/post',
     }),

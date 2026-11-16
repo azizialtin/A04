@@ -184,7 +184,9 @@ export default function VideosSection({ studyId }: { studyId: number }) {
           <p className="muted small">
             Java-Code in diesem wie in den anderen Textfeldern: zwischen eine Zeile mit{' '}
             <code>```</code> und eine weitere Zeile mit <code>```</code> setzen, die Einrückung
-            bleibt erhalten. Er erscheint als Codefenster mit Zeilennummern.
+            bleibt erhalten. Er erscheint als Codefenster mit Zeilennummern. Namen im Fließtext
+            können mit einzelnen Backticks gesetzt werden, z. B. <code>{'`Heizung`'}</code>. Im
+            Pilotablauf beginnt jeder Codeblock der Schüler-Aufgabe bei Zeile 1.
           </p>
         </div>
         <div className="form-row">
@@ -463,7 +465,9 @@ function VideoEditor({
             />
             <p className="muted small">
               Java-Code zwischen zwei eigenen Zeilen mit <code>```</code> setzen; Einrückung und
-              Leerzeilen bleiben erhalten.
+              Leerzeilen bleiben erhalten. Einzelne Backticks setzen Namen wie{' '}
+              <code>{'`Heizung`'}</code> in Codeschrift. Im Pilotablauf beginnt jeder Codeblock der
+              Schüler-Aufgabe bei Zeile 1.
             </p>
           </div>
           <div className="form-row">

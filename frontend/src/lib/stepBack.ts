@@ -18,6 +18,11 @@ export function isStepBackChord(
 export function stepLabel(step: SessionStep | undefined, t: TFunction): string {
   if (!step) return t('step_back.kinds.thanks')
   const kind = t(`step_back.kinds.${step.kind}`, { defaultValue: step.kind })
+  if (['case_video', 'diagnosis', 'think_aloud'].includes(step.kind)) {
+    return step.case_number
+      ? `${kind} – ${t('pilot.case_intro_title', { current: step.case_number })}`
+      : kind
+  }
   const title = 'title' in step && step.title ? step.title : ''
   return title ? `${kind} – ${title}` : kind
 }

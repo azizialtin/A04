@@ -6,10 +6,12 @@ import CodeBlock from './CodeBlock'
 
 function emphasis(text: string) {
   return text
-    .split(/(\*\*[^*\n]+\*\*)/g)
+    .split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/g)
     .map((part, index) =>
       part.startsWith('**') && part.endsWith('**') ? (
         <strong key={index}>{part.slice(2, -2)}</strong>
+      ) : part.startsWith('`') && part.endsWith('`') ? (
+        <code key={index}>{part.slice(1, -1)}</code>
       ) : (
         part
       ),
@@ -30,17 +32,19 @@ export default function StudyText({
   style,
   mode = 'paragraphs',
   startLine = 1,
+  restartCodeBlocks = false,
 }: {
   text: string
   className?: string
   style?: CSSProperties
   mode?: 'paragraphs' | 'preserve'
   startLine?: number
+  restartCodeBlocks?: boolean
 }) {
   const segments = splitCodeBlocks(text)
   let nextLine = Number.isSafeInteger(startLine) && startLine > 0 ? startLine : 1
   const numbered = segments.map((segment) => {
-    const firstLine = nextLine
+    const firstLine = restartCodeBlocks ? 1 : nextLine
     if (segment.kind === 'code') nextLine += segment.lines.length
     return { segment, firstLine }
   })

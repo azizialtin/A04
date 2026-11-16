@@ -7,6 +7,7 @@ import StudyText from '../StudyText'
 import './CaseOutroScreen.css'
 
 interface Props {
+  pilot?: boolean
   instruction: string
   questions: Question[]
   submitting?: boolean
@@ -24,6 +25,7 @@ interface Props {
  */
 export default function CaseOutroScreen({
   instruction,
+  pilot = false,
   questions,
   submitting,
   initialAnswers,
@@ -61,7 +63,7 @@ export default function CaseOutroScreen({
     <div className="case-outro">
       <QuestionnaireRenderer
         title={heading || t('case_outro.title')}
-        description={body || t('case_outro.body')}
+        description={body || t(pilot ? 'pilot.case_outro_body' : 'case_outro.body')}
         instruction={instruction}
         questions={questions}
         submitting={submitting}

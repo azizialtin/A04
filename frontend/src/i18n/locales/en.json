@@ -143,7 +143,10 @@
     "ranking_up": "Move up",
     "ranking_down": "Move down",
     "ranking_confirm": "Use this order",
-    "ranking_saved": "Order selected. You can still change it."
+    "ranking_saved": "Order selected. You can still change it.",
+    "multi_select_exact": "Select exactly {{count}} answers.",
+    "multi_select_min": "Select at least {{count}} answers.",
+    "multi_select_max": "Select at most {{count}} answers."
   },
   "thanks": {
     "title": "Thank you!",
@@ -162,7 +165,11 @@
       "post_test": "Post-test"
     },
     "unsent": "{{count}} entry not saved yet — retrying.",
-    "unsent_plural": "{{count}} entries not saved yet — retrying."
+    "unsent_plural": "{{count}} entries not saved yet — retrying.",
+    "questionnaire_phase": "Questionnaire phase",
+    "video_phase": "Video phase",
+    "discussion_phase": "Discussion phase",
+    "global_case_position": "{{phase}} · Case {{current}} of {{total}}"
   },
   "step_back": {
     "title": "One step back (study supervisor)",
@@ -183,7 +190,8 @@
       "case_outro": "Case completed",
       "think_aloud": "Think-aloud",
       "thanks": "End",
-      "section_intro": "Section introduction"
+      "section_intro": "Section introduction",
+      "text_page": "Information"
     }
   },
   "ck_section": {
@@ -198,7 +206,10 @@
     "finish_body": "End the CK section and continue to the PCK introduction or first PCK page?",
     "finish_note": "Your current answers will be saved. Unvisited pages will have no answers or timestamps.",
     "finish_confirm": "Save and continue to PCK",
-    "intro_timer_note": "The seven minutes start with the first task."
+    "intro_timer_note": "The seven minutes start with the first task.",
+    "skip": "I cannot find the error, skip this task",
+    "expired_notice": "The seven minutes are up. You are being taken to the next section.",
+    "expiry_saving": "Time is up. Saving your answers …"
   },
   "recording_audio": {
     "unavailable": "The video soundtrack cannot be recorded here. You can continue; please tell the supervisor.",
@@ -233,6 +244,45 @@
     "dismiss": "Dismiss notice",
     "replay_empty": "No displayable gaze points are available for this replay. A screen recording and its soundtrack do not confirm successful gaze capture.",
     "mock": "Test mode: synthetic gaze, not a verified hardware test.",
-    "continue_without": "Continue without gaze data"
+    "continue_without": "Continue without gaze data",
+    "preflight_title": "Check gaze recording"
+  },
+  "pilot": {
+    "welcome_intro": "Welcome, and thank you for participating in our study!\n\nFirst, you will answer questions for approximately 30 minutes. After a short break, you will work through seven video cases. The videos show typical situations in which students find and fix errors in programs (debugging). Complete the tasks accompanying each video.\n\nAfter another short break, you will answer some final questions. The study takes approximately 2.5 hours.\n\nWhen you are ready, select “Continue” to begin.",
+    "case_intro_title": "Case {{current}}",
+    "case_intro_body": "Do you have any questions so far? Please ask the study supervisor.\n\nWhen you are ready to begin the case, select “Continue”.",
+    "case_outro_body": "Thank you. Please answer a few short questions about the case you just completed.",
+    "diagnosis_prompt": "What was the problem? Write your diagnosis.",
+    "info_button": "Diagnosis definition",
+    "student_task_button": "Student task and supplied code",
+    "info_title": "Diagnosis definition",
+    "student_task_title": "Student task and supplied code",
+    "sosci_post_body": "Finally, please complete the last questionnaire on SoSciSurvey.",
+    "text_pages": {
+      "questionnaire_end": {
+        "title": "End of questionnaire phase",
+        "body": "You have completed the questionnaire phase. Please take a short break if you wish.\n\nNext, you will work on video cases. This takes approximately one hour and 15 minutes. When you are ready, select “Continue”."
+      },
+      "video_start": {
+        "title": "Start of video phase",
+        "body": "When you are ready to start the video phase, select “Continue”."
+      },
+      "video_intro": {
+        "title": "Video phase",
+        "body": "In the next section, you will watch videos of classroom situations with two students. You can take notes during the video and move backwards and forwards as often as you wish, or watch individual sections or the entire video again. Use “Student task and supplied code” to see the students’ programming task and the initial Java code, and “Diagnosis definition” to review your task: writing a diagnosis of the situation.\n\n**Definition of diagnosis:**\nDiagnosis means identifying and interpreting students’ skills, misconceptions, working processes and motivation to make appropriate teaching decisions.\n\n**Example diagnosis:**\nWhen adding ½ + ⅓, the students add both numerators and denominators and incorrectly obtain ⅖. Comparing their result with the model solution (⅚), they notice the discrepancy. They are surprised but do not check their calculations step by step. One student briefly notices that the denominators differ, but does not pursue this. Their behaviour suggests declining motivation: they notice the discrepancy without investigating it. Later, they correctly convert fractions to a common denominator. This suggests that they know the method but previously forgot it through inattention or lack of motivation."
+      },
+      "video_end": {
+        "title": "End of video phase",
+        "body": "You have completed the video phase. Please take a short break if you wish.\n\nThe discussion phase takes approximately 40 minutes. When you are ready, select “Continue”."
+      },
+      "discussion_start": {
+        "title": "Start of discussion phase",
+        "body": "When you are ready, start the discussion phase."
+      },
+      "post_intro": {
+        "title": "Final questionnaire",
+        "body": "You have completed the diagnosis tasks. To finish, please answer a few more questions. The final questionnaire takes approximately 15 minutes.\n\nSelect “Continue” to begin the questionnaire."
+      }
+    }
   }
 }

@@ -143,7 +143,10 @@
     "ranking_up": "Nach oben verschieben",
     "ranking_down": "Nach unten verschieben",
     "ranking_confirm": "Diese Reihenfolge übernehmen",
-    "ranking_saved": "Reihenfolge ausgewählt. Änderungen sind weiterhin möglich."
+    "ranking_saved": "Reihenfolge ausgewählt. Änderungen sind weiterhin möglich.",
+    "multi_select_exact": "Wählen Sie genau {{count}} Antworten.",
+    "multi_select_min": "Wählen Sie mindestens {{count}} Antworten.",
+    "multi_select_max": "Wählen Sie höchstens {{count}} Antworten."
   },
   "thanks": {
     "title": "Vielen Dank!",
@@ -162,7 +165,11 @@
       "post_test": "Nachtest"
     },
     "unsent": "{{count}} Eingabe noch nicht gespeichert – Verbindung wird erneut versucht.",
-    "unsent_plural": "{{count}} Eingaben noch nicht gespeichert – Verbindung wird erneut versucht."
+    "unsent_plural": "{{count}} Eingaben noch nicht gespeichert – Verbindung wird erneut versucht.",
+    "questionnaire_phase": "Fragebogen-Phase",
+    "video_phase": "Video-Phase",
+    "discussion_phase": "Erörterungs-Phase",
+    "global_case_position": "{{phase}} · Fall {{current}} von {{total}}"
   },
   "step_back": {
     "title": "Einen Schritt zurück (Studienleitung)",
@@ -183,7 +190,8 @@
       "case_outro": "Fall abgeschlossen",
       "think_aloud": "Lautes Denken",
       "thanks": "Abschluss",
-      "section_intro": "Abschnittseinleitung"
+      "section_intro": "Abschnittseinleitung",
+      "text_page": "Information"
     }
   },
   "ck_section": {
@@ -198,7 +206,10 @@
     "finish_body": "Den CK-Abschnitt beenden und zur PCK-Einleitung oder ersten PCK-Seite wechseln?",
     "finish_note": "Die bisherigen Eingaben dieser Seite werden gespeichert. Nicht bearbeitete Seiten bleiben ohne Antworten und Zeitstempel.",
     "finish_confirm": "Speichern und zu PCK",
-    "intro_timer_note": "Die sieben Minuten beginnen erst mit der ersten Aufgabe."
+    "intro_timer_note": "Die sieben Minuten beginnen erst mit der ersten Aufgabe.",
+    "skip": "Ich finde den Fehler nicht, Aufgabe überspringen",
+    "expired_notice": "Die sieben Minuten sind abgelaufen. Sie werden zum nächsten Abschnitt weitergeleitet.",
+    "expiry_saving": "Die Zeit ist abgelaufen. Ihre Eingaben werden gespeichert …"
   },
   "recording_audio": {
     "unavailable": "Der Videoton kann hier nicht aufgezeichnet werden. Sie können fortfahren; bitte informieren Sie die Studienleitung.",
@@ -233,6 +244,45 @@
     "dismiss": "Hinweis ausblenden",
     "replay_empty": "Für diese Wiedergabe sind keine darstellbaren Blickpunkte verfügbar. Die Bildschirmaufnahme und ihr Ton bestätigen keine erfolgreiche Blickaufzeichnung.",
     "mock": "Testmodus: synthetische Blickdaten, kein bestätigter Hardware-Test.",
-    "continue_without": "Ohne Blickdaten fortfahren"
+    "continue_without": "Ohne Blickdaten fortfahren",
+    "preflight_title": "Blickaufzeichnung prüfen"
+  },
+  "pilot": {
+    "welcome_intro": "Herzlich willkommen und vielen Dank, dass Sie an unserer Studie teilnehmen!\n\nZu Beginn beantworten Sie für ca. 30 Minuten einige Fragen. Nach einer kurzen Pause bearbeiten Sie sieben Videofälle. Die Videos zeigen typische Situationen, in denen Schülerinnen und Schüler Fehler in Programmen suchen und beheben (Debugging). Zu jedem Video bearbeiten Sie die dazugehörigen Aufgaben.\n\nNach einer weiteren kurzen Pause beantworten Sie zum Abschluss noch einige Fragen. Die Studie wird ungefähr 2,5 Stunden dauern.\n\nWenn Sie bereit sind, klicken Sie auf „Weiter“, um zu beginnen.",
+    "case_intro_title": "Fall {{current}}",
+    "case_intro_body": "Haben Sie bis hierhin Fragen? Wenden Sie sich gerne an die Versuchsleitung.\n\nWenn Sie bereit sind, mit dem Fall zu beginnen, klicken Sie auf „Weiter“.",
+    "case_outro_body": "Danke. Bitte beantworten Sie noch einige kurze Fragen zum eben bearbeiteten Fall.",
+    "diagnosis_prompt": "Was war das Problem? Schreiben Sie Ihre Diagnose.",
+    "info_button": "Diagnose Definition",
+    "student_task_button": "Schüler-Aufgabe und gegebener Code",
+    "info_title": "Diagnose Definition",
+    "student_task_title": "Schüler-Aufgabe und gegebener Code",
+    "sosci_post_body": "Zum Abschluss bitten wir Sie, den letzten Fragebogen auf SoSciSurvey auszufüllen.",
+    "text_pages": {
+      "questionnaire_end": {
+        "title": "Ende Fragebogen-Phase",
+        "body": "Sie haben die Fragebogen-Phase abgeschlossen. Nehmen Sie sich gerne einen Moment Zeit für eine kurze Pause.\n\nIm nächsten Teil bearbeiten Sie Videofälle. Dafür benötigen Sie ungefähr eine Stunde und 15 Minuten. Wenn Sie bereit sind, klicken Sie auf „Weiter“."
+      },
+      "video_start": {
+        "title": "Start Video-Phase",
+        "body": "Wenn Sie bereit sind, mit der Video-Phase zu starten, drücken Sie bitte auf „Weiter“."
+      },
+      "video_intro": {
+        "title": "Video-Phase",
+        "body": "Im nächsten Abschnitt werden Sie Videos von Unterrichtssituationen mit zwei Schüler:innen sehen, Sie können sich während des Videos Notizen machen und so oft wie Sie möchten vor und zurück springen oder sich einzelne Abschnitte sowie das ganze Video nochmal ansehen. Zusätzlich können Sie sich mit dem Button „Schüler-Aufgabe und gegebener Code“ die Programmieraufgabe der Schüler und den zu Beginn gegebenen Code in Java ansehen und mit dem Button „Diagnose Definition“ nochmals Ihre Bearbeitungsaufgabe anschauen. Diese beinhaltet das Schreiben einer Diagnose zur Situation.\n\n**Definition von Diagnose:**\nDiagnose bezieht sich auf die Identifizierung und Interpretation der Fähigkeiten, Fehlvorstellungen, Bearbeitungsprozesse und Motivationszustände der Schüler und Schülerinnen, um angemessene Unterrichtsentscheidungen zu treffen.\n\n**Beispiel Diagnose:**\nDie Schüler:innen addieren bei ½ + ⅓ sowohl die Zähler als auch die Nenner und erhalten dadurch fälschlicherweise ⅖. Beim selbstständigen Vergleich mit der Musterlösung (⅚) fällt ihnen auf, dass ihr Ergebnis abweicht. Sie wundern sich darüber, gehen ihren Rechenweg aber nicht noch einmal Schritt für Schritt durch. Eine Schülerin bemerkt kurz, dass die Nenner verschieden sind, verfolgt diesen Hinweis jedoch nicht weiter. An ihrem Verhalten bemerkt man, dass ihre Motivation im Laufe der Bearbeitung nachlässt, sodass sie die Abweichung zwar bemerken, ihr aber nicht genauer nachgehen. Später im Rechenweg erweitern die Schülerinnen die Brüche korrekt. Das spricht dafür, dass sie das Verfahren kennen und es oben auf Grund von Unaufmerksamkeit oder Demotivation vergessen haben."
+      },
+      "video_end": {
+        "title": "Ende Video-Phase",
+        "body": "Sie haben die Video-Phase abgeschlossen. Machen Sie gerne eine kurze Pause.\n\nDie anschließende Erörterungs-Phase dauert etwa 40 Minuten. Wenn Sie bereit sind, klicken Sie auf „Weiter“."
+      },
+      "discussion_start": {
+        "title": "Start Erörterungs-Phase",
+        "body": "Wenn Sie bereit sind, starten Sie mit der Erörterungs-Phase."
+      },
+      "post_intro": {
+        "title": "Abschließender Fragebogen",
+        "body": "Sie haben die Diagnoseaufgaben abgeschlossen. Zum Abschluss bitten wir Sie, noch einige Fragen zu beantworten. Für den letzten Fragebogen benötigen Sie etwa 15 Minuten.\n\nKlicken Sie auf „Weiter“, um mit dem Fragebogen zu beginnen."
+      }
+    }
   }
 }

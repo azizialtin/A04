@@ -14,6 +14,7 @@ from app.models.session import Session
 from app.models.study import Study
 from app.services.pretest_content import (
     MANIFEST_PATHS,
+    PILOT_SOURCE_KEY,
     SOURCE_KEY,
 )
 from app.services.pretest_content import (
@@ -31,7 +32,11 @@ from app.services.study_content import CK_DEBUG_PRE_TEST, CK_PRE_TEST
 def _source_row(questionnaire: Questionnaire, source_key: str) -> int | None:
     for question in questionnaire.questions:
         reference = question.get("source_ref")
-        if isinstance(reference, dict) and reference.get("instrument") == source_key:
+        if (
+            question.get("type") == "debugging"
+            and isinstance(reference, dict)
+            and reference.get("instrument") == source_key
+        ):
             row = reference.get("row")
             return row if isinstance(row, int) and not isinstance(row, bool) else None
     return None
@@ -48,11 +53,14 @@ async def import_ck_pretest(
     """Preview by default; the caller commits an explicitly requested import."""
     if pck_questionnaire_id is None:
         raise ContentImportError("Select the first PCK pre-test questionnaire in this study.")
-    questions = mapped_ck_tasks(mapping)
-    manifest = load_pretest_manifest()
     study = await db.scalar(select(Study).where(Study.id == study_id).with_for_update())
     if study is None:
         raise ContentImportError(f"No study with id {study_id}.")
+    default_source = (
+        PILOT_SOURCE_KEY
+        if getattr(study, "flow_version", "legacy") == "pilot_20261116"
+        else SOURCE_KEY
+    )
     started = await db.scalar(
         select(Session.id)
         .join(Participant, Participant.id == Session.participant_id)
@@ -102,7 +110,8 @@ async def import_ck_pretest(
         reference["instrument"]
         for page in pages
         for question in page.questions
-        if isinstance(reference := question.get("source_ref"), dict)
+        if question.get("type") == "debugging"
+        and isinstance(reference := question.get("source_ref"), dict)
         and isinstance(reference.get("instrument"), str)
         and reference.get("instrument") in MANIFEST_PATHS
     }
@@ -110,11 +119,10 @@ async def import_ck_pretest(
         raise ContentImportError(
             "CK pages from multiple source versions are present; no changes were made."
         )
-    source_key = next(iter(existing_sources), SOURCE_KEY)
-    if source_key != SOURCE_KEY:
-        # Verify prior imports against their own immutable instrument, never today's IDs.
-        manifest = load_pretest_manifest(source_key)
-        questions = mapped_ck_tasks(mapping, source_key=source_key)
+    source_key = next(iter(existing_sources), default_source)
+    # Verify prior imports against their own immutable instrument, never today's IDs.
+    manifest = load_pretest_manifest(source_key)
+    questions = mapped_ck_tasks(mapping, source_key=source_key)
     source_pages = [
         (row, page) for page in pages if (row := _source_row(page, source_key)) is not None
     ]
@@ -148,7 +156,7 @@ async def import_ck_pretest(
             raise ContentImportError(
                 "Imported sections have been reordered or relabeled; no changes were made."
             )
-        if source_key != SOURCE_KEY:
+        if source_key != default_source:
             return [
                 f"All thirteen CK task pages match their original {source_key} import. "
                 "No changes. Create a new study to use the corrected CSV IDs."
@@ -173,7 +181,7 @@ async def import_ck_pretest(
         raise ContentImportError("PCK pages must be consecutive before importing CK.")
 
     changes = [
-        f"Source: {SOURCE_KEY}.",
+        f"Source: {source_key}.",
         f"Insert thirteen CK pages before questionnaire {target.id}: {target.title}.",
     ]
     for index, (task, question) in enumerate(zip(manifest["ck_tasks"], questions, strict=True)):

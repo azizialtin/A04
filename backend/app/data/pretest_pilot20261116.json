@@ -1,0 +1,2794 @@
+{
+  "version": "2026-11-16",
+  "source_file": "A04_DataCollection.xlsx / TODO Pre-Test Inside Tool; MESP_clean_mb.docx",
+  "source_sha256": "7c7cd9ce81a945f2a5fa8e26352d4d53f2682338e7e089e65b09949ba8b8152b",
+  "sources": [
+    {
+      "kind": "spreadsheet",
+      "url": "https://docs.google.com/spreadsheets/d/1vrXFgk0iZjm_JB4Foyv07zuo5dSguk9yhgb5qjUxHWw/edit",
+      "sheet": "TODO Pre-Test Inside Tool",
+      "sha256": "7c7cd9ce81a945f2a5fa8e26352d4d53f2682338e7e089e65b09949ba8b8152b"
+    },
+    {
+      "kind": "document",
+      "filename": "MESP_clean_mb.docx",
+      "sha256": "7f06ada0c60c2f7bdb28167d27b6d7f559963a281ed55fc21d985b7482c3764b"
+    },
+    {
+      "kind": "mockup",
+      "url": "https://docs.google.com/presentation/d/1dzB4YbJF6t0QoiZpE26Bm8w52-GN8maxd8Xbv9y2V_Q/edit",
+      "slides": [
+        6,
+        8,
+        10
+      ]
+    }
+  ],
+  "editorial_decisions": [
+    "CK skip stores line 0 and empty text; explicit piloting requirement supersedes the legacy dash note in K17.",
+    "CK 02 solution uses < and states that another book is allowed only below the limit; the stale exceeded-limit rationale is replaced.",
+    "CK 02 obvious spelling errors implentiert werde are corrected to implementiert werden.",
+    "PCK plausibility labels use the five researcher-confirmed labels, positive at 1 and negative at 5.",
+    "PCK suitability uses the researcher-confirmed endpoints 1 = sehr geeignet and 5 = gar nicht geeignet with numbered intermediate choices; no unprovided intermediate labels are invented.",
+    "PCK 3 restores only the missing class closing brace; English identifiers and the intentional <= bug remain.",
+    "PCK 5 has a prose scenario only; the embedded screenshot is a ranking UI example, not a stimulus.",
+    "MESP retains source option order, with no randomization.",
+    "MESP task 2 display letters and IDs are normalized to a-e; source_ref preserves original labels a,b,d,e,F.",
+    "MESP task 5a removes the stray question mark in Ihre? Lösung; other instrument wording is retained."
+  ],
+  "ck_intro": {
+    "title": "Debugging-Aufgaben",
+    "body": "In diesem Abschnitt bearbeiten Sie Debugging-Aufgaben. Auf jeder Seite sehen Sie ein Programm, das einen Fehler enthält. Geben Sie die Zeilennummer an, in der sich der Fehler befindet, und beschreiben Sie kurz, worin er besteht. Klicken Sie anschließend auf „Weiter“, um zur nächsten Aufgabe zu gelangen.\n\nFür diesen Abschnitt haben Sie sieben Minuten Zeit. Der Abschnitt enthält bewusst mehr Aufgaben, als Sie in dieser Zeit voraussichtlich bearbeiten können. Sie müssen daher nicht alle Aufgaben lösen. Wir möchten einen Eindruck davon gewinnen, wie Sie Fehler in Programmen erkennen und beschreiben. Bearbeiten Sie die Aufgaben sorgfältig und versuchen Sie, innerhalb der verfügbaren Zeit möglichst viele zu beantworten.\n\nNach Ablauf der sieben Minuten erhalten Sie einen Hinweis und werden zum nächsten Abschnitt weitergeleitet."
+  },
+  "ck_tasks": [
+    {
+      "source_row": 14,
+      "source_variable": "ck_pre_01",
+      "question": {
+        "id": "ck_pre_01",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Der Batteriestatus der Kopfhörer soll ausgegeben werden.",
+        "min": 1,
+        "max": 6,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Kopfhörer.java",
+            "code": [
+              "public class Kopfhörer {",
+              "    public void batteriestatusAusgeben() {",
+              "        int batterie = 100",
+              "        System.out.println(\"Batteriestatus: \" + batterie + \"%\");",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 3,
+        "explanation": "Am Ende der Variablendeklaration fehlt ein Semikolon",
+        "rationale": "Ein einzelnes fehlendes Satzzeichen in einem kurzen Programm erkennen."
+      }
+    },
+    {
+      "source_row": 15,
+      "source_variable": "ck_pre_02 FORMER 06",
+      "question": {
+        "id": "ck_pre_02",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Es soll eine Methode implementiert werden, die prüft, ob eine Person noch ein weiteres Buch ausleihen darf. Maximal fünf Bücher dürfen gleichzeitig ausgeliehen sein.",
+        "min": 1,
+        "max": 11,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bibliothekskonto.java",
+            "code": [
+              "public class Bibliothekskonto {",
+              "",
+              "    private int maximaleBücherzahl = 5;",
+              "",
+              "    public boolean weiteresBuchAusleihbar(int ausgelieheneBücher) {",
+              "        if (ausgelieheneBücher <= maximaleBücherzahl) {",
+              "            return true;",
+              "        }",
+              "        return false;",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 6,
+        "explanation": "Die Bedingung muss ausgelieheneBücher < maximaleBücherzahl lauten, damit true nur dann zurückgegeben wird, wenn die maximale Bücherzahl noch nicht erreicht ist und ein weiteres Buch ausgeliehen werden darf.",
+        "rationale": "Die aktuelle Anzahl der ausgeliehenen Bücher mit dem Limit vergleichen und berücksichtigen, dass durch eine weitere Ausleihe ein Buch hinzukommt."
+      }
+    },
+    {
+      "source_row": 16,
+      "source_variable": "ck_pre_03 FORMER 04",
+      "question": {
+        "id": "ck_pre_03",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Summe aller Werte im Array soll berechnet und ausgegeben werden.",
+        "min": 1,
+        "max": 14,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Rechner.java",
+            "code": [
+              "",
+              "public class Rechner {",
+              "",
+              "    public void summeBerechnen() {",
+              "        int[] werte = {3, 5, 2, 8};",
+              "        int summe = 0;",
+              "",
+              "        for (int i = 1; i < werte.length; i++) {",
+              "            summe = summe + werte[i];",
+              "        }",
+              "",
+              "        System.out.println(\"Summe: \" + summe);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 8,
+        "explanation": "Die Schleife beginnt bei Index 1 und überspringt dadurch das erste Arrayelement. Sie muss bei Index 0 beginnen.",
+        "rationale": "Aktuell wird 15 statt 18 ausgegeben. Um den Fehler zu finden, muss man den Startwert der Schleife mit dem ersten Arrayindex abgleichen."
+      }
+    },
+    {
+      "source_row": 17,
+      "source_variable": "ck_pre_04 FORMER 13",
+      "question": {
+        "id": "ck_pre_04",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die durchschnittliche Stärke aller Superhelden soll berechnet und ausgegeben werden. Nachkommastellen müssen nicht berücksichtigt werden; ein durch Ganzzahldivision abgeschnittener Wert ist ausreichend.",
+        "min": 1,
+        "max": 14,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Superheldenliga.java",
+            "code": [
+              "public class Superheldenliga {",
+              "    public void durchschnittlicheStärkeBerechnen() {",
+              "        // Stärke der Superhelden",
+              "        int[] stärken = {10,88,60,45,44,90,33,88,30,50};",
+              "",
+              "        int summe = 0;",
+              "        for (int i = 0; i < stärken.length - 1; i++)",
+              "        {",
+              "            summe += stärken[i];",
+              "        }",
+              "        double durchschnitt = summe / stärken.length;",
+              "        System.out.println(\"Die durchschnittliche Stärke ist: \" + durchschnitt);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 7,
+        "explanation": "Die Bedingung i < stärken.length - 1 schließt den letzten Arraywert aus. Damit alle Werte zur Summe beitragen muss die Bedingung i < stärken.length lauten.",
+        "rationale": "Die obere Schleifengrenze mit dem letzten gültigen Arrayindex abgleichen und erkennen warum 49.0 statt 54.0 ausgegeben wird."
+      }
+    },
+    {
+      "source_row": 18,
+      "source_variable": "ck_pre_05 FORMER 02",
+      "question": {
+        "id": "ck_pre_05",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Nach der Ausführung soll x gleich 10 und y gleich 5 sein.",
+        "min": 1,
+        "max": 8,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static void main(String[] argumente) {",
+              "        int x = 5;",
+              "        int y = 5;",
+              "        y = x;",
+              "        x = z + 5;",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 6,
+        "explanation": "Die Variable z ist nicht deklariert und muss hier durch x ersetzt werden",
+        "rationale": "Einen verwendeten Variablennamen mit den vorhandenen Deklarationen abgleichen."
+      }
+    },
+    {
+      "source_row": 19,
+      "source_variable": "ck_pre_06 FORMER 05",
+      "question": {
+        "id": "ck_pre_06",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Beim Aufruf der Methode minimumBerechnen soll das Minimum von 5 und 10 berechnet und ausgegeben werden.",
+        "min": 1,
+        "max": 8,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Minimumrechner.java",
+            "code": [
+              "public class Minimumrechner {",
+              "    public void minimumBerechnen() {",
+              "        int a = 5;",
+              "        int b = 10;",
+              "        int minimum = min(a, b);",
+              "        System.out.println(\"Das Minimum ist \" + minimum);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 5,
+        "explanation": "Die Methode min ist nicht definiert und muss als Math.min aufgerufen werden",
+        "rationale": "Wissen über den Aufruf einer Standardbibliotheksmethode anwenden."
+      }
+    },
+    {
+      "source_row": 20,
+      "source_variable": "ck_pre_07",
+      "question": {
+        "id": "ck_pre_07",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Methode soll den lokalen Wert von x auf den Bereich von 5 bis 10 einschließlich begrenzen. Werte innerhalb des Bereichs sollen unverändert bleiben.",
+        "min": 1,
+        "max": 11,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public void wertBegrenzen(int x) {",
+              "        if (x > 10) {",
+              "            x = 10;",
+              "        } else {",
+              "            if (x > 5) {",
+              "                x = 5;",
+              "            }",
+              "        }",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 6,
+        "explanation": "Die Bedingung muss x < 5 lauten damit zu kleine Werte auf 5 gesetzt werden und gültige Werte unverändert bleiben",
+        "rationale": "Drei Wertebereiche anhand verschachtelter Bedingungen prüfen."
+      }
+    },
+    {
+      "source_row": 21,
+      "source_variable": "ck_pre_08",
+      "question": {
+        "id": "ck_pre_08",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Zahlen 1 bis 5 sollen in aufsteigender Reihenfolge ausgegeben werden.",
+        "min": 1,
+        "max": 9,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static void main(String[] argumente) {",
+              "        for (int i = 1; i < 10; i++) {",
+              "            if (i < 5) {",
+              "                System.out.println(i);",
+              "            }",
+              "        }",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 4,
+        "explanation": "Die Bedingung muss i <= 5 lauten damit auch die Zahl 5 ausgegeben wird",
+        "rationale": "Schleife und innere Bedingung gemeinsam verfolgen und einen Grenzfehler erkennen."
+      }
+    },
+    {
+      "source_row": 22,
+      "source_variable": "ck_pre_09",
+      "question": {
+        "id": "ck_pre_09",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Ausgegeben werden soll „Hallo und tschüss“. Die Methode main darf nicht verändert werden.",
+        "min": 1,
+        "max": 20,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static void main(String[] argumente) {",
+              "        halloAusgeben();",
+              "        undAusgeben();",
+              "        tschüssAusgeben();",
+              "    }",
+              "",
+              "    public static void halloAusgeben() {",
+              "        System.out.print(\"Hallo\");",
+              "        undAusgeben();",
+              "    }",
+              "",
+              "    public static void undAusgeben() {",
+              "        System.out.print(\" und \");",
+              "    }",
+              "",
+              "    public static void tschüssAusgeben() {",
+              "        System.out.print(\"tschüss\");",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 10,
+        "explanation": "Der Aufruf von undAusgeben in halloAusgeben muss entfernt werden da undAusgeben bereits in main aufgerufen wird",
+        "rationale": "Methodenaufrufe über mehrere Methoden hinweg verfolgen und eine doppelte Ausführung erkennen."
+      }
+    },
+    {
+      "source_row": 23,
+      "source_variable": "ck_pre_10",
+      "question": {
+        "id": "ck_pre_10",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Ein Bericht darüber, wie viele Schafe der Drache heute gegessen hat, soll ausgegeben werden.",
+        "min": 1,
+        "max": 29,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Königsland.java",
+            "code": [
+              "public class Königsland {",
+              "",
+              "    Drache drache;",
+              "",
+              "    public Königsland() {",
+              "        drache = new Drache(\"fünf\", \"vier\");",
+              "    }",
+              "",
+              "    public void königBerichten() {",
+              "        System.out.println(\"Bericht aus dem Königsland:\");",
+              "        System.out.println(\"Der Drache hat heute so viele Schafe gegessen: \" + drache.schafeHeuteAbfragen());",
+              "",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          },
+          {
+            "filename": "Drache.java",
+            "code": [
+              "public class Drache {",
+              "",
+              "    private int schafeHeute;",
+              "    private int bedarf;",
+              "",
+              "    public Drache(int schafeHeute, int bedarf) {",
+              "        this.schafeHeute = schafeHeute;",
+              "        this.bedarf = bedarf;",
+              "    }",
+              "",
+              "    public int schafeHeuteAbfragen() {",
+              "        return schafeHeute;",
+              "    }",
+              "",
+              "}"
+            ],
+            "start_line": 15
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 6,
+        "explanation": "Der Konstruktor erwartet Ganzzahlen statt Strings; die Anführungszeichen und Zahlwörter müssen durch die entsprechenden Zahlenwerte ersetzt werden",
+        "rationale": "Argumenttypen eines Konstruktoraufrufs mit dessen Definition in einer zweiten Klasse abgleichen."
+      }
+    },
+    {
+      "source_row": 24,
+      "source_variable": "ck_pre_11",
+      "question": {
+        "id": "ck_pre_11",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die größte der drei Zahlen a, b und c soll ausgegeben werden.",
+        "min": 1,
+        "max": 16,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public void größteZahlAusgeben(int a, int b, int c) {",
+              "        int größteZahl;",
+              "",
+              "        if (a > b) {",
+              "            größteZahl = a;",
+              "        } else {",
+              "            größteZahl = b;",
+              "        }",
+              "",
+              "        if (c > b) {",
+              "            größteZahl = c;",
+              "        }",
+              "        System.out.println(größteZahl);",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 11,
+        "explanation": "c muss mit größteZahl statt mit b verglichen werden damit das bisherige Maximum nicht durch einen kleineren Wert ersetzt wird",
+        "rationale": "Das bisherige Maximum verfolgen und einen Gegenbeispielfall für die falsche Bedingung finden."
+      }
+    },
+    {
+      "source_row": 25,
+      "source_variable": "ck_pre_12",
+      "question": {
+        "id": "ck_pre_12",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Die Ausgabe soll zuerst „10“ und anschließend „21“ sein.",
+        "min": 1,
+        "max": 20,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Bewertung.java",
+            "code": [
+              "public class Bewertung {",
+              "    public static int addieren(int a, int b) {",
+              "        return a + b;",
+              "    }",
+              "",
+              "    public static int verdoppeln(int c) {",
+              "        return addieren(c, c);",
+              "    }",
+              "",
+              "    public static int quadrieren(int d) {",
+              "        return d * d;",
+              "    }",
+              "",
+              "    public static void main(String[] argumente) {",
+              "",
+              "        System.out.println(verdoppeln(5));",
+              "",
+              "        System.out.println(addieren(verdoppeln(4), 5));",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 18,
+        "explanation": "Der innere Aufruf verdoppeln(4) liefert 8 statt der benötigten 16 und kann durch quadrieren(4) ersetzt werden damit die zweite Ausgabe 21 ergibt",
+        "rationale": "Verschachtelte Methodenaufrufe auswerten und die passende Berechnung für das Zielergebnis bestimmen."
+      }
+    },
+    {
+      "source_row": 26,
+      "source_variable": "ck_pre_13 FORMER 03",
+      "question": {
+        "id": "ck_pre_13",
+        "type": "debugging",
+        "text": "Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler? Der Endpreis des Kinotickets soll berechnet und ausgegeben werden.",
+        "min": 1,
+        "max": 14,
+        "max_entries": 5,
+        "code_blocks": [
+          {
+            "filename": "Kinokasse.java",
+            "code": [
+              "public class Kinokasse {",
+              "",
+              "    private double basispreis = 9.50;",
+              "    private double rabatt = 2.00;",
+              "",
+              "    public void endpreisBerechnen() {",
+              "",
+              "        double endpreis = basispreis - rabatt;",
+              "",
+              "        System.out.println(\"Der Endpreis des Tickets beträgt:\");",
+              "        System.out.prntln(endpreis);",
+              "",
+              "    }",
+              "}"
+            ],
+            "start_line": 1
+          }
+        ],
+        "allow_skip": true
+      },
+      "solution": {
+        "line": 11,
+        "explanation": "Der Methodenname prntln ist falsch geschrieben und muss println heißen",
+        "rationale": "Einen Tippfehler in einem bekannten Methodenaufruf erkennen. Die korrekte Schreibweise steht direkt darüber."
+      }
+    }
+  ],
+  "ck_id_mapping": {
+    "decided_on": "2026-11-16",
+    "decision": "Use the revised source order and current CK IDs; retain previous manifests unchanged.",
+    "rows": {
+      "14": "ck_pre_01",
+      "15": "ck_pre_02",
+      "16": "ck_pre_03",
+      "17": "ck_pre_04",
+      "18": "ck_pre_05",
+      "19": "ck_pre_06",
+      "20": "ck_pre_07",
+      "21": "ck_pre_08",
+      "22": "ck_pre_09",
+      "23": "ck_pre_10",
+      "24": "ck_pre_11",
+      "25": "ck_pre_12",
+      "26": "ck_pre_13"
+    }
+  },
+  "ck_version_crosswalk": {
+    "previous_instrument": "a04-pretest-2026-11-02",
+    "rows": [
+      {
+        "variable": "ck_pre_01",
+        "previous_variable": "ck_pre_01",
+        "source_row": 14,
+        "previous_source_row": 14
+      },
+      {
+        "variable": "ck_pre_02",
+        "previous_variable": "ck_pre_06",
+        "source_row": 15,
+        "previous_source_row": 19
+      },
+      {
+        "variable": "ck_pre_03",
+        "previous_variable": "ck_pre_04",
+        "source_row": 16,
+        "previous_source_row": 17
+      },
+      {
+        "variable": "ck_pre_04",
+        "previous_variable": "ck_pre_13",
+        "source_row": 17,
+        "previous_source_row": 26
+      },
+      {
+        "variable": "ck_pre_05",
+        "previous_variable": "ck_pre_02",
+        "source_row": 18,
+        "previous_source_row": 15
+      },
+      {
+        "variable": "ck_pre_06",
+        "previous_variable": "ck_pre_05",
+        "source_row": 19,
+        "previous_source_row": 18
+      },
+      {
+        "variable": "ck_pre_07",
+        "previous_variable": "ck_pre_07",
+        "source_row": 20,
+        "previous_source_row": 20
+      },
+      {
+        "variable": "ck_pre_08",
+        "previous_variable": "ck_pre_08",
+        "source_row": 21,
+        "previous_source_row": 21
+      },
+      {
+        "variable": "ck_pre_09",
+        "previous_variable": "ck_pre_09",
+        "source_row": 22,
+        "previous_source_row": 22
+      },
+      {
+        "variable": "ck_pre_10",
+        "previous_variable": "ck_pre_10",
+        "source_row": 23,
+        "previous_source_row": 23
+      },
+      {
+        "variable": "ck_pre_11",
+        "previous_variable": "ck_pre_11",
+        "source_row": 24,
+        "previous_source_row": 24
+      },
+      {
+        "variable": "ck_pre_12",
+        "previous_variable": "ck_pre_12",
+        "source_row": 25,
+        "previous_source_row": 25
+      },
+      {
+        "variable": "ck_pre_13",
+        "previous_variable": "ck_pre_03",
+        "source_row": 26,
+        "previous_source_row": 16
+      }
+    ]
+  },
+  "pck_intro": {
+    "title": "Fachdidaktisches Wissen",
+    "body": "Die folgenden Aufgaben beschreiben verschiedene Situationen, in denen Schülerinnen und Schüler Schwierigkeiten beim Debugging zeigen. Bearbeiten Sie die Aufgaben auf Grundlage der beschriebenen Situationen und Schüleräußerungen.\n\nJe nach Aufgabenstellung sollen Sie mögliche Lernschwierigkeiten einschätzen, diagnostische Überlegungen anstellen oder geeignete Unterstützungsmaßnahmen beurteilen. Achten Sie dabei auf die jeweilige Aufgabenstellung.\n\nBewerten Sie jede Aussage bzw. Maßnahme unabhängig und bezogen auf die beschriebene Situation. Dieselbe Bewertung kann mehrfach vergeben werden."
+  },
+  "pck_pages": [
+    {
+      "source_task": 1,
+      "title": "PCK: Aufgabe 1",
+      "description": "Ein Schüler soll die Summe aller Werte eines Arrays berechnen. Sein Programm gibt 15 statt der erwarteten 18 aus.\n\n```java\nint[] werte = {3, 5, 2, 8};\nint summe = 0;\n\nfor (int i = 1; i < werte.length; i++) {\n    summe = summe + werte[i];\n}\n```\n\nDer Schüler sagt:\n„Die Schleife funktioniert. Sie geht alle Werte durch und addiert sie. Ich verstehe nicht, warum das Ergebnis falsch ist.“",
+      "questions": [
+        {
+          "id": "pck_pre_1a",
+          "type": "free_text",
+          "text": "a) Welche möglichen fachlichen Vorstellungen oder Schwierigkeiten könnten dazu führen, dass der Schüler die Schleife als korrekt einschätzt? Erläutern Sie Ihre Überlegungen.",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 28,
+            "variable": "pck_pre_1a"
+          }
+        },
+        {
+          "id": "pck_pre_1b_1",
+          "type": "multiple_choice",
+          "text": "Der Schüler orientiert sich bei seiner Einschätzung an der Schleifenbedingung, berücksichtigt aber möglicherweise nicht den Startwert der Laufvariable.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_1b",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 29,
+            "variable": "pck_pre_1b",
+            "item": 1
+          },
+          "matrix_prompt": "b) Auf Nachfrage erklärt der Schüler: „Ich habe mir die Schleife angeschaut. Da steht doch, dass sie bis zur Länge des Arrays läuft. Deshalb dachte ich, dass alle vier Werte addiert werden.“ \n\nWie plausibel sind die folgenden Aussagen im Hinblick auf das beschriebene Vorgehen des Schülers? Bewerten Sie jede Aussage auf einer fünfstufigen Skala (1 = sehr plausibel, 2 = plausibel, 3 = neutral, 4 = eher nicht plausibel, 5 = gar nicht plausibel)."
+        },
+        {
+          "id": "pck_pre_1b_2",
+          "type": "multiple_choice",
+          "text": "Der Schüler geht möglicherweise davon aus, dass der erste Schleifendurchlauf automatisch das erste Element des Arrays verarbeitet.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_1b",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 29,
+            "variable": "pck_pre_1b",
+            "item": 2
+          }
+        },
+        {
+          "id": "pck_pre_1b_3",
+          "type": "multiple_choice",
+          "text": "Der Schüler hat möglicherweise keine klare Vorstellung davon, welche Arrayelemente in den einzelnen Schleifendurchläufen tatsächlich verarbeitet werden.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_1b",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 29,
+            "variable": "pck_pre_1b",
+            "item": 3
+          }
+        },
+        {
+          "id": "pck_pre_1c_1",
+          "type": "multiple_choice",
+          "text": "Der Schüler trägt für jeden Schleifendurchlauf den aktuellen Index, den angesprochenen Arraywert und die Zwischensumme in eine Tabelle ein.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_1c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 30,
+            "variable": "pck_pre_1c",
+            "item": 1
+          },
+          "matrix_prompt": "c) Der Schüler soll verstehen, warum das erste Element des Arrays bei der Berechnung nicht berücksichtigt wird und wie der Startwert der Laufvariable den Schleifenablauf beeinflusst. Wie geeignet sind die folgenden Maßnahmen, um ihn dabei zu unterstützen? Bewerten Sie jede Maßnahme auf einer fünfstufigen Skala (1 = sehr geeignet, 5 = gar nicht geeignet)."
+        },
+        {
+          "id": "pck_pre_1c_2",
+          "type": "multiple_choice",
+          "text": "Der Schüler erhält eine Erklärung zur allgemeinen Syntax und Funktionsweise von for-Schleifen.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_1c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 30,
+            "variable": "pck_pre_1c",
+            "item": 2
+          }
+        },
+        {
+          "id": "pck_pre_1c_3",
+          "type": "multiple_choice",
+          "text": "Der Schüler erhält ein Beispiel mit einem Array aus drei Elementen und gibt für jeden Schleifendurchlauf den Wert der Laufvariable an.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_1c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 30,
+            "variable": "pck_pre_1c",
+            "item": 3
+          }
+        },
+        {
+          "id": "pck_pre_1c_4",
+          "type": "multiple_choice",
+          "text": "Der Schüler verändert den Startwert der Laufvariable und untersucht, welche Arrayelemente bei den jeweiligen Schleifendurchläufen verarbeitet werden.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_1c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 30,
+            "variable": "pck_pre_1c",
+            "item": 4
+          }
+        },
+        {
+          "id": "pck_pre_1c_5",
+          "type": "multiple_choice",
+          "text": "Die Lehrkraft gibt dem Schüler den Hinweis: „Überlege einmal, bei welchem Index die Nummerierung eines Arrays beginnt.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_1c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 30,
+            "variable": "pck_pre_1c",
+            "item": 5
+          }
+        },
+        {
+          "id": "pck_pre_1c_6",
+          "type": "multiple_choice",
+          "text": "Der Schüler ergänzt eine Ausgabeanweisung (System.out.println), mit der er sich den Wert der Laufvariable bei jedem Schleifendurchlauf ausgeben lässt.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_1c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 30,
+            "variable": "pck_pre_1c",
+            "item": 6
+          }
+        }
+      ]
+    },
+    {
+      "source_task": 3,
+      "title": "PCK: Aufgabe 3",
+      "description": "Eine Schülerin implementiert eine Methode, die prüfen soll, ob eine Person noch ein weiteres Buch ausleihen darf. Es dürfen maximal fünf Bücher gleichzeitig ausgeliehen werden. Die Variable currentlyBorrowed enthält die aktuelle Anzahl der ausgeliehenen Bücher.\n\n```java\npublic class LibraryAccount {\n    private int maxBooks = 5;\n\n    public boolean canBorrowMoreBooks(int currentlyBorrowed) {\n        if (currentlyBorrowed <= maxBooks) {\n            return true;\n        } else {\n            return false;\n        }\n    }\n}\n```\n\nDie Schülerin erklärt: „Wenn man fünf Bücher ausgeliehen hat, ist das Limit noch nicht überschritten. Deshalb muss die Methode true zurückgeben.“",
+      "questions": [
+        {
+          "id": "pck_pre_3a_1",
+          "type": "multiple_choice",
+          "text": "Die Schülerin berücksichtigt bei ihrer Überlegung nicht, dass sich die Anzahl der ausgeliehenen Bücher durch eine weitere Ausleihe erhöht.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_3a",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 31,
+            "variable": "pck_pre_3a",
+            "item": 1
+          },
+          "matrix_prompt": "a) Wie plausibel sind die folgenden Erklärungen für die Aussage der Schülerin? Bewerten Sie jede Aussage auf einer fünfstufigen Skala (1 = sehr plausibel, 2 = plausibel, 3 = neutral, 4 = eher nicht plausibel, 5 = gar nicht plausibel)."
+        },
+        {
+          "id": "pck_pre_3a_2",
+          "type": "multiple_choice",
+          "text": "Die Schülerin interpretiert die Bedingung als Prüfung, ob die aktuelle Anzahl der ausgeliehenen Bücher das Limit noch nicht überschritten hat, statt zu prüfen, ob ein weiteres Buch ausgeliehen werden darf.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_3a",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 31,
+            "variable": "pck_pre_3a",
+            "item": 2
+          }
+        },
+        {
+          "id": "pck_pre_3a_3",
+          "type": "multiple_choice",
+          "text": "Die Schülerin hat Schwierigkeiten, die Bedeutung des Vergleichsoperators <= zu verstehen.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_3a",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 31,
+            "variable": "pck_pre_3a",
+            "item": 3
+          }
+        },
+        {
+          "id": "pck_pre_3b",
+          "type": "multi_select",
+          "text": "b) Die Lehrkraft möchte herausfinden, ob die Schülerin zwischen der aktuell ausgeliehenen Anzahl an Büchern und der Anzahl nach einer weiteren Ausleihe unterscheidet. Welche der folgenden Situationen eignen sich besonders gut, um dieses Verständnis zu überprüfen? Wählen Sie zwei Situationen aus und begründen Sie kurz Ihre Auswahl. ",
+          "min_selections": 2,
+          "max_selections": 2,
+          "options": [
+            {
+              "value": 1,
+              "label": "Die Schülerin hat aktuell drei Bücher ausgeliehen und soll entscheiden, ob sie noch zwei weitere Bücher ausleihen darf."
+            },
+            {
+              "value": 2,
+              "label": "Die Schülerin hat aktuell vier Bücher ausgeliehen und soll entscheiden, ob sie ein weiteres Buch ausleihen darf."
+            },
+            {
+              "value": 3,
+              "label": "Die Schülerin hat aktuell fünf Bücher ausgeliehen und soll entscheiden, ob sie ein weiteres Buch ausleihen darf."
+            },
+            {
+              "value": 4,
+              "label": "Die Schülerin soll erklären, was der Vergleichsoperator <= bedeutet."
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 32,
+            "variable": "pck_pre_3b"
+          }
+        },
+        {
+          "id": "pck_pre_3b_justification",
+          "type": "free_text",
+          "text": "Begründung der Auswahl:",
+          "required": true,
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 32,
+            "variable": "pck_pre_3b",
+            "field": "justification"
+          }
+        },
+        {
+          "id": "pck_pre_3c_1",
+          "type": "multiple_choice",
+          "text": "Die Schülerin stellt für verschiedene Ausgangssituationen die aktuelle Anzahl der Bücher und die Anzahl nach einer weiteren Ausleihe in einer Tabelle gegenüber.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_3c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 33,
+            "variable": "pck_pre_3c",
+            "item": 1
+          },
+          "matrix_prompt": "c) Wie geeignet sind die folgenden Maßnahmen, um der Schülerin den Unterschied zwischen der aktuell ausgeliehenen Anzahl an Büchern und der Anzahl nach einer weiteren Ausleihe zu verdeutlichen? Bewerten Sie jede Maßnahme auf einer fünfstufigen Skala (1 = sehr geeignet, 5 = gar nicht geeignet)."
+        },
+        {
+          "id": "pck_pre_3c_2",
+          "type": "multiple_choice",
+          "text": "Die Schülerin erhält eine allgemeine Erklärung zur Funktionsweise von Vergleichsoperatoren.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_3c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 33,
+            "variable": "pck_pre_3c",
+            "item": 2
+          }
+        },
+        {
+          "id": "pck_pre_3c_3",
+          "type": "multiple_choice",
+          "text": "Die Schülerin spielt konkrete Ausleihsituationen mit vier, fünf und sechs Büchern durch und entscheidet jeweils, ob eine weitere Ausleihe möglich ist.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_3c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 33,
+            "variable": "pck_pre_3c",
+            "item": 3
+          }
+        },
+        {
+          "id": "pck_pre_3c_4",
+          "type": "multiple_choice",
+          "text": "Die Schülerin veranschaulicht auf einem Zahlenstrahl, bei welchen Ausgangszahlen eine weitere Ausleihe noch möglich ist.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_3c",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 33,
+            "variable": "pck_pre_3c",
+            "item": 4
+          }
+        }
+      ]
+    },
+    {
+      "source_task": 5,
+      "title": "PCK: Aufgabe 5",
+      "description": "Ein Schüler soll einen Fehler in einem Java-Programm beheben. Das Programm liefert ein anderes Ergebnis als erwartet. Er verändert nacheinander verschiedene Stellen im Programm, beispielsweise Variablenwerte, Bedingungen und Schleifengrenzen, und führt das Programm wiederholt aus. Dabei nimmt er Änderungen vor, ohne zuvor eine konkrete Vermutung zur Fehlerursache zu formulieren oder gezielt zu überlegen, welche Auswirkungen die jeweilige Änderung haben sollte. \n\nEr sagt: „Ich probiere einfach verschiedene Änderungen aus. Irgendwann wird das Ergebnis schon stimmen. Ich weiß dann zwar nicht genau, woran es lag, aber Hauptsache, es funktioniert.“",
+      "questions": [
+        {
+          "id": "pck_pre_5a",
+          "type": "free_text",
+          "text": "a) Welche Schwierigkeiten beim systematischen Eingrenzen und Überprüfen von Fehlerursachen werden im Vorgehen des Schülers deutlich? Erläutern Sie Ihre Überlegungen.",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 34,
+            "variable": "pck_pre_5a"
+          }
+        },
+        {
+          "id": "pck_pre_5b_1",
+          "type": "multiple_choice",
+          "text": "Der Schüler betrachtet das Erreichen des erwarteten Programmergebnisses als ausreichenden Nachweis dafür, dass die Fehlerursache gefunden wurde.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_5b",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 35,
+            "variable": "pck_pre_5b",
+            "item": 1
+          },
+          "matrix_prompt": "b) Wie plausibel sind die folgenden Einschätzungen des Vorgehens des Schülers? Bewerten Sie jede Aussage auf einer fünfstufigen Skala (1 = sehr plausibel, 2 = plausibel, 3 = neutral, 4 = eher nicht plausibel, 5 = gar nicht plausibel)."
+        },
+        {
+          "id": "pck_pre_5b_2",
+          "type": "multiple_choice",
+          "text": "Der Schüler kann möglicherweise nicht nachvollziehen, welche seiner Änderungen für das veränderte Programmergebnis verantwortlich ist.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_5b",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 35,
+            "variable": "pck_pre_5b",
+            "item": 2
+          }
+        },
+        {
+          "id": "pck_pre_5b_3",
+          "type": "multiple_choice",
+          "text": "Der Schüler geht möglicherweise davon aus, dass wiederholtes Ausprobieren verschiedener Änderungen eine geeignete Möglichkeit ist, Fehlerursachen einzugrenzen.",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr plausibel"
+            },
+            {
+              "value": 2,
+              "label": "plausibel"
+            },
+            {
+              "value": 3,
+              "label": "neutral"
+            },
+            {
+              "value": 4,
+              "label": "eher nicht plausibel"
+            },
+            {
+              "value": 5,
+              "label": "gar nicht plausibel"
+            }
+          ],
+          "matrix": "pck_pre_5b",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 35,
+            "variable": "pck_pre_5b",
+            "item": 3
+          }
+        },
+        {
+          "id": "pck_pre_5c",
+          "type": "ranking",
+          "text": "c) Die Lehrkraft möchte herausfinden, ob der Schüler die Auswirkungen seiner Codeänderungen nachvollziehen kann und ob er gezielt nach Fehlerursachen sucht. Bringen Sie die folgenden diagnostischen Schritte in eine sinnvolle Reihenfolge.\n\nOrdnen Sie die Schritte von 1 (zuerst) bis 4 (zuletzt).",
+          "options": [
+            {
+              "value": "step_1",
+              "label": "Den Schüler erläutern lassen, woran er erkannt hat, ob eine Änderung die vermutete Fehlerursache bestätigt oder widerlegt."
+            },
+            {
+              "value": "step_2",
+              "label": "Den Schüler beschreiben lassen, welches Ergebnis er durch die jeweilige Änderung erwartet hat."
+            },
+            {
+              "value": "step_3",
+              "label": "Den Schüler erklären lassen, welche Veränderungen er am Programm vorgenommen hat."
+            },
+            {
+              "value": "step_4",
+              "label": "Die Erklärungen des Schülers mit den tatsächlichen Änderungen und den beobachteten Programmergebnissen vergleichen."
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 36,
+            "variable": "pck_pre_5c"
+          }
+        },
+        {
+          "id": "pck_pre_5d_1",
+          "type": "multiple_choice",
+          "text": "Der Schüler dokumentiert vor jeder Änderung seine Vermutung zur Fehlerursache und das erwartete Ergebnis der Änderung.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_5d",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 37,
+            "variable": "pck_pre_5d",
+            "item": 1
+          },
+          "matrix_prompt": "d) Wie geeignet sind die folgenden Maßnahmen, um den Schüler dabei zu unterstützen, Änderungen gezielter vorzunehmen und deren Auswirkungen nachvollziehen zu können? Bewerten Sie jede Maßnahme auf einer fünfstufigen Skala (1 = sehr geeignet, 5 = gar nicht geeignet)."
+        },
+        {
+          "id": "pck_pre_5d_2",
+          "type": "multiple_choice",
+          "text": "Der Schüler erhält eine allgemeine Erklärung zu den einzelnen Phasen eines systematischen Debugging-Prozesses.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_5d",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 37,
+            "variable": "pck_pre_5d",
+            "item": 2
+          }
+        },
+        {
+          "id": "pck_pre_5d_3",
+          "type": "multiple_choice",
+          "text": "Der Schüler verändert jeweils nur eine Stelle im Programm und vergleicht anschließend das tatsächliche mit dem erwarteten Ergebnis.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_5d",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 37,
+            "variable": "pck_pre_5d",
+            "item": 3
+          }
+        },
+        {
+          "id": "pck_pre_5d_4",
+          "type": "multiple_choice",
+          "text": "Der Schüler erhält ein vorstrukturiertes Arbeitsblatt, in dem er für jede Änderung die vermutete Fehlerursache, die vorgenommene Änderung und das beobachtete Ergebnis festhält.",
+          "options": [
+            {
+              "value": 1,
+              "label": "1"
+            },
+            {
+              "value": 2,
+              "label": "2"
+            },
+            {
+              "value": 3,
+              "label": "3"
+            },
+            {
+              "value": 4,
+              "label": "4"
+            },
+            {
+              "value": 5,
+              "label": "5"
+            }
+          ],
+          "matrix": "pck_pre_5d",
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "row": 37,
+            "variable": "pck_pre_5d",
+            "item": 4
+          }
+        }
+      ]
+    }
+  ],
+  "mesp_intro": {
+    "title": "MESP",
+    "body": "Die folgenden Aufgaben beschreiben verschiedene Lernsituationen. Für jede Situation werden Ihnen mehrere Handlungsmöglichkeiten vorgestellt, die eine Person in dieser Situation anwenden könnte. Nachdem Sie die Situationsbeschreibung gelesen und sich mit dieser vertraut gemacht haben, bewerten Sie bitte jede der darunter aufgeführten Handlungsmöglichkeiten für sich alleinstehend danach, wie gut sie für den Umgang mit dieser konkreten Situation geeignet ist.\n\nBitte beachten Sie bei der Bewertung der Handlungsmöglichkeiten Folgendes:\n\n- Bewerten Sie jede Handlungsmöglichkeit danach, wie gut sie für das Erreichen des Ziels in dieser konkreten Situation geeignet ist, und nicht danach, wie Sie normalerweise in der alltäglichen Praxis handeln würden.\n- Jede Handlungsmöglichkeit steht für sich allein. Gehen Sie bei der Bewertung einer Handlungsmöglichkeit davon aus, dass diese in keinem Zusammenhang mit einer anderen aufgeführten Handlungsmöglichkeit steht, nicht mit ihr kombiniert wird und nicht von ihr abhängt.\n- Sie können dieselbe Bewertung innerhalb einer Aufgabe mehrmals vergeben. Es ist nicht erforderlich, jede Zahl (1–6) nur einmal zu verwenden. Wenn Sie der Meinung sind, dass mehrere Handlungsmöglichkeiten gleichermaßen geeignet sind, können Sie ihnen dieselbe Bewertung geben.\n\nVerwenden Sie für Ihre Bewertungen die folgende Skala:\n\n- 1 = sehr geeignete Handlungsmöglichkeit für diese Situation\n- 2 = geeignete Handlungsmöglichkeit für diese Situation\n- 3 = eher geeignete Handlungsmöglichkeit für diese Situation\n- 4 = eher ungeeignete Handlungsmöglichkeit für diese Situation\n- 5 = ungeeignete Handlungsmöglichkeit für diese Situation\n- 6 = sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+  },
+  "mesp_pages": [
+    {
+      "source_task": 1,
+      "title": "MESP: Aufgabe 1",
+      "description": "Stellen Sie sich vor, Sie sollen ein neues Thema im Seminar präsentieren. Dafür müssen sie selbstständig Informationen zum Thema recherchieren. Die Dozentin schlägt Ihnen dafür verschiedene Webseiten vor. Sie überlegen sich nun, wie Sie an die Aufgabe herangehen sollen.\n\nWie beurteilen Sie die folgenden Vorgehensweisen?",
+      "questions": [
+        {
+          "id": "mesp_pre_1a",
+          "type": "multiple_choice",
+          "text": "a) Vor Beginn der Recherche überlegen Sie, welche Informationen für eine gute Präsentation zu dem Thema benötigt werden.",
+          "matrix": "mesp_pre_1",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 1,
+            "source_label": "a",
+            "display_label": "a"
+          }
+        },
+        {
+          "id": "mesp_pre_1b",
+          "type": "multiple_choice",
+          "text": "b) Sie überfliegen die empfohlenen Websites und sortieren sie um einen Überblick zu erhalten.",
+          "matrix": "mesp_pre_1",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 1,
+            "source_label": "b",
+            "display_label": "b"
+          }
+        },
+        {
+          "id": "mesp_pre_1c",
+          "type": "multiple_choice",
+          "text": "c) Sie erstellen einen Zeitplan, mit dem Ziel in alle Phasen der Bearbeitung ausgeglichen Zeit zu investieren.",
+          "matrix": "mesp_pre_1",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 1,
+            "source_label": "c",
+            "display_label": "c"
+          }
+        },
+        {
+          "id": "mesp_pre_1d",
+          "type": "multiple_choice",
+          "text": "d) Sie setzen sich das Ziel, alle Webseiten gründlich zu lesen.",
+          "matrix": "mesp_pre_1",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 1,
+            "source_label": "d",
+            "display_label": "d"
+          }
+        },
+        {
+          "id": "mesp_pre_1e",
+          "type": "multiple_choice",
+          "text": "e) Sie nehmen sich vor, die empfohlenen Webseiten der Reihe nach vollständig zu lesen, um keine wichtigen Informationen zu übersehen.",
+          "matrix": "mesp_pre_1",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 1,
+            "source_label": "e",
+            "display_label": "e"
+          }
+        }
+      ]
+    },
+    {
+      "source_task": 2,
+      "title": "MESP: Aufgabe 2",
+      "description": "Stellen Sie sich vor, Sie belegen einen E-Learning-Kurs, in dem die Inhalte eines Informatik-Seminars aufbereitet sind. Sie müssen sich nun auf die anstehende Klausur vorbereiten und die zentralen Konzepte lernen. Sie überlegen sich nun, wie sie an die Testvorbereitung herangehen sollen.\n\nWie beurteilen Sie die folgenden Vorgehensweisen?",
+      "questions": [
+        {
+          "id": "mesp_pre_2a",
+          "type": "multiple_choice",
+          "text": "a) Sie nehmen sich vor, der vorgegebenen Gliederung möglichst genau zu folgen.",
+          "matrix": "mesp_pre_2",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 2,
+            "source_label": "a",
+            "display_label": "a"
+          }
+        },
+        {
+          "id": "mesp_pre_2b",
+          "type": "multiple_choice",
+          "text": "b) Sie machen sich zunächst die Lernziele bewusst, um sich auf die zentralen Inhalten konzentrieren zu können.",
+          "matrix": "mesp_pre_2",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 2,
+            "source_label": "b",
+            "display_label": "b"
+          }
+        },
+        {
+          "id": "mesp_pre_2c",
+          "type": "multiple_choice",
+          "text": "c) Sie lesen zuerst alle Überschriften der Abschnitte durch, bevor Sie die Lektion gründlich bearbeiten.",
+          "matrix": "mesp_pre_2",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 2,
+            "source_label": "d",
+            "display_label": "c"
+          }
+        },
+        {
+          "id": "mesp_pre_2d",
+          "type": "multiple_choice",
+          "text": "d) Sie planen, Ihren Lernfortschritt daran einzuschätzen, wie viele Abschnitte der Lektion Sie bereits durchgearbeitet haben.",
+          "matrix": "mesp_pre_2",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 2,
+            "source_label": "e",
+            "display_label": "d"
+          }
+        },
+        {
+          "id": "mesp_pre_2e",
+          "type": "multiple_choice",
+          "text": "e) Sie nehmen sich vor, direkt alles zu notieren, damit Sie nichts Wichtiges vergessen",
+          "matrix": "mesp_pre_2",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 2,
+            "source_label": "F",
+            "display_label": "e"
+          }
+        }
+      ]
+    },
+    {
+      "source_task": 3,
+      "title": "MESP: Aufgabe 3",
+      "description": "Stellen Sie sich vor, in zwei Wochen steht eine schwierige Prüfung mit Programmieraufgaben an. Sie erhalten von der Lehrkraft einen Link, über den Sie online Programmieraufgaben aus alten Prüfungen bearbeiten können.\n\nWie beurteilen Sie die folgenden Vorgehensweisen?",
+      "questions": [
+        {
+          "id": "mesp_pre_3a",
+          "type": "multiple_choice",
+          "text": "a) Sie lesen alle Prüfungsaufgaben mehrmals durch, um einen Überblick zu bekommen.",
+          "matrix": "mesp_pre_3",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 3,
+            "source_label": "a",
+            "display_label": "a"
+          }
+        },
+        {
+          "id": "mesp_pre_3b",
+          "type": "multiple_choice",
+          "text": "b) Sie suchen die Lösungen der Aufgaben und Lernen diese auswendig, um gut auf die Prüfung vorbereitet zu sein.",
+          "matrix": "mesp_pre_3",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 3,
+            "source_label": "b",
+            "display_label": "b"
+          }
+        },
+        {
+          "id": "mesp_pre_3c",
+          "type": "multiple_choice",
+          "text": "c) Sie passen die Auswahl der Programmieraufgaben während des Übens an, und konzentrieren sich auf die Aufgaben, die Ihnen vertraut sind.",
+          "matrix": "mesp_pre_3",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 3,
+            "source_label": "c",
+            "display_label": "c"
+          }
+        },
+        {
+          "id": "mesp_pre_3d",
+          "type": "multiple_choice",
+          "text": "d) Während der Bearbeitung der Prüfungsaufgaben überprüfen Sie immer wieder, ob Sie alles verstanden haben.",
+          "matrix": "mesp_pre_3",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 3,
+            "source_label": "d",
+            "display_label": "d"
+          }
+        },
+        {
+          "id": "mesp_pre_3e",
+          "type": "multiple_choice",
+          "text": "e) Sie nehmen sich mehr Zeit, wenn Sie merken, dass die Prüfungsaufgaben schwieriger werden.",
+          "matrix": "mesp_pre_3",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 3,
+            "source_label": "e",
+            "display_label": "e"
+          }
+        }
+      ]
+    },
+    {
+      "source_task": 4,
+      "title": "MESP: Aufgabe 4",
+      "description": "Stellen Sie sich vor, Sie arbeiten an einer Programmieraufgabe und stoßen auf ein Problem. Sie entscheiden sich, im Internet ( z. B. bei Stack Overflow oder GitHub), nach Lösungen zu suchen.\n\nWie beurteilen Sie die folgenden Vorgehensweisen?",
+      "questions": [
+        {
+          "id": "mesp_pre_4a",
+          "type": "multiple_choice",
+          "text": "a) Sie durchsuchen die wichtigen Internetseiten, um einen Überblick zu gewinnen, welche für die Aufgabe hilfreich sind.",
+          "matrix": "mesp_pre_4",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 4,
+            "source_label": "a",
+            "display_label": "a"
+          }
+        },
+        {
+          "id": "mesp_pre_4b",
+          "type": "multiple_choice",
+          "text": "b) Sie sammeln möglichst viele Informationen von den verschiedenen Seiten und überfliegen diese dann, um nichts Wichtiges zu übersehen.",
+          "matrix": "mesp_pre_4",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 4,
+            "source_label": "b",
+            "display_label": "b"
+          }
+        },
+        {
+          "id": "mesp_pre_4c",
+          "type": "multiple_choice",
+          "text": "c) Sie überprüfen regelmäßig, ob die gefundenen Informationen zu Ihrer Vorstellung von der Lösung passen.",
+          "matrix": "mesp_pre_4",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 4,
+            "source_label": "c",
+            "display_label": "c"
+          }
+        },
+        {
+          "id": "mesp_pre_4d",
+          "type": "multiple_choice",
+          "text": "d) Während Sie an der Lösung des Problems arbeiten, beschäftigen Sie sich auch mit interessanten Lösungsansätzen zu anderen Problemen, um Ihren Horizont zu erweitern.",
+          "matrix": "mesp_pre_4",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 4,
+            "source_label": "d",
+            "display_label": "d"
+          }
+        },
+        {
+          "id": "mesp_pre_4e",
+          "type": "multiple_choice",
+          "text": "e) Sie verschaffen sich zunächst einen groben Überblick über die Art des Problems und arbeiten sich anschließend in die Details des Codes ein.",
+          "matrix": "mesp_pre_4",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 4,
+            "source_label": "e",
+            "display_label": "e"
+          }
+        }
+      ]
+    },
+    {
+      "source_task": 5,
+      "title": "MESP: Aufgabe 5",
+      "description": "Stellen Sie sich vor, Sie haben im Rahmen einer Lehrveranstaltung eine Programmieraufgabe selbstständig bearbeitet. Nachdem Sie Ihre Lösung erstellt haben, wird Ihnen die Musterlösung angezeigt.\n\nWie beurteilen Sie die folgenden Vorgehensweisen?",
+      "questions": [
+        {
+          "id": "mesp_pre_5a",
+          "type": "multiple_choice",
+          "text": "a) Sie schauen sich die Musterlösung an und überprüfen, ob Ihre Lösung richtig ist, um zu entscheiden, ob Ihre Vorgehensweise erfolgreich war.",
+          "matrix": "mesp_pre_5",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 5,
+            "source_label": "a",
+            "display_label": "a"
+          }
+        },
+        {
+          "id": "mesp_pre_5b",
+          "type": "multiple_choice",
+          "text": "b) Sie suchen in der Musterlösung nach den Stellen die Sie falsch gemacht haben, und überlegen, wie man diese besser hätte angehen können.",
+          "matrix": "mesp_pre_5",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 5,
+            "source_label": "b",
+            "display_label": "b"
+          }
+        },
+        {
+          "id": "mesp_pre_5c",
+          "type": "multiple_choice",
+          "text": "c) Sie schauen die Musterlösungen genau an und überlegen, was Sie gut gemacht haben und was weniger gut war.",
+          "matrix": "mesp_pre_5",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 5,
+            "source_label": "c",
+            "display_label": "c"
+          }
+        },
+        {
+          "id": "mesp_pre_5d",
+          "type": "multiple_choice",
+          "text": "d) Sie denken darüber nach, wie schnell Sie die Aufgabe gelöst haben, um einzuschätzen, ob Ihre Vorgehensweise gut war.",
+          "matrix": "mesp_pre_5",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 5,
+            "source_label": "d",
+            "display_label": "d"
+          }
+        },
+        {
+          "id": "mesp_pre_5e",
+          "type": "multiple_choice",
+          "text": "e) Sie schauen sich die Musterlösungen an und nehmen sich vor, beim nächsten Mal genau so vorzugehen wie dieses Mal.",
+          "matrix": "mesp_pre_5",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 5,
+            "source_label": "e",
+            "display_label": "e"
+          }
+        }
+      ]
+    },
+    {
+      "source_task": 6,
+      "title": "MESP: Aufgabe 6",
+      "description": "Stellen Sie sich vor, Sie haben mithilfe einer Lernplattform mit wichtigen Quellen eine Präsentation zu einer Modellierungsart vorbereitet. Sie haben diese im Seminar präsentiert. Die Dozentin hat Ihnen als Aufgabe gegeben, eine kurze Reflexion zu Ihrer Präsentation zu schreiben.\n\nWie beurteilen Sie die folgenden Vorgehensweisen?",
+      "questions": [
+        {
+          "id": "mesp_pre_6a",
+          "type": "multiple_choice",
+          "text": "a) Sie beurteilen Ihre Vorbereitung daran wie viele Texte der Lernplattform Sie durchgearbeitet haben.",
+          "matrix": "mesp_pre_6",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 6,
+            "source_label": "a",
+            "display_label": "a"
+          }
+        },
+        {
+          "id": "mesp_pre_6b",
+          "type": "multiple_choice",
+          "text": "b) Sie vergleichen Ihre Präsentation mit dem Erwartungshorizont für die Präsentation und überprüfen, ob Sie die zentralen Konzepte erklären konnten.",
+          "matrix": "mesp_pre_6",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 6,
+            "source_label": "b",
+            "display_label": "b"
+          }
+        },
+        {
+          "id": "mesp_pre_6c",
+          "type": "multiple_choice",
+          "text": "c) Sie entscheiden, zukünftig hauptsächlich mit den Quellen zu arbeiten, die Ihnen das Verständnis dieser Modellierungsart erleichtert haben.",
+          "matrix": "mesp_pre_6",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 6,
+            "source_label": "c",
+            "display_label": "c"
+          }
+        },
+        {
+          "id": "mesp_pre_6d",
+          "type": "multiple_choice",
+          "text": "d) Sie überlegen, welche Aspekte der Modellierungsart Ihnen während der Präsentation besonders schwergefallen sind und woran das gelegen haben könnte.",
+          "matrix": "mesp_pre_6",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 6,
+            "source_label": "d",
+            "display_label": "d"
+          }
+        },
+        {
+          "id": "mesp_pre_6e",
+          "type": "multiple_choice",
+          "text": "e) Sie denken an Ihre Präsentation und konzentrieren sich darauf, in welchen Bereichen Sie besonders überzeugt haben",
+          "matrix": "mesp_pre_6",
+          "options": [
+            {
+              "value": 1,
+              "label": "sehr geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 2,
+              "label": "geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 3,
+              "label": "eher geeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 4,
+              "label": "eher ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 5,
+              "label": "ungeeignete Handlungsmöglichkeit für diese Situation"
+            },
+            {
+              "value": 6,
+              "label": "sehr ungeeignete Handlungsmöglichkeit für diese Situation"
+            }
+          ],
+          "source_ref": {
+            "instrument": "a04-pretest-2026-11-16",
+            "file": "MESP_clean_mb.docx",
+            "task": 6,
+            "source_label": "e",
+            "display_label": "e"
+          }
+        }
+      ]
+    }
+  ]
+}

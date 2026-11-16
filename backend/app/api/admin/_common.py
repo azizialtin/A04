@@ -94,6 +94,9 @@ def _study_out(s: Study) -> StudyResponse:
         texts=StudyTexts.model_validate(s.texts or {}),
         video_defaults=StudyVideoDefaults.model_validate(s.video_defaults or {}),
         think_aloud_batch_size=s.think_aloud_batch_size,
+        flow_version=s.flow_version,
+        think_aloud_mode=s.think_aloud_mode,
+        think_aloud_count=s.think_aloud_count,
     )
 
 

@@ -76,11 +76,11 @@ test('the preview follows the title, the instruction and the JSON as they are ty
 
 test('a preset fills the JSON and the preview shows its shape', () => {
   view()
-  fireEvent.click(screen.getByRole('button', { name: 'Tabelle (wie MSK)' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Tabelle (wie MESP)' }))
   const table = within(screen.getByLabelText('Vorschau')).getByRole('table')
   expect(within(table).getAllByRole('radio')).toHaveLength(18)
   expect((screen.getByLabelText(/Fragen \(JSON/) as HTMLTextAreaElement).value).toContain(
-    '"matrix": "msk_pre_8"',
+    '"matrix": "mesp_example"',
   )
 
   fireEvent.click(screen.getByRole('button', { name: 'Skalen' }))
@@ -198,7 +198,13 @@ test('the overview names instruments and routes introduction editing to the firs
   updateQuestionnaire.mockResolvedValue(target)
   view()
   const overview = await screen.findByRole('table', { name: 'Vortest-Abschnitte' })
-  for (const name of ['Demographics/participants', 'ck_pre_self', 'ck_pre', 'pck_pre', 'msk_pre']) {
+  for (const name of [
+    'Demographics/participants',
+    'ck_pre_self',
+    'ck_pre',
+    'pck_pre',
+    'mesp_pre',
+  ]) {
     expect(
       within(overview).getByRole('rowheader', { name: new RegExp(`^${name} `) }),
     ).toBeInTheDocument()

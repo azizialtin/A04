@@ -587,3 +587,125 @@ test('numeric bounds block Continue for required and optional questions', () => 
   fireEvent.change(field, { target: { value: '' } })
   expect(submit).toBeEnabled()
 })
+
+test('pick-two caps selection, requires two plus justification and allows changing the pair', () => {
+  const onSubmit = vi.fn()
+  render(
+    <QuestionnaireRenderer
+      title="PCK"
+      onSubmit={onSubmit}
+      questions={[
+        {
+          id: 'pair',
+          type: 'multi_select',
+          text: 'Wählen Sie Maßnahmen',
+          options: ['A', 'B', 'C', 'D'],
+          min_selections: 2,
+          max_selections: 2,
+        },
+        { id: 'why', type: 'free_text', text: 'Begründen Sie Ihre Auswahl' },
+      ]}
+    />,
+  )
+  const next = screen.getByRole('button', { name: 'Weiter' })
+  const boxes = screen.getAllByRole('checkbox')
+  expect(boxes[0]).toHaveAccessibleDescription('Wählen Sie genau 2 Antworten.')
+  fireEvent.click(boxes[0])
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Begründung' } })
+  expect(next).toBeDisabled()
+  fireEvent.click(boxes[1])
+  expect(boxes[2]).toBeDisabled()
+  expect(next).toBeEnabled()
+  fireEvent.click(boxes[0])
+  expect(boxes[2]).toBeEnabled()
+  fireEvent.click(boxes[2])
+  fireEvent.click(next)
+  expect(onSubmit).toHaveBeenCalledWith({ pair: ['B', 'C'], why: 'Begründung' }, expect.any(Number))
+})
+
+test('matrix shows its authored prompt once and omits duplicated numeric-only legends', () => {
+  const options = [1, 2, 3, 4, 5].map((value) => ({ value, label: String(value) }))
+  render(
+    <QuestionnaireRenderer
+      title="PCK"
+      onSubmit={vi.fn()}
+      questions={[
+        {
+          id: 'a',
+          type: 'multiple_choice',
+          matrix: 'rating',
+          matrix_prompt: '1 = sehr geeignet, 5 = überhaupt nicht geeignet',
+          text: 'Maßnahme A',
+          options,
+        },
+        { id: 'b', type: 'multiple_choice', matrix: 'rating', text: 'Maßnahme B', options },
+      ]}
+    />,
+  )
+  expect(screen.getAllByText('1 = sehr geeignet, 5 = überhaupt nicht geeignet')).toHaveLength(1)
+  expect(screen.queryByText('Antwortmöglichkeiten')).toBeNull()
+  expect(screen.getAllByRole('radio')).toHaveLength(10)
+})
+
+test('editing one ordinary debugging field preserves the omission of the untouched field', () => {
+  const changed = vi.fn()
+  const questions: Question[] = [{ id: 'ck', type: 'debugging', text: 'Fehler?', min: 1, max: 12 }]
+  const { rerender } = render(
+    <QuestionnaireRenderer
+      key="lines"
+      title="CK"
+      questions={questions}
+      onSubmit={vi.fn()}
+      onAnswersChange={changed}
+    />,
+  )
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '3' } })
+  expect(changed).toHaveBeenLastCalledWith({ ck: { lines: [3] } })
+  expect(changed.mock.lastCall?.[0].ck).not.toHaveProperty('explanation')
+  rerender(
+    <QuestionnaireRenderer
+      key="explanation"
+      title="CK"
+      questions={questions}
+      onSubmit={vi.fn()}
+      onAnswersChange={changed}
+    />,
+  )
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Partial explanation' } })
+  expect(changed).toHaveBeenLastCalledWith({ ck: { explanation: 'Partial explanation' } })
+  expect(changed.mock.lastCall?.[0].ck).not.toHaveProperty('lines')
+})
+
+test('editing a skipped debugging answer clears its marker and sentinel for either field', () => {
+  const changed = vi.fn()
+  const questions: Question[] = [
+    { id: 'ck', type: 'debugging', text: 'Fehler?', min: 1, max: 12, allow_skip: true },
+  ]
+  const skipped = { ck: { lines: [0], explanation: '', skipped: true } }
+  const { rerender } = render(
+    <QuestionnaireRenderer
+      key="lines"
+      title="CK"
+      questions={questions}
+      initialAnswers={skipped}
+      onSubmit={vi.fn()}
+      onAnswersChange={changed}
+    />,
+  )
+  expect(screen.getByRole('spinbutton')).toHaveValue(null)
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '3' } })
+  expect(changed).toHaveBeenLastCalledWith({ ck: { lines: [3], explanation: '' } })
+  rerender(
+    <QuestionnaireRenderer
+      key="explanation"
+      title="CK"
+      questions={questions}
+      initialAnswers={skipped}
+      onSubmit={vi.fn()}
+      onAnswersChange={changed}
+    />,
+  )
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Now found it' } })
+  expect(changed).toHaveBeenLastCalledWith({ ck: { lines: [], explanation: 'Now found it' } })
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+})

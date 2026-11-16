@@ -184,3 +184,9 @@
     padding: 4px 0;
   }
 }
+
+/* The pilot's three PCK tasks keep the shared situation and code above all items. */
+.pretest-page--pilot.pretest-page--pck .panel--form {
+  display: block;
+  max-width: 1200px;
+}

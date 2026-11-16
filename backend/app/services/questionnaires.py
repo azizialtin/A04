@@ -10,7 +10,7 @@ A question is a dict with at least an `id` and `type`. Optional keys:
 from __future__ import annotations
 
 from sys import float_info
-from typing import Any
+from typing import Any, TypeGuard
 
 Question = dict[str, Any]
 
@@ -58,6 +58,27 @@ def validate_question_definitions(questions: Any) -> list[str]:
             errors.append(f"{prefix}: Fragetext fehlt.")
         if "required" in question and not isinstance(question["required"], bool):
             errors.append(f"{prefix}: required muss wahr oder falsch sein.")
+        if "allow_skip" in question and (
+            kind != "debugging" or not isinstance(question["allow_skip"], bool)
+        ):
+            errors.append(f"{prefix}: allow_skip ist nur für Debugging-Fragen gültig.")
+        for field in ("min_selections", "max_selections"):
+            if field in question and (
+                kind != "multi_select" or not _positive_integer(question[field])
+            ):
+                errors.append(
+                    f"{prefix}: {field} muss eine positive ganze Zahl für Mehrfachauswahl sein."
+                )
+        lower, upper = question.get("min_selections"), question.get("max_selections")
+        if _positive_integer(lower) and _positive_integer(upper) and lower > upper:
+            errors.append(f"{prefix}: min_selections darf max_selections nicht überschreiten.")
+        options = question.get("options")
+        if isinstance(options, list):
+            for limit in (lower, upper):
+                if _positive_integer(limit) and limit > len(options):
+                    errors.append(f"{prefix}: Die Auswahlgrenze überschreitet die Optionen.")
+        if "matrix_prompt" in question and not isinstance(question["matrix_prompt"], str):
+            errors.append(f"{prefix}: matrix_prompt muss Text sein.")
         condition = question.get("show_if")
         if condition is not None and (
             not isinstance(condition, dict)
@@ -134,7 +155,7 @@ def validate_question_definitions(questions: Any) -> list[str]:
     return errors
 
 
-def _positive_integer(value: Any) -> bool:
+def _positive_integer(value: Any) -> TypeGuard[int | float]:
     return (
         isinstance(value, (int, float))
         and not isinstance(value, bool)
@@ -278,6 +299,8 @@ def valid_line_numbers(question: Question, value: Any) -> bool:
 
 
 def valid_debugging_answer(question: Question, value: Any, *, partial: bool = False) -> bool:
+    if is_debugging_skip(question, value):
+        return True
     if not isinstance(value, dict) or value.keys() - {"lines", "explanation"}:
         return False
     lines = value.get("lines")
@@ -294,6 +317,47 @@ def valid_debugging_answer(question: Question, value: Any, *, partial: bool = Fa
     if lines is None:
         return True
     return isinstance(lines, list) and _valid_partial_lines(question, lines)
+
+
+def is_debugging_skip(question: Question, value: Any) -> bool:
+    return bool(
+        question.get("allow_skip") is True
+        and isinstance(value, dict)
+        and value.keys() == {"lines", "explanation", "skipped"}
+        and value["skipped"] is True
+        and value["lines"] == [0]
+        and isinstance(value["lines"][0], int)
+        and not isinstance(value["lines"][0], bool)
+        and value["explanation"] == ""
+    )
+
+
+def expired_ck_answers(questions: list[Question], answers: dict[str, Any]) -> dict[str, Any]:
+    """Keep unfinished input at expiry without accepting invalid line numbers."""
+    result = {}
+    for question in questions:
+        qid = question.get("id")
+        if not qid or qid not in answers:
+            continue
+        value = answers[qid]
+        if question.get("type") != "debugging":
+            if not invalid_partial_answers([question], {qid: value}):
+                result[qid] = value
+        elif is_debugging_skip(question, value):
+            result[qid] = value
+        elif isinstance(value, dict):
+            lines = value.get("lines")
+            explanation = value.get("explanation")
+            result[qid] = {
+                "lines": [
+                    line if valid_line_numbers(question, [line]) else None
+                    for line in (lines if isinstance(lines, list) else [])[
+                        : question.get("max_entries", 5)
+                    ]
+                ],
+                "explanation": explanation if isinstance(explanation, str) else "",
+            }
+    return result
 
 
 def valid_ranking(question: Question, value: Any) -> bool:
@@ -315,7 +379,7 @@ def valid_ranking(question: Question, value: Any) -> bool:
     return set(options) == set(value)
 
 
-def valid_multi_select(question: Question, value: Any) -> bool:
+def valid_multi_select(question: Question, value: Any, *, partial: bool = False) -> bool:
     """Checkbox selections are a unique subset, with number/string types preserved."""
     options = [
         option.get("value") if isinstance(option, dict) else option
@@ -328,7 +392,9 @@ def valid_multi_select(question: Question, value: Any) -> bool:
             return False
         if len(set(values)) != len(values):
             return False
-    return set(value).issubset(set(options))
+    lower = 0 if partial else question.get("min_selections", 0)
+    upper = question.get("max_selections", len(options))
+    return lower <= len(value) <= upper and set(value).issubset(set(options))
 
 
 def _valid_partial_lines(question: Question, lines: list) -> bool:
@@ -352,7 +418,7 @@ def invalid_partial_answers(questions: list[Question], answers: dict[str, Any]) 
         value = answers[qid]
         kind = question.get("type")
         if kind == "multi_select":
-            if not valid_multi_select(question, value):
+            if not valid_multi_select(question, value, partial=True):
                 invalid.append(qid)
         elif value is None:
             continue

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { SessionStep } from '../api/participant'
+import { isCKDeadlineExpired, type SessionStep } from '../api/participant'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import CalibrationScreen from '../components/session/CalibrationScreen'
 import CaseIntroScreen from '../components/session/CaseIntroScreen'
@@ -15,6 +15,7 @@ import SosciScreen from '../components/session/SosciScreen'
 import SessionGazeCapture from '../components/session/SessionGazeCapture'
 import StepBackDialog from '../components/session/StepBackDialog'
 import ThanksScreen from '../components/session/ThanksScreen'
+import TextPageScreen from '../components/session/TextPageScreen'
 import ThinkAloudScreen from '../components/session/ThinkAloudScreen'
 import WelcomeScreen from '../components/session/WelcomeScreen'
 import { useToast } from '../components/Toast'
@@ -28,7 +29,7 @@ import {
 } from '../hooks/participant'
 import { useOutbox } from '../hooks/useOutbox'
 import { enqueue } from '../lib/outbox'
-import { caseAt } from '../lib/sessionProgress'
+import { caseAt, pilotPositionAt } from '../lib/sessionProgress'
 import { isStepBackChord } from '../lib/stepBack'
 
 // Steps that own the full viewport; everything else renders inside the shell.
@@ -74,7 +75,7 @@ function pageDescriptor(step: SessionStep): PageDescriptor | null {
         page_count: step.page_count,
       }
     case 'diagnosis':
-      return { kind: step.kind, title: step.title, section: step.section, video_id: step.video_id }
+      return { kind: step.kind, title: '', section: step.section, video_id: step.video_id }
     case 'case_outro':
       // A closing screen with no battery on it is not a page with questions.
       if (step.questionnaire_id === null) return null
@@ -178,6 +179,17 @@ export default function SessionPage() {
 
   const { steps, current_step_index, total_steps } = session.data
   const step = steps[current_step_index]
+  const pilot = session.data.flow_version === 'pilot_20261116'
+  const pilotPosition = pilotPositionAt(steps, current_step_index)
+  const phaseLabel = t(`session.${pilotPosition.phase}_phase`)
+  const pilotLabel =
+    pilotPosition.current && pilotPosition.total
+      ? t('session.global_case_position', {
+          phase: phaseLabel,
+          current: pilotPosition.current,
+          total: pilotPosition.total,
+        })
+      : phaseLabel
 
   const backDialog =
     supervisorDialog === 'back' ? (
@@ -250,14 +262,18 @@ export default function SessionPage() {
           expected: current_step_index,
         })
       return true
-    } catch {
-      toast.show(t('session.error'), 'error')
+    } catch (error) {
+      // The persisted deadline takes over this draft through finish-ck.
+      if (!isCKDeadlineExpired(error)) toast.show(t('session.error'), 'error')
       return false
     }
   }
 
   let content: ReactNode
   switch (step.kind) {
+    case 'text_page':
+      content = <TextPageScreen step={step} onContinue={advance} busy={updateProgress.isPending} />
+      break
     case 'section_intro':
       content = (
         <SectionIntroScreen step={step} onContinue={advance} busy={updateProgress.isPending} />
@@ -266,6 +282,7 @@ export default function SessionPage() {
     case 'welcome':
       content = (
         <WelcomeScreen
+          pilot={pilot}
           participantId={me.data.id}
           showCalibration={steps.some((s) => s.kind === 'calibration')}
           texts={step.texts}
@@ -276,6 +293,7 @@ export default function SessionPage() {
     case 'sosci':
       content = (
         <SosciScreen
+          pilot={pilot}
           variant={step.variant}
           url={step.url}
           idParam={step.id_param}
@@ -296,8 +314,11 @@ export default function SessionPage() {
     case 'case_intro':
       content = (
         <CaseIntroScreen
-          title={step.title}
-          body={step.body}
+          pilot={pilot}
+          title={
+            pilot ? t('pilot.case_intro_title', { current: pilotPosition.current }) : step.title
+          }
+          body={step.body || (pilot ? t('pilot.case_intro_body') : undefined)}
           videoId={step.video_id}
           onContinue={advance}
         />
@@ -307,6 +328,8 @@ export default function SessionPage() {
       const qStep = step
       content = (
         <PreTestPage
+          pilot={pilot}
+          onTimerFinished={() => toast.show(t('ck_section.expired_notice'))}
           step={qStep}
           participantId={me.data.id}
           timing={session.data.section_timing}
@@ -340,6 +363,8 @@ export default function SessionPage() {
     case 'case_video':
       content = (
         <CaseVideoScreen
+          pilot={pilot}
+          progressLabel={pilot ? pilotLabel : undefined}
           videoId={step.video_id}
           taskDescription={step.task_description}
           infoText={step.info_text}
@@ -358,6 +383,7 @@ export default function SessionPage() {
       const page = pageDescriptor(step)
       content = (
         <DiagnosisScreen
+          pilot={pilot}
           videoId={step.video_id}
           taskDescription={step.task_description}
           questions={step.questions}
@@ -376,6 +402,7 @@ export default function SessionPage() {
       const outro = step
       content = (
         <CaseOutroScreen
+          pilot={pilot}
           instruction={outro.instruction}
           questions={outro.questions}
           submitting={respond.isPending}
@@ -401,6 +428,7 @@ export default function SessionPage() {
       const narration = step
       content = (
         <ThinkAloudScreen
+          progressLabel={pilot ? pilotLabel : undefined}
           videoId={narration.video_id}
           position={{
             phaseType: narration.phase_type,
@@ -474,15 +502,17 @@ export default function SessionPage() {
       <header className="shell__header">
         <span className="brand-sm">A04</span>
         <span className="muted">
-          {position
-            ? t('session.case_position', {
-                phase: t(`session.phase.${position.phaseType}`, {
-                  defaultValue: position.phaseType,
-                }),
-                current: position.current,
-                total: position.total,
-              })
-            : t('session.questions')}
+          {pilot
+            ? pilotLabel
+            : position
+              ? t('session.case_position', {
+                  phase: t(`session.phase.${position.phaseType}`, {
+                    defaultValue: position.phaseType,
+                  }),
+                  current: position.current,
+                  total: position.total,
+                })
+              : t('session.questions')}
         </span>
         <div className="shell__header-right">
           <LanguageSwitcher />

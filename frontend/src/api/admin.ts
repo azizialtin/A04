@@ -16,6 +16,18 @@ export interface StudyTexts {
   case_outro_body: string
   think_aloud_title: string
   think_aloud_body: string
+  questionnaire_end_title?: string
+  questionnaire_end_body?: string
+  video_start_title?: string
+  video_start_body?: string
+  video_intro_title?: string
+  video_intro_body?: string
+  video_end_title?: string
+  video_end_body?: string
+  discussion_start_title?: string
+  discussion_start_body?: string
+  post_intro_title?: string
+  post_intro_body?: string
 }
 
 /** What a new video starts from; the texts can be followed rather than copied. */
@@ -37,6 +49,9 @@ export interface Study {
   video_defaults: StudyVideoDefaults
   /** Training cases worked through before their think-aloud screens play. */
   think_aloud_batch_size: number
+  flow_version?: 'legacy' | 'pilot_20261116'
+  think_aloud_mode?: 'block' | 'bundled'
+  think_aloud_count?: number
 }
 
 export interface AdminVideo {
@@ -93,6 +108,9 @@ export interface ParticipantDetail {
   video_set_name: string | null
   /** Pinned when the run opened; null until then. */
   think_aloud_batch_size: number | null
+  flow_version?: 'legacy' | 'pilot_20261116' | null
+  think_aloud_mode?: 'block' | 'bundled' | null
+  think_aloud_count?: number | null
 }
 
 export interface VideoSetItem {

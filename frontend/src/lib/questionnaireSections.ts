@@ -9,10 +9,11 @@ export const QUESTIONNAIRE_INSTRUMENTS = [
   },
   { key: 'ck_tasks', name: 'ck_pre', description: 'Fachwissen Debugging' },
   { key: 'pck', name: 'pck_pre', description: 'Fachdidaktisches Wissen' },
-  { key: 'msk', name: 'msk_pre', description: 'Metakognitives Strategiewissen' },
+  { key: 'mesp', name: 'mesp_pre', description: 'MESP · Bewertung von Handlungsmöglichkeiten' },
 ] as const
 
 export function instrumentName(key: string | undefined): string {
+  if (key === 'msk') return 'msk_pre (bisheriger Fragebogen)'
   return QUESTIONNAIRE_INSTRUMENTS.find((instrument) => instrument.key === key)?.name || key || '—'
 }
 

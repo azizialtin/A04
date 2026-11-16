@@ -21,6 +21,7 @@ export interface ThinkAloudPosition {
 
 interface Props {
   videoId: number
+  progressLabel?: string
   position?: ThinkAloudPosition
   /** The study's own heading and text, when it wrote any. */
   heading?: string
@@ -46,7 +47,14 @@ const UPLOAD_WAIT_MS = 60_000
  * three recordings of cases worked through a while ago. It therefore says
  * which case is playing rather than leaving the participant to recognise it.
  */
-export default function ThinkAloudScreen({ videoId, position, heading, body, onComplete }: Props) {
+export default function ThinkAloudScreen({
+  videoId,
+  position,
+  heading,
+  body,
+  onComplete,
+  progressLabel,
+}: Props) {
   const { t } = useTranslation()
   // A capture the page recorded itself may still be on its way up; asking for
   // the replay before it lands would get the clip instead.
@@ -111,7 +119,11 @@ export default function ThinkAloudScreen({ videoId, position, heading, body, onC
   return (
     <div className="think-aloud">
       <header className="think-aloud__head">
-        {position ? (
+        {progressLabel ? (
+          <p className="muted small" data-aoi="phase_label">
+            {progressLabel}
+          </p>
+        ) : position ? (
           <p className="muted small">
             {t('session.case_position', {
               phase: t(`session.phase.${position.phaseType}`, {

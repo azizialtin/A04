@@ -45,7 +45,14 @@ async def create_study(
     admin: Researcher = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> StudyResponse:
+    if body.flow_version == "legacy" and body.think_aloud_mode != "block":
+        raise HTTPException(
+            422, "Legacy studies use block mode. Create a pilot study for bundled think-aloud."
+        )
     study = Study(
+        flow_version=body.flow_version,
+        think_aloud_mode=body.think_aloud_mode,
+        think_aloud_count=body.think_aloud_count,
         name=body.name,
         description=body.description,
         sosci_pretest_url=body.sosci_pretest_url,
@@ -84,6 +91,10 @@ async def update_study(
     db: AsyncSession = Depends(get_db),
 ) -> StudyResponse:
     study = await _study_or_404(db, study_id)
+    if study.flow_version == "legacy" and body.think_aloud_mode == "bundled":
+        raise HTTPException(
+            422, "Legacy studies use block mode. Create a pilot study for bundled think-aloud."
+        )
     for field, value in body.model_dump(exclude_unset=True).items():
         if field in ("texts", "video_defaults"):
             # Whitespace-only text is no text; store what the participant will

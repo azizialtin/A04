@@ -454,7 +454,7 @@ async def test_case_video_step_carries_content(client, run, participant_headers)
     assert case_video["info_text"] == "info"
     assert case_video["student_task_text"] == "task"
     assert case_video["time_limit_seconds"] == 120
-    assert case_video["title"]
+    assert "title" not in case_video
 
 
 async def test_unassigned_participant_falls_back_to_study_videos(
@@ -627,7 +627,8 @@ async def test_a_case_advance_names_its_video(client, run, participant_headers, 
         )
     completed = logged[-1]["payload"]["completed_step"]
     assert completed["kind"] == "case_video"
-    assert (completed["title"], completed["video_id"]) == ("pre", run["videos"]["pre"].id)
+    assert completed["video_id"] == run["videos"]["pre"].id
+    assert "title" not in completed
 
 
 async def _session(client, headers) -> dict:

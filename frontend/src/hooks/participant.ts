@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { participantApi, type SessionScript } from '../api/participant'
+import { isCKDeadlineExpired, participantApi, type SessionScript } from '../api/participant'
 
 export function useMe() {
   return useQuery({ queryKey: ['me'], queryFn: participantApi.getMe })
@@ -69,6 +69,7 @@ export function useRespondQuestionnaire() {
   const qc = useQueryClient()
   return useMutation({
     ...RETRY,
+    retry: (failureCount, error) => !isCKDeadlineExpired(error) && failureCount < 2,
     mutationFn: (v: {
       questionnaireId: number
       video_id: number | null
@@ -110,7 +111,29 @@ export function useFinishCK() {
   return useMutation({
     ...RETRY,
     mutationFn: participantApi.finishCK,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
+    onSuccess: (progress) => {
+      qc.setQueryData<SessionScript>(['session'], (session) =>
+        session && session.current_step_index <= progress.current_step_index
+          ? {
+              ...session,
+              current_step_index: progress.current_step_index,
+              total_steps: progress.total_steps,
+              status: progress.status,
+            }
+          : session,
+      )
+      return qc.invalidateQueries({ queryKey: ['session'] })
+    },
+    onError: async (_error, variables) => {
+      // Manual completion retains its established confirmation/retry workflow.
+      // Automatic expiry can recover without another supervisor action.
+      if (variables.reason !== 'timer_expired') return
+      try {
+        qc.setQueryData(['session'], await participantApi.getSession())
+      } catch {
+        /* The page retains its immutable finish request and draft for retry. */
+      }
+    },
   })
 }
 

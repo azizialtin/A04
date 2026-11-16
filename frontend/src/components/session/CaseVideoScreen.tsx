@@ -11,6 +11,8 @@ import VideoPlayer from './VideoPlayer'
 
 interface Props {
   videoId: number
+  pilot?: boolean
+  progressLabel?: string
   taskDescription: string
   infoText: string
   studentTaskText: string
@@ -32,6 +34,8 @@ export default function CaseVideoScreen({
   studentTaskText,
   timeLimitSeconds,
   onComplete,
+  pilot = false,
+  progressLabel,
 }: Props) {
   const { t } = useTranslation()
   // Empty on a first visit; on a resumed case it brings the notes box back.
@@ -116,6 +120,11 @@ export default function CaseVideoScreen({
       </div>
 
       <aside className="case-screen__rail">
+        {progressLabel && (
+          <p className="rail-phase" data-aoi="phase_label">
+            {progressLabel}
+          </p>
+        )}
         {timeLimitSeconds ? (
           <div className="rail-block" data-aoi="timer">
             <span className="rail-label">{t('case.timer_label')}</span>
@@ -128,14 +137,14 @@ export default function CaseVideoScreen({
           <StudyText text={taskDescription} className="rail-task" />
         </div>
 
-        <div className="rail-actions">
+        <div className={`rail-actions${pilot ? ' rail-actions--labels' : ''}`}>
           <button
             type="button"
-            className="btn btn-secondary btn-icon"
+            className={`btn btn-secondary${pilot ? '' : ' btn-icon'}`}
             onClick={openInfo}
             data-aoi="info_button"
           >
-            i
+            {pilot ? t('pilot.info_button') : 'i'}
           </button>
           <button
             type="button"
@@ -143,7 +152,7 @@ export default function CaseVideoScreen({
             onClick={openTask}
             data-aoi="student_task_button"
           >
-            {t('case.student_task_button')}
+            {t(pilot ? 'pilot.student_task_button' : 'case.student_task_button')}
           </button>
         </div>
 
@@ -180,17 +189,23 @@ export default function CaseVideoScreen({
         </button>
       </aside>
 
-      <Modal open={showInfo} title={t('case.info_title')} onClose={closeInfo} aoiId="info_dialog">
+      <Modal
+        open={showInfo}
+        title={t(pilot ? 'pilot.info_title' : 'case.info_title')}
+        onClose={closeInfo}
+        aoiId="info_dialog"
+      >
         <StudyText text={infoText || t('case.no_content')} mode="preserve" style={{ margin: 0 }} />
       </Modal>
       <Modal
         open={showTask}
-        title={t('case.student_task_title')}
+        title={t(pilot ? 'pilot.student_task_title' : 'case.student_task_title')}
         onClose={closeTask}
         aoiId="student_task_dialog"
       >
         <StudyText
           text={studentTaskText || t('case.no_content')}
+          restartCodeBlocks={pilot}
           mode="preserve"
           style={{ margin: 0 }}
         />

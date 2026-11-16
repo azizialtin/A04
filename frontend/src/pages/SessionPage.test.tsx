@@ -298,3 +298,20 @@ test('a questionnaire page has the bar in its header, not laid over it', () => {
   expect(container.querySelector('.shell__progress')).not.toBeNull()
   expect(container.querySelector('.shell__progress--overlay')).toBeNull()
 })
+
+test('expected CK deadline takeover does not display a generic connection error', async () => {
+  respond.mockRejectedValueOnce(
+    Object.assign(new Error('deadline'), {
+      isAxiosError: true,
+      response: { status: 409, data: { detail: { code: 'ck_deadline_expired' } } },
+    }),
+  )
+  view()
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '34' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  })
+  expect(respond).toHaveBeenCalledOnce()
+  expect(screen.queryByText('Etwas ist schiefgelaufen. Bitte laden Sie die Seite neu.')).toBeNull()
+  expect(currentStepIndex).toBe(0)
+})

@@ -11,10 +11,12 @@ from app.services.questionnaires import validate_question_definitions
 
 SOURCE_KEY = "a04-pretest-2026-11-02"
 LEGACY_SOURCE_KEY = "a04-pretest-2026-10-27"
+PILOT_SOURCE_KEY = "a04-pretest-2026-11-16"
 _DATA_DIR = Path(__file__).parents[1] / "data"
 MANIFEST_PATHS = {
     SOURCE_KEY: _DATA_DIR / "pretest_nov2026.json",
     LEGACY_SOURCE_KEY: _DATA_DIR / "pretest_oct2026.json",
+    PILOT_SOURCE_KEY: _DATA_DIR / "pretest_pilot20261116.json",
 }
 
 

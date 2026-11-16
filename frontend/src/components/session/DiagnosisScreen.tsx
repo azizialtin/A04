@@ -8,6 +8,7 @@ import { useToast } from '../Toast'
 import DiagnosisView from './DiagnosisView'
 
 interface Props {
+  pilot?: boolean
   videoId: number
   taskDescription: string
   questions: Question[]
@@ -19,6 +20,7 @@ interface Props {
 export default function DiagnosisScreen({
   videoId,
   taskDescription,
+  pilot = false,
   questions,
   initialText,
   initialAnswers,
@@ -38,6 +40,7 @@ export default function DiagnosisScreen({
 
   return (
     <DiagnosisView
+      pilot={pilot}
       taskDescription={taskDescription}
       notes={notes.data ?? []}
       draftKey={draftKey}

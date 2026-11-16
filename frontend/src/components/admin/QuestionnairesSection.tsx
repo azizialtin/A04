@@ -27,12 +27,12 @@ const PLACEMENTS = [
 ] as const
 
 const SCALE_6 = [
-  { value: 1, label: 'trifft überhaupt nicht zu' },
-  { value: 2, label: 'trifft nicht zu' },
-  { value: 3, label: 'trifft eher nicht zu' },
-  { value: 4, label: 'trifft eher zu' },
-  { value: 5, label: 'trifft zu' },
-  { value: 6, label: 'trifft voll und ganz zu' },
+  { value: 1, label: 'sehr geeignet' },
+  { value: 2, label: 'geeignet' },
+  { value: 3, label: 'eher geeignet' },
+  { value: 4, label: 'eher ungeeignet' },
+  { value: 5, label: 'ungeeignet' },
+  { value: 6, label: 'sehr ungeeignet' },
 ]
 
 // One starting point per shape of page the study uses; together they show
@@ -95,7 +95,7 @@ const PRESETS: { name: string; questions: Question[] }[] = [
       {
         id: 'auth1',
         type: 'likert',
-        text: 'Ich empfand die Simulation als authentisch.',
+        text: 'Ich empfand die Situation als authentisch',
         scale_min: 1,
         scale_max: 6,
         labels: { min: 'trifft überhaupt nicht zu', max: 'trifft voll und ganz zu' },
@@ -111,13 +111,13 @@ const PRESETS: { name: string; questions: Question[] }[] = [
     ],
   },
   {
-    name: 'Tabelle (wie MSK)',
+    name: 'Tabelle (wie MESP)',
     questions: ['a', 'b', 'c'].map((letter, i) => ({
-      id: `msk_pre_8${letter}`,
+      id: `mesp_example_${letter}`,
       type: 'multiple_choice',
       text: ['Die Aufgabe allein lösen.', 'Die Lösung vorher lesen.', 'Notizen machen.'][i],
       options: SCALE_6,
-      matrix: 'msk_pre_8',
+      matrix: 'mesp_example',
     })),
   },
   {
@@ -485,12 +485,13 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             id="page-section"
             className="input"
             value={section}
-            placeholder="z. B. Demographics, CK-Pretest, MSK"
+            placeholder="z. B. Demographics, CK-Pretest, MESP"
             onChange={(e) => setSection(e.target.value)}
           />
           <p className="muted small">
-            Das Instrument, zu dem die Seite gehört. Die Bearbeitungszeit wird in der Statistik je
-            Abschnitt aufsummiert; ohne Angabe zählt die Seite für sich.
+            Unter diesem Namen werden die Bearbeitungszeiten in der Statistik und in sections.csv
+            aufsummiert; ohne Angabe zählt die Seite für sich. Der Abschnitt wird Teilnehmern nicht
+            angezeigt und steuert nicht den Fortschrittsbalken.
           </p>
         </div>
         <div className="form-row">
@@ -518,21 +519,20 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
               onChange={(event) => setSectionKey(event.target.value)}
             >
               <option value="">Ohne Abschnittssteuerung</option>
-              <option value="ck_tasks">
-                ck_pre · Fachwissen Debugging · 7 Minuten, Abschluss durch Studienleitung
-              </option>
+              <option value="ck_tasks">ck_pre · Fachwissen Debugging · 7 Minuten</option>
               <option value="pck">
                 pck_pre · Fachdidaktisches Wissen · Ziel nach den CK-Aufgaben
               </option>
               <option value="ck_self">
                 ck_pre_self · Selbsteinschätzung Programmierung & Debugging
               </option>
-              <option value="msk">msk_pre · Metakognitives Strategiewissen</option>
+              <option value="mesp">mesp_pre · MESP</option>
+              {sectionKey === 'msk' && <option value="msk">msk_pre · bisheriger Fragebogen</option>}
               <option value="demographics">Demographics/participants · Angaben zur Person</option>
               {sectionKey &&
-                !['ck_tasks', 'pck', 'ck_self', 'msk', 'demographics'].includes(sectionKey) && (
-                  <option value={sectionKey}>{sectionKey}</option>
-                )}
+                !['ck_tasks', 'pck', 'ck_self', 'mesp', 'msk', 'demographics'].includes(
+                  sectionKey,
+                ) && <option value={sectionKey}>{sectionKey}</option>}
             </select>
             <p className="muted small">
               Alle Seiten eines Abschnitts stehen direkt hintereinander. Die Einleitung wird einmal
@@ -665,6 +665,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             <tr>
               <th>ID</th>
               <th>Platzierung</th>
+              <th>Reihenfolge</th>
               <th>Titel</th>
               <th>Instrument / Tabelle</th>
               <th>Abschnitt</th>
@@ -677,6 +678,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
               <tr key={q.id}>
                 <td>{q.id}</td>
                 <td>{PLACEMENTS.find(([value]) => value === q.placement)?.[1] ?? q.placement}</td>
+                <td>{q.order_index}</td>
                 <td>{q.title}</td>
                 <td>{q.placement === 'pre_test' ? instrumentName(q.section_key) : '—'}</td>
                 <td>
@@ -705,7 +707,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
             ))}
             {qs.data?.length === 0 && (
               <tr>
-                <td colSpan={7} className="muted">
+                <td colSpan={8} className="muted">
                   Noch keine Fragebögen.
                 </td>
               </tr>

@@ -48,3 +48,11 @@ test("uses the study's own wording where it has any, and the default elsewhere",
   // Nothing written for the note, so the built-in one stays.
   expect(screen.getByText(/Bitte merken Sie sich diese ID/)).toBeInTheDocument()
 })
+
+test('pilot introduction retains ID and Weiter while removing obsolete nine-case list', () => {
+  render(<WelcomeScreen participantId="PILOT-1" onContinue={vi.fn()} pilot />)
+  expect(screen.getByText('PILOT-1')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeInTheDocument()
+  expect(screen.queryByRole('list')).toBeNull()
+  expect(screen.getByText(/sieben Videofälle/)).toBeInTheDocument()
+})

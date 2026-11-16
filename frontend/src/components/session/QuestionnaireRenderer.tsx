@@ -33,6 +33,7 @@ interface Props {
   initialAnswers?: Answers
   onAnswersChange?: (answers: Answers) => void
   onSubmit: (answers: Answers, timeSpentSeconds: number) => void
+  onSkip?: (timeSpentSeconds: number) => void
 }
 
 export default function QuestionnaireRenderer({
@@ -45,6 +46,7 @@ export default function QuestionnaireRenderer({
   initialAnswers,
   onAnswersChange,
   onSubmit,
+  onSkip,
 }: Props) {
   const { t } = useTranslation()
   const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {})
@@ -90,6 +92,17 @@ export default function QuestionnaireRenderer({
       ) : null}
 
       <div className="panel__actions">
+        {onSkip && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            data-aoi="skip"
+            disabled={submitting || disabled}
+            onClick={() => onSkip(elapsed())}
+          >
+            {t('ck_section.skip')}
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-primary"
@@ -168,19 +181,26 @@ function Matrix({
 }) {
   const { t } = useTranslation()
   const numbered = (option: QuestionOption, i: number) => `${i + 1} – ${option.label}`
+  const prompt = block.questions[0].matrix_prompt
+  const hasLabels = block.options.some((option) => option.label !== String(option.value))
   return (
     <div className="matrix">
-      <p className="matrix__legend-title">{t('questionnaire.legend')}</p>
-      <ol className="matrix__legend" data-aoi={`matrix.${block.key}.legend`}>
-        {block.options.map((option, i) => (
-          <li key={String(option.value)}>
-            <span className="matrix__num" aria-hidden="true">
-              {i + 1}
-            </span>
-            <span>{option.label}</span>
-          </li>
-        ))}
-      </ol>
+      {prompt && <StudyText text={prompt} className="matrix__prompt" />}
+      {hasLabels && (
+        <>
+          <p className="matrix__legend-title">{t('questionnaire.legend')}</p>
+          <ol className="matrix__legend" data-aoi={`matrix.${block.key}.legend`}>
+            {block.options.map((option, i) => (
+              <li key={String(option.value)}>
+                <span className="matrix__num" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span>{option.label}</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
       <div className="matrix__scroll">
         <table className="matrix__table">
           <thead>
@@ -391,10 +411,20 @@ function MultiSelect({
   const { t } = useTranslation()
   const hintId = useId()
   const selected: unknown[] = Array.isArray(value) ? value : []
+  const minimum = question.min_selections
+  const maximum = question.max_selections
+  const exact = minimum !== undefined && minimum === maximum
   return (
     <div className="choice">
       <p className="muted small" id={hintId}>
-        {t('questionnaire.multi_select_hint')}
+        {exact
+          ? t('questionnaire.multi_select_exact', { count: minimum })
+          : maximum !== undefined
+            ? t('questionnaire.multi_select_max', { count: maximum })
+            : t('questionnaire.multi_select_hint')}
+        {minimum !== undefined &&
+          !exact &&
+          ` ${t('questionnaire.multi_select_min', { count: minimum })}`}
       </p>
       {(question.options ?? []).map(normaliseOption).map((option) => (
         <label key={`${typeof option.value}:${option.value}`} className="choice__option">
@@ -403,6 +433,11 @@ function MultiSelect({
             name={question.id}
             aria-describedby={hintId}
             checked={selected.includes(option.value)}
+            disabled={
+              !selected.includes(option.value) &&
+              maximum !== undefined &&
+              selected.length >= maximum
+            }
             onChange={(event) =>
               onChange(
                 event.target.checked
@@ -557,15 +592,23 @@ function Debugging({
     <div className="debugging-answer">
       <LineNumbers
         question={question}
-        value={answer.lines}
-        onChange={(lines) => onChange({ ...answer, lines })}
+        value={answer.skipped ? [] : answer.lines}
+        onChange={(lines) =>
+          onChange(answer.skipped ? { lines, explanation: '' } : { ...answer, lines })
+        }
       />
       <label htmlFor={explanationId}>{t('questionnaire.debugging_explanation')}</label>
       <textarea
         id={explanationId}
         className="textarea"
         value={typeof answer.explanation === 'string' ? answer.explanation : ''}
-        onChange={(event) => onChange({ ...answer, explanation: event.target.value })}
+        onChange={(event) =>
+          onChange(
+            answer.skipped
+              ? { lines: [], explanation: event.target.value }
+              : { ...answer, explanation: event.target.value },
+          )
+        }
       />
     </div>
   )

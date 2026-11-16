@@ -18,18 +18,20 @@ export default function WelcomeScreen({
   onContinue,
   showCalibration = true,
   texts,
+  pilot = false,
 }: {
   participantId: string
   onContinue: () => void
   showCalibration?: boolean
   texts?: Partial<WelcomeTexts>
+  pilot?: boolean
 }) {
   const { t } = useTranslation()
   const defaultSteps = ALL_STEPS.filter((key) => key !== 'calibration' || showCalibration).map(
     (key) => t(`welcome.steps.${key}`),
   )
   const steps = texts?.welcome_steps?.length ? texts.welcome_steps : defaultSteps
-  const intro = texts?.welcome_intro || t('welcome.intro')
+  const intro = texts?.welcome_intro || t(pilot ? 'pilot.welcome_intro' : 'welcome.intro')
 
   return (
     <div className="fullpage">
@@ -37,12 +39,16 @@ export default function WelcomeScreen({
         <h1>{texts?.welcome_title || t('welcome.title')}</h1>
         <StudyText text={intro} className="lead" />
 
-        <span className="label">{t('welcome.overview')}</span>
-        <ol className="steps">
-          {steps.map((step, i) => (
-            <li key={i}>{step}</li>
-          ))}
-        </ol>
+        {!pilot && (
+          <>
+            <span className="label">{t('welcome.overview')}</span>
+            <ol className="steps">
+              {steps.map((step, i) => (
+                <li key={i}>{step}</li>
+              ))}
+            </ol>
+          </>
+        )}
 
         <div className="id-badge">
           <span className="id-badge__label">{t('welcome.your_id')}</span>
@@ -50,7 +56,7 @@ export default function WelcomeScreen({
         </div>
         <p className="muted">{texts?.welcome_note || t('welcome.remember')}</p>
         <button type="button" className="btn btn-primary btn-lg" onClick={onContinue}>
-          {t('welcome.continue')}
+          {t(pilot ? 'common.continue' : 'welcome.continue')}
         </button>
       </div>
     </div>
