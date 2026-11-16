@@ -1,8 +1,8 @@
-# Local lab display guard
+# Lab display guard
 
-The deployed release and Windows bridge are frozen at
-`35fa85beeb44b77a39be6834679d593d44c9fa05`. The display guard is a separate local
-change on `codex/display-guard-20261116`; it has not been deployed or pushed.
+The lab display guard protects measured pages from changes to the display,
+fullscreen state, zoom and focus. Deploy the frontend and backend from the same
+release: the backend provides the matching AOI and replay exclusions.
 
 ## Run locally
 
@@ -16,8 +16,28 @@ npm run dev:lab
 
 `VITE_LAB_DISPLAY_GUARD=true` also enables the guard explicitly. Normal `npm run
 dev` and production builds remain unchanged unless that build-time flag is set.
-Do not test the guarded frontend against the older deployed backend: the local
-backend contains the matching export and replay exclusions.
+Do not test the guarded frontend against an older backend without those export
+and replay exclusions.
+
+## Production builds
+
+The [LRZ deployment](../infrastructure/lrz/README.md) enables the guard by default.
+Its Compose build passes `VITE_LAB_DISPLAY_GUARD=true` unless the private
+deployment environment explicitly sets it to `false`. Keep the example's
+explicit `true` setting for the lab. Generic Docker builds default to `false`;
+enable them with `--build-arg VITE_LAB_DISPLAY_GUARD=true`.
+
+This is a Vite build-time setting. Rebuild the web image when changing it;
+setting an environment variable on an already built nginx container does not
+change the bundle. Deploy the matching API image alongside it. LRZ keeps
+`CALIBRATION_ENABLED=false` for the API and migration service, independently
+of this frontend setting.
+
+The bridge source and Windows build workflow are unchanged from release
+`35fa85beeb44b77a39be6834679d593d44c9fa05`. That Windows package remains compatible;
+the guard requires the newer frontend and backend, not a bridge update.
+
+## Display profile
 
 The lab profile expects one display at 1920 × 1080, Windows scaling 100%, Edge
 zoom 100%, a fullscreen viewport and window at screen origin (0, 0). Browser

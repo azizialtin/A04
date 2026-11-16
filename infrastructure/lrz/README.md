@@ -49,6 +49,15 @@ sudo docker compose -p a04-production \
   -f infrastructure/lrz/compose.yml up -d --wait api web
 ```
 
+The LRZ web build enables `VITE_LAB_DISPLAY_GUARD=true` by default, including
+when an older private environment file omits it. Keep that explicit setting in
+the deployment environment for the lab. Changing it requires rebuilding the
+web image; nginx runtime variables cannot change the compiled frontend.
+Deploy the API from the same release so gaze exports and replay apply the
+matching exclusions. In-app calibration remains disabled by the Compose
+setting `CALIBRATION_ENABLED=false`. See the [display guard guide](../../docs/LAB_DISPLAY_GUARD.md)
+for its measured-page scope, operator recovery and physical lab checks.
+
 The API runs read-only as UID/GID 10002. Only its explicit uploads and temporary
 bind mounts are writable. `STORAGE_BACKEND=persistent_local` requires an absolute,
 mounted, writable `LOCAL_STORAGE_ROOT`; a missing mount fails startup. Gaze and

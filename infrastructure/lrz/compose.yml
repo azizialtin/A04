@@ -49,6 +49,7 @@ services:
       args:
         VITE_API_BASE_URL: /api
         VITE_TOBII_WS_URL: ws://127.0.0.1:8766
+        VITE_LAB_DISPLAY_GUARD: ${VITE_LAB_DISPLAY_GUARD:-true}
     volumes:
       - ./web.conf:/etc/nginx/conf.d/default.conf:ro
       - ./api-proxy.conf:/etc/nginx/a04-api-proxy.conf:ro

@@ -192,6 +192,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: LRZ build configuration and calibration policy
+        run: python3 scripts/test_lrz_config.py
       - name: Backend image
         run: docker build -t a04-backend ./backend
       - name: Frontend image
