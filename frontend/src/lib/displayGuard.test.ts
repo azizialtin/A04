@@ -379,3 +379,74 @@ test('disabled guard preserves legacy behavior and emits no events', () => {
   expect(s.controller.getSnapshot().phase).toBe('disabled')
   expect(s.events).toEqual([])
 })
+
+test.each<Partial<DisplayMetrics>>([
+  { innerWidth: 1366, innerHeight: 768 },
+  { x: -8, y: -8, outerWidth: 1936, outerHeight: 1096 },
+  { dpr: 1.25, screenWidth: 1536, screenHeight: 864 },
+])('researcher can continue with %j without certifying gaze', (metrics) => {
+  const s = setup()
+  s.change(metrics)
+  s.configure()
+  expect(s.controller.check()).toBe(false)
+  expect(s.controller.resume()).toBe(false)
+  expect(s.controller.continueUnverified()).toBe(true)
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.allowsSample(s.time())).toBe(false)
+  expect(s.events.map((event) => event.event_type)).toEqual([
+    'display_guard_interrupted',
+    'display_guard_continued_unverified',
+  ])
+  // Idempotent permission survives subsequent geometry and focus events.
+  s.controller.continueUnverified()
+  s.controller.interrupt('window_focus')
+  s.advance(1000)
+  s.change({ ...lab, innerWidth: 1200 })
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.allowsSample(s.time())).toBe(false)
+  expect(
+    s.events.filter((event) => event.event_type === 'display_guard_continued_unverified'),
+  ).toHaveLength(1)
+})
+
+test('unverified continuation survives SoSci and page changes but never transfers to another participant', () => {
+  const s = setup()
+  s.change({ innerHeight: 900 })
+  s.configure()
+  s.controller.continueUnverified()
+  for (const scope of ['monitor', 'suspended', 'required'] as const) {
+    s.configure('participant', scope)
+    expect(s.controller.check()).toBe(true)
+    expect(s.controller.getSnapshot().unverifiedContinuation).toBe(true)
+  }
+  s.configure('other-participant')
+  expect(s.controller.check()).toBe(false)
+  expect(s.controller.getSnapshot().unverifiedContinuation).toBe(false)
+  s.controller.continueUnverified()
+  s.controller.release('other-participant')
+  s.configure('other-participant')
+  expect(s.controller.check()).toBe(false)
+})
+
+test('restoring display after unverified continuation still requires a real verification boundary', () => {
+  const s = setup()
+  s.configure()
+  s.verify()
+  s.advance(100)
+  s.change({ innerHeight: 900 })
+  expect(s.controller.check()).toBe(false)
+  s.controller.continueUnverified()
+  const unverifiedAt = s.time()
+  s.change(lab)
+  s.controller.check()
+  s.advance(500)
+  expect(s.controller.check()).toBe(true)
+  expect(s.controller.getSnapshot().phase).toBe('ready')
+  expect(s.controller.allowsSample(s.time())).toBe(false)
+  expect(s.events.filter((event) => event.event_type === 'display_guard_resumed')).toHaveLength(1)
+  expect(s.controller.resume()).toBe(true)
+  expect(s.controller.getSnapshot().unverifiedContinuation).toBe(false)
+  expect(s.controller.allowsSample(unverifiedAt)).toBe(false)
+  expect(s.controller.allowsSample(s.time())).toBe(true)
+  expect(s.events.filter((event) => event.event_type === 'display_guard_resumed')).toHaveLength(2)
+})

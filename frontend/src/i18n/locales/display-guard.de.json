@@ -1,12 +1,26 @@
 {
   "title": "Bildschirmeinstellung prüfen",
-  "body": "Bitte warten Sie auf die Studienleitung. Die Anzeige muss wieder den vorgesehenen Einstellungen entsprechen, bevor Sie fortfahren können.",
+  "body": "Die Studienleitung kann die Anzeige prüfen oder mit den aktuellen Einstellungen fortfahren. Das ist sowohl im Vollbild als auch im Fenster möglich.",
   "setup": "Vorgesehen sind 1920 × 1080 Pixel, 100 % Skalierung und Browser-Zoom sowie ein Vollbild auf dem vorgesehenen Bildschirm. Mit Strg + 0 lässt sich der Browser-Zoom zurücksetzen.",
   "ready": "Die Anzeige entspricht wieder den vorgesehenen Einstellungen. Die Studienleitung kann die Fortsetzung bestätigen.",
-  "waiting": "Die Anzeige wird überprüft. Bitte stellen Sie die vorgesehenen Einstellungen wieder her.",
+  "waiting": "Die vorgesehene Anzeige konnte noch nicht bestätigt werden.",
   "resume": "Studienleitung: Fortsetzen",
   "fullscreen": "Vollbild öffnen",
   "fullscreen_failed": "Vollbild konnte nicht geöffnet werden. Bitte verwenden Sie die Vollbildfunktion des Browsers.",
   "timers": "Laufende Zeitbegrenzungen gelten weiterhin.",
-  "calibration_interrupted": "Die Anzeige wurde während der Kalibrierung verändert. Bitte wiederholen Sie die Kalibrierung."
+  "calibration_interrupted": "Die Anzeige wurde während der Kalibrierung verändert. Bitte wiederholen Sie die Kalibrierung.",
+  "continue_unverified": "Mit aktueller Anzeige fortfahren",
+  "continue_unverified_notice": "Beim Fortfahren mit der aktuellen Anzeige bleiben Antworten und Zeitbegrenzungen erhalten. Nicht verifizierte Blickdaten werden nicht für die AOI-Auswertung verwendet. Diese Freigabe gilt bis zum Neuladen oder Abmelden.",
+  "reasons": {
+    "confirmation_required": "Die Bestätigung der Studienleitung steht noch aus.",
+    "checking_display": "Die Anzeige muss kurz unverändert bleiben, bevor sie bestätigt werden kann.",
+    "screen_resolution": "Die gemeldete Bildschirmauflösung entspricht nicht 1920 × 1080 Pixeln.",
+    "window_size": "Die gemeldete Browserfläche entspricht nicht 1920 × 1080 Pixeln.",
+    "window_position": "Der Browser meldet eine abweichende Fensterposition.",
+    "display_scale": "Die gemeldete Skalierung bzw. der Browser-Zoom entspricht nicht 100 %.",
+    "viewport_zoom": "Der sichtbare Seitenausschnitt ist vergrößert oder verschoben.",
+    "multiple_displays": "Der Browser meldet mehrere Bildschirme.",
+    "window_focus": "Das Studienfenster ist nicht im Vordergrund.",
+    "clock_changed": "Die Systemzeit wurde verändert."
+  }
 }

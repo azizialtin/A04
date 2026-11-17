@@ -30,7 +30,7 @@ import {
 } from '../hooks/participant'
 import { useOutbox } from '../hooks/useOutbox'
 import { useDisplayGuard } from '../hooks/useDisplayGuard'
-import { checkDisplayGuard } from '../lib/displayGuard'
+import { checkDisplayGuard, isDisplayGuardBlocking } from '../lib/displayGuard'
 import { displayGuardScope } from '../lib/displayGuardScope'
 import { enqueue } from '../lib/outbox'
 import { caseAt, pilotPositionAt } from '../lib/sessionProgress'
@@ -121,9 +121,8 @@ export default function SessionPage() {
   const unsent = useOutbox(me.data?.id)
   const stepNow = session.data?.steps[session.data.current_step_index]
   const guardScope = displayGuardScope(stepNow)
-  const guardRequired = guardScope === 'required'
   const guard = useDisplayGuard(me.data?.id, guardScope)
-  const guardBlocked = guard.enabled && guardRequired && guard.phase !== 'verified'
+  const guardBlocked = isDisplayGuardBlocking(guard)
   const stepIdentity = `${me.data?.id ?? ''}:${session.data?.current_step_index ?? ''}`
   const admittedStep = useRef<string | null>(null)
   const pageMounted = !guardBlocked || admittedStep.current === stepIdentity

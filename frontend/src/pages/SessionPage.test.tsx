@@ -30,7 +30,8 @@ vi.mock('../hooks/useDisplayGuard', () => ({
 }))
 vi.mock('../lib/displayGuard', async (original) => ({
   ...(await original<typeof import('../lib/displayGuard')>()),
-  checkDisplayGuard: () => !guard.enabled || !guard.required || guard.phase === 'verified',
+  checkDisplayGuard: () =>
+    !guard.enabled || !guard.required || guard.phase === 'verified' || guard.unverifiedContinuation,
   getDisplayGuardSnapshot: () => guard,
   resumeDisplayGuard: vi.fn(),
 }))
@@ -171,6 +172,7 @@ beforeEach(() => {
     focusRequired: true,
     reasons: [],
     generation: 0,
+    unverifiedContinuation: false,
   }
 })
 

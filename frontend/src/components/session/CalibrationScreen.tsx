@@ -144,12 +144,15 @@ export default function CalibrationScreen({ onComplete }: Props) {
     if (!bridge || !checkDisplayGuard()) return
 
     const initialGuard = getDisplayGuardSnapshot()
+    // Task continuation without verified geometry must never certify calibration.
+    if (initialGuard.enabled && initialGuard.phase !== 'verified') return
     let interrupted = false
     const verifyDisplay = () => {
       if (
         initialGuard.enabled &&
         (interrupted ||
           !checkDisplayGuard() ||
+          getDisplayGuardSnapshot().phase !== 'verified' ||
           getDisplayGuardSnapshot().generation !== initialGuard.generation)
       )
         throw new Error(t('calibration_interrupted', { ns: 'displayGuard' }))

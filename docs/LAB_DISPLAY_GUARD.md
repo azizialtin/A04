@@ -48,7 +48,14 @@ cannot identify the calibrated physical monitor from its dimensions alone.
 
 ## Participant behavior
 
-- Entry into the first gaze-recording page requires valid settings for at least
+- The researcher can choose **Mit aktueller Anzeige fortfahren** at any display
+  size, including windowed mode or fullscreen that fails the browser checks.
+  This explicitly permits the study to continue with unverified gaze geometry.
+  Answers, video controls, navigation and existing deadlines remain usable.
+  The permission survives page changes, resizing and SoSci return, until reload
+  or logout; it never transfers to another participant. The dialog explains
+  that unverified gaze is excluded from AOI analysis and lists failed checks.
+- Without that continuation choice, entry into the first gaze-recording page requires valid settings for at least
   500 ms and explicit **Studienleitung: Fortsetzen** confirmation. Correct
   settings alone do not dismiss the guard. The required pages follow the same
   capture definition as the recorder: in-app questionnaires, video cases,
@@ -59,21 +66,24 @@ cannot identify the calibrated physical monitor from its dimensions alone.
   settings remain valid, so ordinary instructions do not add another popup.
   A display or focus change silently revokes verification; the next measured
   page then waits for confirmation before mounting or starting its visit/timer.
-- Resize, zoom, movement, fullscreen changes, and focus loss on measured pages
+- Without unverified continuation, resize, zoom, movement, fullscreen changes, and focus loss on measured pages
   block participant input. Ctrl/Cmd plus/minus and Ctrl-wheel are intercepted
   while guarded; Ctrl+0 remains available to restore zoom. Browser menus and OS
   controls cannot be completely disabled by a web page.
 - The current page stays mounted, retaining its draft. Video pauses, without
   ending the recording or restarting playback automatically after recovery.
-  The operator restores the display and explicitly resumes.
+  The operator restores the display and explicitly resumes, or chooses
+  continuation with the current display. Subsequent resize/focus changes do
+  not pause video or lock input after that choice.
 - CK's server deadline continues. Expiry saves the current draft through the
   existing finish-CK path, including retry behavior, and advances once. The next
-  PCK page waits behind the guard until verification. Case deadlines also
+  PCK page waits behind the guard until verification or unverified continuation. Case deadlines also
   continue. Manual advance and supervisor navigation are blocked during an
-  interruption.
+  interruption unless unverified continuation has been chosen.
 - SoSci pages, think-aloud replay and the final page are exempt. SoSci can open
   in its separate tab. Returning from these pages requires fresh verification
-  before measured content, including when an ordinary introduction is in between.
+  before measured content unless unverified continuation has been chosen,
+  including when an ordinary introduction is in between.
   Display-picker focus loss on introductory pages does not block their controls.
 - In-app calibration remains disabled (`CALIBRATION_ENABLED=false`); calibrate
   externally before the first measured page. Its existing safety guard remains
@@ -93,9 +103,13 @@ ran. Their exclusion begins at a verified observation before the event; very
 old delayed events conservatively fall back to the last verification time.
 
 Raw samples, timestamps, coordinates, validity and pupil fields are retained.
-Samples received while blocked have no geometry reference. Geometry snapshots
+Samples received while blocked or continuing unverified have no geometry reference. Geometry snapshots
 carry optional `display_guard` verification metadata. Durable interruption and
 resume events use the participant event outbox and integer browser timestamps.
+The distinct `display_guard_continued_unverified` event records the continuation
+choice. It is **not** a resume event and does not end the exclusion interval.
+Restoring fullscreen dimensions alone never certifies gaze after this choice.
+Reload and perform normal verified confirmation to resume verified collection.
 
 The backend combines those boundaries per participant, across recordings and
 reloads. Delayed event delivery can therefore invalidate samples already
@@ -124,6 +138,10 @@ retain their prior behavior. No database migration is required.
    for verification. During a separate synthetic CK run, leave the guard open
    across the deadline and confirm the partial answer saves once and PCK waits
    for resume.
+5. At a nonmatching window size, choose **Mit aktueller Anzeige fortfahren**.
+   Confirm answers and video playback work across another resize and SoSci
+   return. Verify the CK deadline is unchanged, expiry saves once, and PCK is
+   accessible. Confirm these gaze samples remain unmapped with no replay dot.
 
 Automated tests verify app behavior with synthetic gaze; physical accuracy,
 calibration quality and actual Windows/Edge display pairing still require this

@@ -14,6 +14,7 @@ import { useScreenRecording } from '../../hooks/useScreenRecording'
 import {
   checkDisplayGuard,
   getDisplayGuardSnapshot,
+  isDisplayGuardBlocking,
   subscribeDisplayGuard,
 } from '../../lib/displayGuard'
 import { enqueue } from '../../lib/outbox'
@@ -81,7 +82,7 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   useEffect(() => {
     const pauseIfBlocked = () => {
       const guard = getDisplayGuardSnapshot()
-      if (guard.enabled && guard.required && guard.phase !== 'verified') {
+      if (isDisplayGuardBlocking(guard)) {
         videoRef.current?.pause()
         setPlaying(false)
       }

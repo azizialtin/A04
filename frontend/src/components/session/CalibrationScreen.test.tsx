@@ -12,7 +12,8 @@ vi.mock('../../lib/tobii', () => ({ Bridge: { connect: vi.fn() }, TOBII_WS_URL: 
 let guard: DisplayGuardSnapshot
 const guardListeners = new Set<() => void>()
 vi.mock('../../lib/displayGuard', () => ({
-  checkDisplayGuard: () => !guard.enabled || !guard.required || guard.phase === 'verified',
+  checkDisplayGuard: () =>
+    !guard.enabled || !guard.required || guard.phase === 'verified' || guard.unverifiedContinuation,
   getDisplayGuardSnapshot: () => guard,
   subscribeDisplayGuard: (listener: () => void) => {
     guardListeners.add(listener)
@@ -40,6 +41,7 @@ beforeEach(() => {
     focusRequired: false,
     reasons: [],
     generation: 0,
+    unverifiedContinuation: false,
   }
   guardListeners.clear()
   bridge.onGaze = null
@@ -59,6 +61,26 @@ beforeEach(() => {
   }))
     vi.stubGlobal(key, value)
 })
+
+test.each(['blocked', 'ready'] as const)(
+  'unverified continuation cannot start calibration while the display is %s',
+  async (phase) => {
+    guard = {
+      ...guard,
+      enabled: true,
+      required: true,
+      phase,
+      unverifiedContinuation: true,
+    }
+    const complete = await open()
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    expect(bridge.request).not.toHaveBeenCalled()
+    expect(bridge.send).not.toHaveBeenCalled()
+    expect(gazeApi.saveCalibration).not.toHaveBeenCalled()
+    expect(complete).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Kalibrierung starten' })).toBeVisible()
+  },
+)
 
 test('an interrupted calibration cannot succeed after the display has already been restored', async () => {
   guard = { ...guard, enabled: true, required: true, phase: 'verified' }

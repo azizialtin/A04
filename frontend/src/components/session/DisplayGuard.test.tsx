@@ -1,14 +1,21 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
-import { resumeDisplayGuard, type DisplayGuardSnapshot } from '../../lib/displayGuard'
+import {
+  continueWithUnverifiedDisplay,
+  resumeDisplayGuard,
+  type DisplayGuardSnapshot,
+} from '../../lib/displayGuard'
 import DisplayGuard from './DisplayGuard'
 
 let state: DisplayGuardSnapshot
-vi.mock('../../lib/displayGuard', () => ({
-  checkDisplayGuard: () => !state.enabled || !state.required || state.phase === 'verified',
+vi.mock('../../lib/displayGuard', async (original) => ({
+  ...(await original<typeof import('../../lib/displayGuard')>()),
+  checkDisplayGuard: () =>
+    !state.enabled || !state.required || state.phase === 'verified' || state.unverifiedContinuation,
   getDisplayGuardSnapshot: () => state,
   resumeDisplayGuard: vi.fn(),
+  continueWithUnverifiedDisplay: vi.fn(),
 }))
 
 beforeEach(() => {
@@ -21,6 +28,7 @@ beforeEach(() => {
     owner: 'P1',
     reasons: ['window_size'],
     generation: 1,
+    unverifiedContinuation: false,
   }
 })
 
@@ -106,4 +114,34 @@ test('blocked form changes and clipboard input cannot reach participant answer h
   expect(change).not.toHaveBeenCalled()
   expect(paste).not.toHaveBeenCalled()
   expect(drop).not.toHaveBeenCalled()
+})
+
+test('a failed display check always offers explicit unverified continuation and reports the reason', () => {
+  const click = vi.fn()
+  const { rerender, container } = render(
+    <DisplayGuard state={state}>
+      <button onClick={click}>Task action</button>
+    </DisplayGuard>,
+  )
+  const proceed = screen.getByRole('button', { name: 'Mit aktueller Anzeige fortfahren' })
+  expect(proceed).toBeEnabled()
+  expect(
+    screen.getByText('Die gemeldete Browserfläche entspricht nicht 1920 × 1080 Pixeln.'),
+  ).toBeVisible()
+  expect(
+    screen.getByText(/Nicht verifizierte Blickdaten werden nicht für die AOI-Auswertung verwendet/),
+  ).toBeVisible()
+  fireEvent.click(proceed)
+  expect(continueWithUnverifiedDisplay).toHaveBeenCalledOnce()
+  expect(resumeDisplayGuard).not.toHaveBeenCalled()
+  state = { ...state, unverifiedContinuation: true }
+  rerender(
+    <DisplayGuard state={state}>
+      <button onClick={click}>Task action</button>
+    </DisplayGuard>,
+  )
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect((container.querySelector('.display-guard__content') as HTMLElement).inert).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Task action' }))
+  expect(click).toHaveBeenCalledOnce()
 })

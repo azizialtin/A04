@@ -1056,3 +1056,264 @@ for (const disturbed of [false, true]) {
     expect(state.unexpected).toEqual([])
   })
 }
+
+const CONTINUE_UNVERIFIED = 'Mit aktueller Anzeige fortfahren'
+
+async function retainLabScreen(page: Page) {
+  // Playwright's setViewportSize also changes screen dimensions. Keep the
+  // physical monitor at 1080p while exercising smaller browser windows.
+  await page.addInitScript(() => {
+    for (const [key, value] of Object.entries({ width: 1920, height: 1080 }))
+      Object.defineProperty(window.screen, key, { configurable: true, get: () => value })
+  })
+}
+
+async function continueUnverified(page: Page) {
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
+  const button = page.getByRole('button', { name: CONTINUE_UNVERIFIED, exact: true })
+  await expect(button).toBeEnabled()
+  await button.click()
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+}
+
+for (const reportedDisplay of ['windowed', 'fullscreen with negative origin', 'scaled'] as const) {
+  test(`unverified continuation works ${reportedDisplay}, preserves drafts and never certifies gaze`, async ({
+    page,
+  }, info) => {
+    const state = await setup(page, [questionnaire(), questionnaire(1)])
+    if (reportedDisplay === 'fullscreen with negative origin') {
+      // A fullscreen viewport does not establish the outer-window origin that
+      // Windows/Edge reports. Do not turn these uncertain metrics into verified gaze.
+      await page.addInitScript(() => {
+        for (const [key, value] of Object.entries({ screenX: -8, screenY: -8 }))
+          Object.defineProperty(window, key, { configurable: true, get: () => value })
+      })
+    } else {
+      await page.setViewportSize(
+        reportedDisplay === 'scaled' ? { width: 1536, height: 864 } : { width: 1600, height: 900 },
+      )
+      if (reportedDisplay === 'scaled')
+        await page.addInitScript(() => {
+          Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => 1.25 })
+        })
+    }
+    await retainLabScreen(page)
+    await page.goto('/session')
+    if (reportedDisplay === 'fullscreen with negative origin') {
+      await page.getByRole('button', { name: 'Vollbild öffnen' }).click()
+      expect(await page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true)
+    }
+    await expect(page.getByRole('button', { name: RESUME })).toBeDisabled()
+    expect(state.visits).toHaveLength(0)
+    expect(state.recordings).toHaveLength(0)
+    await page.screenshot({ path: info.outputPath('display-recovery-offered.png') })
+    await continueUnverified(page)
+    await expect.poll(() => state.visits.length).toBe(1)
+    await page.locator('textarea').fill('Der Entwurf bleibt beim Ändern der Anzeige erhalten.')
+    const visit = state.visits[0].visit_id
+    await expect.poll(() => state.recordings.length).toBe(1)
+    expect(state.recordings[0].geometry).toMatchObject({
+      display_guard: { profile: 'lab_1080p', verified: false },
+    })
+    await expect.poll(() => state.samples.length).toBeGreaterThan(5)
+    expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
+    expect(state.samples[0]).toMatchObject({ lpd: 3.2, rpd: 3.3 })
+
+    if (reportedDisplay === 'fullscreen with negative origin') {
+      await page.evaluate(() => document.exitFullscreen())
+      await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(false)
+    }
+    await page.setViewportSize({ width: 1366, height: 768 })
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+    await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+    await expect(page.locator('textarea')).toHaveValue(
+      'Der Entwurf bleibt beim Ändern der Anzeige erhalten.',
+    )
+    expect(state.visits).toHaveLength(1)
+    expect(state.visits[0].visit_id).toBe(visit)
+    expect(await page.locator('textarea').evaluate((el) => Boolean(el.closest('[inert]')))).toBe(
+      false,
+    )
+    await page.screenshot({ path: info.outputPath('windowed-task-after-recovery.png') })
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+    await expect.poll(() => state.visits.length).toBe(2)
+    expect(state.responses[0]).toMatchObject({
+      answers: { answer_0: 'Der Entwurf bleibt beim Ändern der Anzeige erhalten.' },
+    })
+    expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+    expect(state.unexpected).toEqual([])
+  })
+}
+
+test('unverified continuation keeps the CK deadline and saves its draft once before PCK', async ({
+  page,
+}, info) => {
+  const state = await setup(page, [questionnaire(0, true), questionnaire(1)], 5000)
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await retainLabScreen(page)
+  await page.goto('/session')
+  expect(state.timing).toBeNull()
+  await continueUnverified(page)
+  await expect.poll(() => state.visits.length).toBe(1)
+  const deadline = state.timing?.deadline_ms
+  await page.locator('textarea').fill('Teilantwort im Fenstermodus')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  expect(state.timing?.deadline_ms).toBe(deadline)
+  await expect.poll(() => state.finishes.length, { timeout: 10_000 }).toBe(1)
+  expect(state.finishes[0]).toMatchObject({
+    reason: 'timer_expired',
+    visit_id: state.visits[0].visit_id,
+    answers: {
+      [manifest.ck_tasks[0].question.id]: { explanation: 'Teilantwort im Fenstermodus' },
+    },
+  })
+  await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  await expect.poll(() => state.visits.length).toBe(2)
+  await page.locator('textarea').fill('PCK bleibt bedienbar')
+  expect(state.finishes).toHaveLength(1)
+  expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+  expect(state.unexpected).toEqual([])
+  await page.screenshot({ path: info.outputPath('pck-after-windowed-ck-expiry.png') })
+})
+
+test('unverified continuation permits the SoSci popup and return without another display lock', async ({
+  page,
+  context,
+}, info) => {
+  const state = await setup(page, [
+    questionnaire(),
+    {
+      kind: 'sosci',
+      index: 1,
+      completed: false,
+      variant: 'pretest',
+      url: 'https://survey.invalid/form',
+      id_param: 'participant',
+      participant_id: PARTICIPANT,
+    },
+    questionnaire(2),
+  ])
+  await context.route('https://survey.invalid/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<h1>Synthetic survey</h1>' }),
+  )
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await retainLabScreen(page)
+  await page.goto('/session')
+  await continueUnverified(page)
+  await page.locator('textarea').fill('Antwort vor SoSci')
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  const done = page.getByRole('button', { name: 'Ich habe den Fragebogen abgeschlossen' })
+  await expect(done).toBeDisabled()
+  const popupPromise = page.waitForEvent('popup')
+  await page.getByRole('link', { name: 'Fragebogen öffnen' }).click()
+  const popup = await popupPromise
+  await expect(popup.getByRole('heading', { name: 'Synthetic survey' })).toBeVisible()
+  expect(popup.url()).toContain(`participant=${PARTICIPANT}`)
+  await popup.close()
+  await page.bringToFront()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(done).toBeEnabled()
+  await done.click()
+  await expect(page.getByRole('heading', { name: 'Prüfseite 3', exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  await expect.poll(() => state.visits.length).toBe(2)
+  await page.locator('textarea').fill('Antwort nach SoSci')
+  expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+  expect(state.unexpected).toEqual([])
+  await page.screenshot({ path: info.outputPath('windowed-return-from-sosci.png') })
+})
+
+test('unverified continuation allows video playback and resize while retaining raw gaze as unverified', async ({
+  page,
+}, info) => {
+  const state = await setup(page, [
+    {
+      kind: 'case_video',
+      index: 0,
+      completed: false,
+      video_id: 7,
+      task_description: 'Beobachten Sie den Fall.',
+      info_text: '',
+      student_task_text: '',
+      time_limit_seconds: 600,
+    },
+  ])
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await retainLabScreen(page)
+  await page.goto('/session')
+  await continueUnverified(page)
+  await expect.poll(() => state.recordings.length).toBe(1)
+  await expect.poll(() => state.screenStarts).toBe(1)
+  const video = page.locator('video')
+  // Keep the short fixture playing while resize and upload assertions run.
+  await video.evaluate((el) => {
+    ;(el as HTMLVideoElement).loop = true
+  })
+  await page.locator('[data-aoi="video_play_pause"]').click()
+  await expect.poll(() => video.evaluate((el) => !(el as HTMLVideoElement).paused)).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  await expect.poll(() => state.samples.length).toBeGreaterThan(5)
+  expect(await video.evaluate((el) => (el as HTMLVideoElement).paused)).toBe(false)
+  expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
+  expect(state.samples[0]).toMatchObject({ lpd: 3.2, rpd: 3.3 })
+  expect(state.recordings[0].geometry).toMatchObject({
+    display_guard: { profile: 'lab_1080p', verified: false },
+  })
+  expect(
+    state.layouts.every(
+      (layout) => (layout.display_guard as { verified?: boolean } | undefined)?.verified === false,
+    ),
+  ).toBe(true)
+  expect(state.recordings).toHaveLength(1)
+  expect(state.screenStarts).toBe(1)
+  expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+  expect(state.unexpected).toEqual([])
+  await page.screenshot({ path: info.outputPath('windowed-video-playing.png') })
+})
+
+test('unverified continuation recovers an interrupted draft and does not recertify restored dimensions', async ({
+  page,
+}, info) => {
+  const state = await setup(page, [questionnaire(), questionnaire(1)])
+  await retainLabScreen(page)
+  await page.goto('/session')
+  await resume(page)
+  await page.locator('textarea').fill('Bereits begonnene Antwort bleibt bestehen')
+  await expect.poll(() => state.visits.length).toBe(1)
+  const visit = state.visits[0].visit_id
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
+  await continueUnverified(page)
+  await expect(page.locator('textarea')).toHaveValue('Bereits begonnene Antwort bleibt bestehen')
+  expect(state.visits).toHaveLength(1)
+  expect(state.visits[0].visit_id).toBe(visit)
+  const continuedAt = Date.now()
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  await expect
+    .poll(() => state.samples.filter((sample) => sample.ts > continuedAt).length)
+    .toBeGreaterThan(5)
+  expect(
+    state.samples
+      .filter((sample) => sample.ts > continuedAt)
+      .every((sample) => sample.geometry_ts === null),
+  ).toBe(true)
+  expect(state.layouts.at(-1)).toMatchObject({
+    display_guard: { profile: 'lab_1080p', verified: false },
+  })
+  expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toHaveLength(
+    1,
+  )
+  await page.screenshot({ path: info.outputPath('interrupted-draft-recovered.png') })
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+  expect(state.responses[0]).toMatchObject({
+    answers: { answer_0: 'Bereits begonnene Antwort bleibt bestehen' },
+  })
+  expect(state.unexpected).toEqual([])
+})

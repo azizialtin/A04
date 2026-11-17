@@ -93,6 +93,8 @@ export function useDisplayGuard(
       return {
         ...snapshot,
         owner: owner ?? null,
+        unverifiedContinuation:
+          snapshot.owner === (owner ?? null) && snapshot.unverifiedContinuation,
         required,
         focusRequired,
         phase: required ? 'blocked' : 'suspended',

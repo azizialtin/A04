@@ -39,12 +39,15 @@ export interface DisplayGuardSnapshot {
   owner: string | null
   required: boolean
   focusRequired: boolean
+  /** Researcher-approved task access; never certifies gaze geometry. */
+  unverifiedContinuation: boolean
   reasons: DisplayGuardReason[]
   generation: number
 }
 
 export interface DisplayGuardEvent {
-  event_type: 'display_guard_interrupted' | 'display_guard_resumed'
+  event_type:
+    'display_guard_interrupted' | 'display_guard_resumed' | 'display_guard_continued_unverified'
   client_ts: number
   payload: {
     profile: typeof DISPLAY_GUARD_PROFILE
@@ -127,6 +130,7 @@ export class DisplayGuardController {
       owner: null,
       required: false,
       focusRequired: false,
+      unverifiedContinuation: false,
       reasons: enabled ? ['confirmation_required'] : [],
       generation: 0,
     }
@@ -168,6 +172,7 @@ export class DisplayGuardController {
     if (!this.snapshot.enabled) return
     if (sink) this.sink = sink
     const changedOwner = owner !== this.snapshot.owner
+    const unverifiedContinuation = !changedOwner && this.snapshot.unverifiedContinuation
     const previousScope = this.scope
     const required = scope === 'required'
     const focusRequired = required
@@ -190,6 +195,7 @@ export class DisplayGuardController {
         owner,
         required,
         focusRequired,
+        unverifiedContinuation,
         phase: owner ? 'suspended' : 'blocked',
         reasons: [],
       })
@@ -205,6 +211,7 @@ export class DisplayGuardController {
         owner,
         required,
         focusRequired,
+        unverifiedContinuation,
         phase: 'blocked',
         reasons: ['confirmation_required'],
         generation: this.snapshot.generation + 1,
@@ -216,6 +223,7 @@ export class DisplayGuardController {
         owner,
         required,
         focusRequired,
+        unverifiedContinuation,
         ...(changedOwner || previousScope === 'suspended'
           ? { phase: 'blocked' as const, reasons: [] }
           : {}),
@@ -296,7 +304,7 @@ export class DisplayGuardController {
     this.lastObserved = now
     if (reasons.length) {
       this.invalidate(reasons, preceding)
-      return !this.snapshot.required
+      return !this.snapshot.required || this.snapshot.unverifiedContinuation
     }
     if (this.snapshot.phase === 'verified') {
       if (this.verifiedObservations[this.verifiedObservations.length - 1] !== now) {
@@ -312,7 +320,7 @@ export class DisplayGuardController {
       phase: ready ? 'ready' : 'blocked',
       reasons: [ready ? 'confirmation_required' : 'checking_display'],
     })
-    return !this.snapshot.required
+    return !this.snapshot.required || this.snapshot.unverifiedContinuation
   }
 
   resume = (): boolean => {
@@ -323,7 +331,19 @@ export class DisplayGuardController {
     this.verifiedObservations = [now]
     this.event('display_guard_resumed', now, [])
     this.interruptedFrom = null
-    this.publish({ phase: 'verified', reasons: [] })
+    this.publish({ phase: 'verified', reasons: [], unverifiedContinuation: false })
+    return true
+  }
+
+  /** Permit piloting without closing the gaze-exclusion interval or claiming verification. */
+  continueUnverified = (): boolean => {
+    this.check()
+    if (!this.snapshot.enabled || !this.snapshot.owner || !this.snapshot.required) return false
+    if (this.snapshot.phase === 'verified') return false
+    if (!this.snapshot.unverifiedContinuation) {
+      this.event('display_guard_continued_unverified', this.wallTime(), this.snapshot.reasons)
+      this.publish({ unverifiedContinuation: true })
+    }
     return true
   }
 
@@ -344,7 +364,14 @@ export const getDisplayGuardSnapshot = displayGuard.getSnapshot
 export const subscribeDisplayGuard = displayGuard.subscribe
 export const checkDisplayGuard = displayGuard.check
 export const resumeDisplayGuard = displayGuard.resume
+export const continueWithUnverifiedDisplay = displayGuard.continueUnverified
 export const displayGuardAllowsSample = displayGuard.allowsSample
+
+export function isDisplayGuardBlocking(state: DisplayGuardSnapshot) {
+  return (
+    state.enabled && state.required && state.phase !== 'verified' && !state.unverifiedContinuation
+  )
+}
 
 export function displayGuardGeometry() {
   if (!getDisplayGuardSnapshot().enabled) return undefined

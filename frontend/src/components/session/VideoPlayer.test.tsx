@@ -27,8 +27,10 @@ vi.mock('../../hooks/useScreenRecording', () => ({
 }))
 let guard: DisplayGuardSnapshot
 const guardListeners = new Set<() => void>()
-vi.mock('../../lib/displayGuard', () => ({
-  checkDisplayGuard: () => !guard.enabled || !guard.required || guard.phase === 'verified',
+vi.mock('../../lib/displayGuard', async (original) => ({
+  ...(await original<typeof import('../../lib/displayGuard')>()),
+  checkDisplayGuard: () =>
+    !guard.enabled || !guard.required || guard.phase === 'verified' || guard.unverifiedContinuation,
   getDisplayGuardSnapshot: () => guard,
   subscribeDisplayGuard: (listener: () => void) => {
     guardListeners.add(listener)
@@ -60,6 +62,7 @@ beforeEach(() => {
     focusRequired: false,
     reasons: [],
     generation: 0,
+    unverifiedContinuation: false,
   }
   guardListeners.clear()
   captureStarted.mockClear()

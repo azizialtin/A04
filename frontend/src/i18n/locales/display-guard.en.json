@@ -1,12 +1,26 @@
 {
   "title": "Check display settings",
-  "body": "Please wait for the researcher. The display must match the intended settings before you can continue.",
+  "body": "The researcher can check the display or continue with the current settings. Continuing is possible in either fullscreen or windowed mode.",
   "setup": "Use 1920 × 1080 pixels, 100% display scaling and browser zoom, and fullscreen on the intended display. Ctrl + 0 resets browser zoom.",
   "ready": "The display matches the intended settings again. The researcher can confirm that you may continue.",
-  "waiting": "The display is being checked. Please restore the intended settings.",
+  "waiting": "The intended display settings could not yet be confirmed.",
   "resume": "Researcher: Continue",
   "fullscreen": "Open fullscreen",
   "fullscreen_failed": "Fullscreen could not be opened. Please use the browser's fullscreen option.",
   "timers": "Any running time limits still apply.",
-  "calibration_interrupted": "The display changed during calibration. Please repeat calibration."
+  "calibration_interrupted": "The display changed during calibration. Please repeat calibration.",
+  "continue_unverified": "Continue with current display",
+  "continue_unverified_notice": "Continuing with the current display preserves answers and time limits. Unverified gaze data will not be used for AOI analysis. This permission lasts until the page is reloaded or you sign out.",
+  "reasons": {
+    "confirmation_required": "Researcher confirmation is still required.",
+    "checking_display": "The display must remain stable briefly before it can be confirmed.",
+    "screen_resolution": "The reported screen resolution does not match 1920 × 1080 pixels.",
+    "window_size": "The reported browser area does not match 1920 × 1080 pixels.",
+    "window_position": "The browser reports a different window position.",
+    "display_scale": "The reported display scaling or browser zoom does not match 100%.",
+    "viewport_zoom": "The visible page area is zoomed or shifted.",
+    "multiple_displays": "The browser reports multiple displays.",
+    "window_focus": "The study window is not in the foreground.",
+    "clock_changed": "The system clock has changed."
+  }
 }

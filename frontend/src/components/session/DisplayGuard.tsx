@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next'
 
 import {
   checkDisplayGuard,
+  continueWithUnverifiedDisplay,
   getDisplayGuardSnapshot,
+  isDisplayGuardBlocking,
   resumeDisplayGuard,
 } from '../../lib/displayGuard'
 import Modal from '../Modal'
@@ -21,7 +23,7 @@ export default function DisplayGuard({
   const { t } = useTranslation('displayGuard')
   const content = useRef<HTMLDivElement>(null)
   const [fullscreenFailed, setFullscreenFailed] = useState(false)
-  const blocked = state.enabled && state.required && state.phase !== 'verified'
+  const blocked = isDisplayGuardBlocking(state)
 
   useLayoutEffect(() => {
     if (content.current) content.current.inert = blocked
@@ -76,6 +78,14 @@ export default function DisplayGuard({
             <p>{t('body')}</p>
             <p>{t('setup')}</p>
             <p role="status">{t(state.phase === 'ready' ? 'ready' : 'waiting')}</p>
+            {state.phase !== 'ready' && (
+              <ul>
+                {state.reasons.map((reason) => (
+                  <li key={reason}>{t(`reasons.${reason}`)}</li>
+                ))}
+              </ul>
+            )}
+            <p>{t('continue_unverified_notice')}</p>
             <p className="muted">{t('timers')}</p>
             {fullscreenFailed && <p role="alert">{t('fullscreen_failed')}</p>}
             <div className="modal__actions">
@@ -89,6 +99,15 @@ export default function DisplayGuard({
                 onClick={() => resumeDisplayGuard()}
               >
                 {t('resume')}
+              </button>
+            </div>
+            <div className="modal__actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => continueWithUnverifiedDisplay()}
+              >
+                {t('continue_unverified')}
               </button>
             </div>
           </Modal>

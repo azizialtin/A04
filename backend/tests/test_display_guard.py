@@ -471,6 +471,22 @@ async def test_late_durable_events_reclassify_uploaded_gaze_and_both_replay_apis
     during = await export_rows()
     assert [row["mapping_reason"] for row in during] == [""] + ["display_guard_interrupted"] * 5
 
+    # Continuing the pilot without display verification does not certify gaze,
+    # even if a later stored layout still carries an earlier verified flag.
+    assert (
+        await client.post(
+            "/participant/events",
+            headers=participant_headers,
+            json={
+                "event_type": "display_guard_continued_unverified",
+                "client_ts": BASE + 350,
+                "payload": {"profile": "lab_1080p", "reasons": ["window_size"]},
+            },
+        )
+    ).status_code == 202
+    await assert_replay([0], [{"start_ms": 100, "end_ms": ending}])
+    assert await export_rows() == during
+
     # An explicit resume in a later page load closes the participant-wide interval.
     resumed = {
         "event_type": "display_guard_resumed",
