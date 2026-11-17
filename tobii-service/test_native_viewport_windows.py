@@ -234,8 +234,8 @@ async def test_real_edge_native_geometry_matches_physical_cursor_and_dom(tmp_pat
                     (aoi["x"], aoi["y"]),
                 ]:
                     await page.evaluate("moves=[]")
-                    px = round(content["x"] + x * content["w"] / css["w"])
-                    py = round(content["y"] + y * content["h"] / css["h"])
+                    px = round(content["x"] + x * native["dpr"])
+                    py = round(content["y"] + y * native["dpr"])
                     assert user32.SetCursorPos(px + 3, py + 3)
                     await asyncio.sleep(0.03)
                     assert user32.SetCursorPos(px, py)
@@ -254,17 +254,13 @@ async def test_real_edge_native_geometry_matches_physical_cursor_and_dom(tmp_pat
                         "y": (py - display["y"]) / display["h"],
                     }
                     mapped_x = (
-                        (display["x"] + gaze["x"] * display["w"] - content["x"])
-                        * css["w"]
-                        / content["w"]
-                    )
+                        display["x"] + gaze["x"] * display["w"] - content["x"]
+                    ) / native["dpr"]
                     mapped_y = (
-                        (display["y"] + gaze["y"] * display["h"] - content["y"])
-                        * css["h"]
-                        / content["h"]
-                    )
-                    assert abs(mapped_x - actual["x"]) <= 1.5
-                    assert abs(mapped_y - actual["y"]) <= 1.5
+                        display["y"] + gaze["y"] * display["h"] - content["y"]
+                    ) / native["dpr"]
+                    assert abs(mapped_x - actual["x"]) <= 0.01
+                    assert abs(mapped_y - actual["y"]) <= 0.01
                     if (x, y) == (aoi["x"], aoi["y"]):
                         assert actual["target"] == "target"
                     points.append(
@@ -345,6 +341,12 @@ async def test_real_edge_native_geometry_matches_physical_cursor_and_dom(tmp_pat
             # mistaken for the study page.
             await page.evaluate("document.title='Another tab'")
             await eventually(lambda: page.evaluate("document.title==='Another tab'"))
+
+            async def native_title_changed():
+                return provider.foreground_tab() != tab
+
+            # Updating document.title schedules a separate native-caption update.
+            await eventually(native_title_changed)
             with pytest.raises(ViewportError):
                 provider.observe(tab, native["css"], native["dpr"])
     finally:
