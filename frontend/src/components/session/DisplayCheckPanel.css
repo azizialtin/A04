@@ -1,0 +1,73 @@
+.display-check__section {
+  margin-top: 16px;
+  text-align: left;
+}
+
+.display-check__section > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.display-check {
+  margin-top: 12px;
+  font-size: 15px;
+}
+
+.display-check__summary {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-weight: 600;
+}
+
+.display-check__summary--ok {
+  background: #edf6f4;
+  border-color: #b9d6d1;
+  color: #2c625c;
+}
+
+.display-check__summary--warn {
+  background: #fff8e5;
+  border-color: #a37c25;
+  color: #44340d;
+}
+
+.display-check__summary--fail {
+  background: #fdecea;
+  border-color: #b3261e;
+  color: #7a1712;
+}
+
+.display-check__table th[scope='row'] {
+  font-weight: 600;
+  text-align: left;
+}
+
+.display-check__status {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.display-check__status--ok {
+  color: #2c625c;
+}
+
+.display-check__status--warn {
+  color: #7a5a10;
+}
+
+.display-check__status--fail {
+  color: #b3261e;
+}
+
+.display-check__status--info {
+  color: #555;
+}
+
+.display-check__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}

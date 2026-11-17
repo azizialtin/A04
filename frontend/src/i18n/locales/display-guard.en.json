@@ -58,5 +58,71 @@
     "platform": "This display measurement requires Windows, Edge, and the current Windows bridge. Start the current bridge on the study PC and reconnect it.",
     "tabs": "Another study page is holding the display measurement. Use only one study tab for this session. Close additional study tabs and reconnect the bridge.",
     "stale": "The display measurement is not current yet. Keep this window unchanged in the foreground briefly. If the message persists, reconnect the bridge."
-  }
+  },
+  "check": {
+    "title": "Check display settings",
+    "open": "Show settings",
+    "notice": "Gaze is currently not being assigned to areas.",
+    "short": {
+      "ok": "all set",
+      "warn": "notes",
+      "fail": "settings differ"
+    },
+    "summary": {
+      "ok": "The display matches the intended settings.",
+      "warn": "Gaze can be assigned. Some settings differ from the intended setup, so pages may wrap or scroll differently.",
+      "fail": "Gaze is currently saved but not assigned to areas (AOIs). The rows marked “differs” show why. The study can still continue."
+    },
+    "column": {
+      "setting": "Setting",
+      "current": "Current",
+      "expected": "Intended",
+      "status": "Status"
+    },
+    "row": {
+      "bridge": "Windows bridge",
+      "resolution": "Screen resolution (as reported by the browser)",
+      "scale": "Windows scaling × browser zoom",
+      "browser_area": "Browser area of the study page",
+      "fullscreen": "Full screen",
+      "displays": "Connected displays",
+      "zoom_gesture": "Page enlarged or moved by a gesture",
+      "foreground": "Study window in the foreground",
+      "mapping": "AOI assignment"
+    },
+    "status": {
+      "ok": "OK",
+      "warn": "note",
+      "fail": "differs",
+      "info": "not rated"
+    },
+    "value": {
+      "size": "{{w}} × {{h}}",
+      "percent": "{{value}} %",
+      "yes": "yes",
+      "no": "no",
+      "unknown": "cannot be determined",
+      "fullscreen_recommended": "yes (recommended)",
+      "displays_single": "one display",
+      "displays_multiple": "several displays",
+      "bridge_idle": "not checked yet",
+      "bridge_connecting": "connecting",
+      "bridge_permission_pending": "waiting for permission in Edge",
+      "bridge_connected": "connected",
+      "bridge_unreachable": "not reachable",
+      "bridge_upgrade_required": "older version (does not measure windows)",
+      "bridge_expected": "current version, connected",
+      "mapping_active": "active",
+      "mapping_ready": "ready (starts on the study pages)",
+      "mapping_checking": "checking",
+      "mapping_paused": "not needed on this page",
+      "mapping_waiting": "not active",
+      "size_scaled": "{{w}} × {{h}} (at {{value}} % scaling/zoom)"
+    },
+    "note_native": "The current Windows bridge measures the position of the study page itself. Resolution, scaling and full screen then only affect the page layout, not the assignment.",
+    "note_legacy": "Without the current Windows bridge, gaze can only be assigned at 1920 × 1080 pixels, 100% scaling and zoom, and in full screen (F11). On 15.6-inch devices Windows scaling is often set to 125%: Windows Settings → System → Display → Scale → 100%. Reset browser zoom: Ctrl + 0.",
+    "note_unverified": "This display does not stop the study. Deviations are logged.",
+    "notice_focus": "Gaze is currently not being assigned to areas. Please click once on the study page."
+  },
+  "calibration_unverified": "The display is not verified yet. Please check the display settings and start the calibration again."
 }

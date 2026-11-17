@@ -23,12 +23,13 @@ export default function GazeHealthStatus({
     if (state !== 'bridge_unreachable') return
     return observeLoopbackPermission(setPermission)
   }, [state])
-  const mappingActive = native.capable && !preflight
+  // Either profile can verify the display; only the bridge-measured one also
+  // needs a current measurement behind it.
+  const mappingActive = (native.capable || guard.enabled) && !preflight
   const mapped =
-    !!native.proof &&
     guard.phase === 'verified' &&
-    guard.profile === 'native_viewport_v1' &&
-    health.mappingVerified === true
+    health.mappingVerified === true &&
+    (native.capable ? !!native.proof && guard.profile === 'native_viewport_v1' : guard.enabled)
   const healthy = state === 'tracking' && (!mappingActive || mapped)
   return (
     <div
@@ -56,7 +57,7 @@ export default function GazeHealthStatus({
         </p>
       ) : null}
       {state === 'tracker_missing' ? <p>{t('gaze_health.tracker_help')}</p> : null}
-      {!healthy ? (
+      {state !== 'tracking' ? (
         <button type="button" className="btn btn-ghost" onClick={retry}>
           {t('gaze_health.retry')}
         </button>

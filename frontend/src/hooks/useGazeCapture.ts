@@ -12,7 +12,11 @@ import {
   nativeSampleMatches,
   NATIVE_VIEWPORT_PROFILE,
 } from '../lib/nativeViewport'
-import { displayGuardAllowsSample, subscribeDisplayGuard } from '../lib/displayGuard'
+import {
+  displayGuardAllowsSample,
+  getDisplayGuardSnapshot,
+  subscribeDisplayGuard,
+} from '../lib/displayGuard'
 
 const FLUSH_INTERVAL_MS = 2000
 const BATCH_SIZE = 500
@@ -37,6 +41,9 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     let active = true
     let mappedSample: boolean | null = null
     setMappingVerified(null)
+    // Whether admitted samples say anything about AOI assignment at all.
+    const mappingTracked = () =>
+      getNativeViewportSnapshot().capable || getDisplayGuardSnapshot().enabled
     const reportMapping = (value: boolean | null) => {
       if (!active || mappedSample === value) return
       mappedSample = value
@@ -325,7 +332,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       onHealth: (value) => {
         currentHealth = value
         setHealth(value)
-        if (value.state !== 'tracking' && getNativeViewportSnapshot().capable) reportMapping(false)
+        if (value.state !== 'tracking' && mappingTracked()) reportMapping(false)
         logTransition()
       },
       onReady: (frequency, start) => {
@@ -349,7 +356,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
           nativeAllowed && displayGuardAllowsSample(msg.ts as number)
             ? geometryAt(msg.ts as number, usesNative ? native?.id : undefined)
             : null
-        reportMapping(usesNative ? geometryReference !== null : null)
+        reportMapping(mappingTracked() ? geometryReference !== null : null)
         samples.push({
           ts: msg.ts as number,
           lx: typeof msg.lx === 'number' ? msg.lx : null,
@@ -394,7 +401,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     // rejected synchronously; the next frame supplies the verified layout.
     let guardFrame = 0
     const stopGuard = subscribeDisplayGuard(() => {
-      if (getNativeViewportSnapshot().capable) reportMapping(false)
+      if (mappingTracked()) reportMapping(false)
       if (guardFrame) return
       guardFrame = requestAnimationFrame(() => {
         guardFrame = 0

@@ -35,10 +35,26 @@ export function useDisplayGuard(
         ? Date.now() - elapsed
         : 0
     }
+    let inner = { w: window.innerWidth, h: window.innerHeight }
     const geometryChanged = (event: Event) => {
+      inner = { w: window.innerWidth, h: window.innerHeight }
       displayGuard.interrupt('window_size', eventTime(event))
       nativeViewport.invalidate('checking_display')
       check()
+    }
+    // The visual viewport also resizes when a scrollbar appears or goes: a page
+    // grew past the screen, or shrank back. The window, its position and the
+    // zoom are what they were, so the display is still the verified one. Only a
+    // changed window or a pinch zoom is evidence against it.
+    const visualViewportChanged = (event: Event) => {
+      const viewport = window.visualViewport
+      const unchanged =
+        window.innerWidth === inner.w &&
+        window.innerHeight === inner.h &&
+        (!viewport ||
+          (viewport.scale === 1 && viewport.offsetLeft === 0 && viewport.offsetTop === 0))
+      if (unchanged) check()
+      else geometryChanged(event)
     }
     const focusChanged = (event: Event) => {
       // A queued blur can originate on the preceding measured page. Quiet
@@ -68,7 +84,7 @@ export function useDisplayGuard(
     document.addEventListener('fullscreenchange', geometryChanged)
     document.addEventListener('keydown', keys, true)
     document.addEventListener('wheel', wheel, { capture: true, passive: false })
-    window.visualViewport?.addEventListener('resize', geometryChanged)
+    window.visualViewport?.addEventListener('resize', visualViewportChanged)
     window.visualViewport?.addEventListener('scroll', check)
     const stopNative = nativeViewport.subscribe(check)
     const timer = window.setInterval(check, 125)
@@ -83,7 +99,7 @@ export function useDisplayGuard(
       document.removeEventListener('fullscreenchange', geometryChanged)
       document.removeEventListener('keydown', keys, true)
       document.removeEventListener('wheel', wheel, true)
-      window.visualViewport?.removeEventListener('resize', geometryChanged)
+      window.visualViewport?.removeEventListener('resize', visualViewportChanged)
       window.visualViewport?.removeEventListener('scroll', check)
       displayGuard.release(owner)
     }

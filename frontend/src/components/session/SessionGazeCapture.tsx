@@ -8,6 +8,8 @@ import {
   subscribeGazeDelivery,
   reportGazeDelivery,
 } from '../../lib/gazeDelivery'
+import { DISPLAY_GUARD_BLOCKING } from '../../lib/displayGuard'
+import { DisplayCheckButton } from './DisplayCheckPanel'
 import GazeHealthStatus from './GazeHealthStatus'
 
 export default function SessionGazeCapture({ step }: { step: SessionStep }) {
@@ -18,6 +20,8 @@ export default function SessionGazeCapture({ step }: { step: SessionStep }) {
   return (
     <div className="gaze-health-stack">
       {context && health ? <GazeHealthStatus health={health} retry={health.retry} /> : null}
+      {/* The blocking dialog already says all of this when it is enabled. */}
+      {context && !DISPLAY_GUARD_BLOCKING ? <DisplayCheckButton /> : null}
       {warning ? (
         <div
           className="gaze-health"

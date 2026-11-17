@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { WelcomeTexts } from '../../api/participant'
@@ -19,12 +20,15 @@ export default function WelcomeScreen({
   showCalibration = true,
   texts,
   pilot = false,
+  displayCheck = null,
 }: {
   participantId: string
   onContinue: () => void
   showCalibration?: boolean
   texts?: Partial<WelcomeTexts>
   pilot?: boolean
+  /** The lab's display check, shown to the study lead before the session starts. */
+  displayCheck?: ReactNode
 }) {
   const { t } = useTranslation()
   const defaultSteps = ALL_STEPS.filter((key) => key !== 'calibration' || showCalibration).map(
@@ -59,6 +63,7 @@ export default function WelcomeScreen({
           {t(pilot ? 'common.continue' : 'welcome.continue')}
         </button>
       </div>
+      {displayCheck}
     </div>
   )
 }

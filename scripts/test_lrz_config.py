@@ -8,10 +8,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = "VITE_LAB_DISPLAY_GUARD"
+BLOCKING = "VITE_LAB_DISPLAY_GUARD_BLOCKING"
 
 
 class LrzConfigTests(unittest.TestCase):
-    def render(self, guard=None, env_file=None):
+    def render(self, guard=None, env_file=None, extra=None):
         env = {
             **os.environ,
             "RELEASE_ID": "config-test",
@@ -21,8 +22,10 @@ class LrzConfigTests(unittest.TestCase):
             "JWT_SECRET": "synthetic-config-test-secret-not-for-deployment",
         }
         env.pop(GUARD, None)
+        env.pop(BLOCKING, None)
         if guard is not None:
             env[GUARD] = guard
+        env.update(extra or {})
         result = subprocess.run(
             [
                 "docker",
@@ -66,11 +69,21 @@ class LrzConfigTests(unittest.TestCase):
     def test_generic_docker_build_is_opt_in_and_passes_the_flag_to_vite(self):
         build_stage = (ROOT / "frontend/Dockerfile").read_text().split("\nFROM ", 2)[1]
         instructions = build_stage.splitlines()
-        arg = instructions.index(f"ARG {GUARD}=false")
-        env = instructions.index(f"ENV {GUARD}=${GUARD}")
-        build = instructions.index("RUN npm run build")
-        self.assertLess(arg, env)
-        self.assertLess(env, build)
+        for flag in (GUARD, BLOCKING):
+            arg = instructions.index(f"ARG {flag}=false")
+            env = instructions.index(f"ENV {flag}=${flag}")
+            build = instructions.index("RUN npm run build")
+            self.assertLess(arg, env)
+            self.assertLess(env, build)
+
+    def test_the_guard_never_blocks_unless_the_deployment_asks_for_it(self):
+        # An existing environment file knows nothing of this setting.
+        self.assertEqual(self.render()[BLOCKING], "false")
+        self.assertEqual(self.render(extra={BLOCKING: ""})[BLOCKING], "false")
+        self.assertEqual(self.render(extra={BLOCKING: "true"})[BLOCKING], "true")
+        example = ROOT / "infrastructure/lrz/deployment.env.example"
+        self.assertIn(f"{BLOCKING}=false", example.read_text().splitlines())
+        self.assertEqual(self.render(env_file=example)[BLOCKING], "false")
 
 
 if __name__ == "__main__":

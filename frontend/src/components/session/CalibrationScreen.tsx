@@ -145,7 +145,12 @@ export default function CalibrationScreen({ onComplete }: Props) {
 
     const initialGuard = getDisplayGuardSnapshot()
     // Task continuation without verified geometry must never certify calibration.
-    if (initialGuard.enabled && initialGuard.phase !== 'verified') return
+    if (initialGuard.enabled && initialGuard.phase !== 'verified') {
+      // Nothing holds the page any more, so this button is reachable: say why.
+      setError(t('calibration_unverified', { ns: 'displayGuard' }))
+      setPhase('failed')
+      return
+    }
     let interrupted = false
     const verifyDisplay = () => {
       if (

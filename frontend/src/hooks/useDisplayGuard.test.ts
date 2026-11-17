@@ -144,3 +144,73 @@ test('monitor scope permits input but remembers queued display and focus changes
       .mock.calls.filter(([, event]) => event.event_type === 'display_guard_interrupted'),
   ).toHaveLength(2)
 })
+
+function verifiedWithVisualViewport() {
+  const viewport = Object.assign(new EventTarget(), {
+    scale: 1,
+    offsetLeft: 0,
+    offsetTop: 0,
+    width: 1920,
+    height: 1080,
+  })
+  vi.stubGlobal('visualViewport', viewport)
+  const hook = renderHook(() => useDisplayGuard('person', 'required'))
+  act(() => {
+    vi.advanceTimersByTime(500)
+    displayGuard.resume()
+  })
+  expect(hook.result.current.phase).toBe('verified')
+  vi.mocked(enqueue).mockClear()
+  return { ...hook, viewport }
+}
+
+test('a scrollbar appearing or disappearing does not revoke a verified display', () => {
+  const { result, viewport } = verifiedWithVisualViewport()
+  // Windows reports a scrollbar as a narrower visual viewport and nothing else.
+  for (const width of [1903, 1920, 1903]) {
+    viewport.width = width
+    act(() => void viewport.dispatchEvent(new Event('resize')))
+    expect(result.current.phase).toBe('verified')
+  }
+  act(() => void vi.advanceTimersByTime(2000))
+  expect(result.current.phase).toBe('verified')
+  expect(enqueue).not.toHaveBeenCalled()
+})
+
+test('a pinch zoom reported by the visual viewport still revokes verification', () => {
+  const { result, viewport } = verifiedWithVisualViewport()
+  viewport.scale = 1.5
+  act(() => void viewport.dispatchEvent(new Event('resize')))
+  expect(result.current.phase).toBe('blocked')
+  expect(vi.mocked(enqueue).mock.calls.map(([, event]) => event.event_type)).toEqual([
+    'display_guard_interrupted',
+  ])
+})
+
+test('a changed window is caught even when only the visual viewport announces it', () => {
+  const { result, viewport } = verifiedWithVisualViewport()
+  vi.stubGlobal('innerWidth', 1500)
+  viewport.width = 1500
+  act(() => void viewport.dispatchEvent(new Event('resize')))
+  expect(result.current.phase).toBe('blocked')
+  expect(result.current.reasons).toContain('window_size')
+})
+
+test('after a real resize, the new size is the baseline for later scrollbar changes', () => {
+  const { result, viewport } = verifiedWithVisualViewport()
+  vi.stubGlobal('innerHeight', 900)
+  act(() => void window.dispatchEvent(new Event('resize')))
+  expect(result.current.phase).toBe('blocked')
+  vi.stubGlobal('innerHeight', 1080)
+  act(() => void window.dispatchEvent(new Event('resize')))
+  act(() => {
+    vi.advanceTimersByTime(600)
+    displayGuard.resume()
+  })
+  expect(result.current.phase).toBe('verified')
+  vi.mocked(enqueue).mockClear()
+  viewport.width = 1903
+  act(() => void viewport.dispatchEvent(new Event('resize')))
+  expect(result.current.phase).toBe('verified')
+  expect(enqueue).not.toHaveBeenCalled()
+})

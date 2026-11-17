@@ -7,6 +7,14 @@ import {
 
 export const DISPLAY_GUARD_ENABLED =
   import.meta.env.MODE === 'lab' || import.meta.env.VITE_LAB_DISPLAY_GUARD === 'true'
+/**
+ * Whether an unverified display stops the participant. Off by default: the
+ * display is checked, shown and recorded, and gaze taken on an unverified
+ * display stays out of the AOI evaluation, but the task itself is never held.
+ * `VITE_LAB_DISPLAY_GUARD_BLOCKING=true` restores the blocking dialog with its
+ * explicit study-lead confirmation.
+ */
+export const DISPLAY_GUARD_BLOCKING = import.meta.env.VITE_LAB_DISPLAY_GUARD_BLOCKING === 'true'
 export const DISPLAY_GUARD_PROFILE = 'lab_1080p' as const
 export const DISPLAY_STABLE_MS = 500
 
@@ -50,6 +58,8 @@ export interface DisplayGuardSnapshot {
   owner: string | null
   required: boolean
   focusRequired: boolean
+  /** False when the guard only observes. Absent means blocking, as before the flag existed. */
+  blocking?: boolean
   /** Researcher-approved task access; never certifies gaze geometry. */
   unverifiedContinuation: boolean
   reasons: DisplayGuardReason[]
@@ -136,22 +146,37 @@ export class DisplayGuardController {
     private read = readDisplayMetrics,
     private wallTime = Date.now,
     private monotonicTime = () => performance.now(),
-    private native = (): { capable: boolean; proof: NativeViewport | null } => ({
+    private native = (): {
+      capable: boolean
+      proof: NativeViewport | null
+      /** A bridge connection is being opened and has not yet said what it can do. */
+      pending?: boolean
+    } => ({
       capable: getNativeViewportSnapshot().capable,
       proof: currentNativeViewport(),
+      pending: ['connecting', 'permission_pending'].includes(
+        getNativeViewportSnapshot().connection,
+      ),
     }),
+    private blocking = true,
   ) {
     this.snapshot = {
       enabled,
+      blocking,
       profile: DISPLAY_GUARD_PROFILE,
       phase: enabled ? 'blocked' : 'disabled',
       owner: null,
       required: false,
       focusRequired: false,
       unverifiedContinuation: false,
-      reasons: enabled ? ['confirmation_required'] : [],
+      reasons: enabled ? [this.pendingReason()] : [],
       generation: 0,
     }
+  }
+
+  /** What an otherwise correct display still waits for before it is verified. */
+  private pendingReason(): DisplayGuardReason {
+    return this.blocking ? 'confirmation_required' : 'checking_display'
   }
 
   getSnapshot = () => this.snapshot
@@ -238,11 +263,11 @@ export class DisplayGuardController {
         focusRequired,
         unverifiedContinuation,
         phase: 'blocked',
-        reasons: ['confirmation_required'],
+        reasons: [this.pendingReason()],
         generation: this.snapshot.generation + 1,
       })
       if (needsBoundary)
-        this.event('display_guard_interrupted', this.interruptedFrom, ['confirmation_required'])
+        this.event('display_guard_interrupted', this.interruptedFrom, [this.pendingReason()])
     } else {
       this.publish({
         owner,
@@ -320,7 +345,7 @@ export class DisplayGuardController {
 
   check = (): boolean => {
     if (!this.snapshot.enabled || this.snapshot.phase === 'suspended') return true
-    if (!this.snapshot.owner) return false
+    if (!this.snapshot.owner) return !this.blocking
     const now = this.wallTime()
     const native = this.native()
     if (native.capable && this.snapshot.profile !== NATIVE_VIEWPORT_PROFILE) {
@@ -366,7 +391,7 @@ export class DisplayGuardController {
     this.lastObserved = now
     if (reasons.length) {
       this.invalidate(reasons, preceding)
-      return !this.snapshot.required || this.snapshot.unverifiedContinuation
+      return this.taskAllowed()
     }
     if (this.snapshot.phase === 'verified') {
       if (this.verifiedObservations[this.verifiedObservations.length - 1] !== now) {
@@ -378,21 +403,33 @@ export class DisplayGuardController {
     }
     this.stableSince ??= this.monotonicTime()
     const ready = this.monotonicTime() - this.stableSince >= DISPLAY_STABLE_MS
+    // Without the blocking dialog there is nobody to ask: a display that has
+    // been correct and unchanged for the stability window verifies itself.
+    // A bridge that is about to announce it measures the page would replace
+    // this profile a moment later; wait for its answer rather than verify twice.
+    const awaitingBridge = !this.blocking && !usesNative && native.pending === true
     if (
       ready &&
-      usesNative &&
-      this.nativeConfirmed &&
-      !this.snapshot.unverifiedContinuation &&
-      this.snapshot.required
+      !awaitingBridge &&
+      this.snapshot.required &&
+      (!this.blocking ||
+        (usesNative && this.nativeConfirmed && !this.snapshot.unverifiedContinuation))
     ) {
       this.confirm(now)
       return true
     }
+    const settled = ready && !awaitingBridge
     this.publish({
-      phase: ready ? 'ready' : 'blocked',
-      reasons: [ready ? 'confirmation_required' : 'checking_display'],
+      phase: settled ? 'ready' : 'blocked',
+      // On pages that are only monitored a correct display has nothing pending.
+      reasons: settled ? (this.blocking ? ['confirmation_required'] : []) : ['checking_display'],
     })
-    return !this.snapshot.required || this.snapshot.unverifiedContinuation
+    return this.taskAllowed()
+  }
+
+  /** Whether the participant may act; independent of whether gaze is admitted. */
+  private taskAllowed() {
+    return !this.blocking || !this.snapshot.required || this.snapshot.unverifiedContinuation
   }
 
   resume = (): boolean => {
@@ -414,6 +451,8 @@ export class DisplayGuardController {
   /** Permit piloting without closing the gaze-exclusion interval or claiming verification. */
   continueUnverified = (): boolean => {
     this.check()
+    // Only the blocking dialog offers this; an observing guard has nothing to waive.
+    if (!this.blocking) return false
     if (!this.snapshot.enabled || !this.snapshot.owner || !this.snapshot.required) return false
     if (this.snapshot.phase === 'verified') return false
     if (!this.snapshot.unverifiedContinuation) {
@@ -435,7 +474,14 @@ export class DisplayGuardController {
   }
 }
 
-export const displayGuard = new DisplayGuardController(DISPLAY_GUARD_ENABLED)
+export const displayGuard = new DisplayGuardController(
+  DISPLAY_GUARD_ENABLED,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  DISPLAY_GUARD_BLOCKING,
+)
 export const getDisplayGuardSnapshot = displayGuard.getSnapshot
 export const subscribeDisplayGuard = displayGuard.subscribe
 export const checkDisplayGuard = displayGuard.check
@@ -445,7 +491,11 @@ export const displayGuardAllowsSample = displayGuard.allowsSample
 
 export function isDisplayGuardBlocking(state: DisplayGuardSnapshot) {
   return (
-    state.enabled && state.required && state.phase !== 'verified' && !state.unverifiedContinuation
+    state.enabled &&
+    state.blocking !== false &&
+    state.required &&
+    state.phase !== 'verified' &&
+    !state.unverifiedContinuation
   )
 }
 

@@ -32,6 +32,7 @@ import { useOutbox } from '../hooks/useOutbox'
 import { useDisplayGuard } from '../hooks/useDisplayGuard'
 import { useClientDiagnostics } from '../hooks/useClientDiagnostics'
 import { checkDisplayGuard, isDisplayGuardBlocking } from '../lib/displayGuard'
+import { DisplayCheckSection } from '../components/session/DisplayCheckPanel'
 import { displayGuardScope } from '../lib/displayGuardScope'
 import { enqueue } from '../lib/outbox'
 import { caseAt, pilotPositionAt } from '../lib/sessionProgress'
@@ -310,6 +311,7 @@ export default function SessionPage() {
           showCalibration={steps.some((s) => s.kind === 'calibration')}
           texts={step.texts}
           onContinue={advance}
+          displayCheck={guard.enabled ? <DisplayCheckSection /> : null}
         />
       )
       break

@@ -94,3 +94,54 @@ test('raw tracking and a current viewport alone cannot claim active AOI mapping'
   expect(screen.getByRole('status')).toHaveTextContent('AOI-Zuordnung aktiv.')
   expect(screen.getByRole('status')).toHaveClass('gaze-health--ready')
 })
+
+function withGuard(guard: Partial<guardMapping.DisplayGuardSnapshot>, capable = false) {
+  vi.spyOn(guardMapping, 'getDisplayGuardSnapshot').mockReturnValue({
+    enabled: true,
+    blocking: false,
+    profile: 'lab_1080p',
+    phase: 'verified',
+    owner: 'P1',
+    required: true,
+    focusRequired: true,
+    unverifiedContinuation: false,
+    reasons: [],
+    generation: 1,
+    ...guard,
+  })
+  vi.spyOn(nativeMapping, 'getNativeViewportSnapshot').mockReturnValue({
+    owner: 'P1',
+    capable,
+    tabId: null,
+    proof: null,
+    errorCode: null,
+    connection: capable ? 'connected' : 'upgrade_required',
+  })
+}
+const tracking = { state: 'tracking' as const, received: 10, valid: 10 }
+
+test('without a measuring bridge the badge still tells mapped gaze from received gaze', () => {
+  withGuard({})
+  const { rerender } = render(
+    <GazeHealthStatus health={{ ...tracking, mappingVerified: true }} retry={() => {}} />,
+  )
+  expect(screen.getByText(/AOI-Zuordnung aktiv/)).toBeVisible()
+  withGuard({ phase: 'blocked', reasons: ['display_scale'] })
+  rerender(<GazeHealthStatus health={{ ...tracking, mappingVerified: false }} retry={() => {}} />)
+  expect(screen.getByText(/AOI-Zuordnung wartet/)).toBeVisible()
+  // A verified display with no admitted sample yet is not "active" either.
+  withGuard({})
+  rerender(<GazeHealthStatus health={{ ...tracking, mappingVerified: null }} retry={() => {}} />)
+  expect(screen.getByText(/AOI-Zuordnung wartet/)).toBeVisible()
+})
+
+test('an unverified display does not offer to restart a tracker that is working', () => {
+  withGuard({ phase: 'blocked', reasons: ['display_scale'] })
+  render(<GazeHealthStatus health={{ ...tracking, mappingVerified: false }} retry={() => {}} />)
+  expect(screen.queryByRole('button', { name: 'Eye-Tracker erneut prüfen' })).toBeNull()
+})
+
+test('with the guard off the badge says nothing about mapping', () => {
+  render(<GazeHealthStatus health={tracking} retry={() => {}} />)
+  expect(screen.queryByText(/AOI-Zuordnung/)).toBeNull()
+})

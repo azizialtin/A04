@@ -13,6 +13,7 @@ vi.mock('../lib/outbox', () => ({ enqueue: vi.fn() }))
 const guardListeners = new Set<() => void>()
 vi.mock('../lib/displayGuard', () => ({
   displayGuardAllowsSample: vi.fn(() => true),
+  getDisplayGuardSnapshot: () => ({ enabled: false }),
   subscribeDisplayGuard: (callback: () => void) => {
     guardListeners.add(callback)
     return () => guardListeners.delete(callback)

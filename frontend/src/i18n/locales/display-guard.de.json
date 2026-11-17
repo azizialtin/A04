@@ -58,5 +58,71 @@
     "platform": "Für diese Bildschirmmessung werden Windows, Edge und die aktuelle Windows-Bridge benötigt. Starten Sie die aktuelle Bridge auf dem Studien-PC und verbinden Sie sie erneut.",
     "tabs": "Eine andere Studienseite beansprucht die Bildschirmmessung. Verwenden Sie für diese Sitzung nur einen Studientab. Schließen Sie zusätzliche Studientabs und verbinden Sie die Bridge erneut.",
     "stale": "Die Bildschirmmessung ist noch nicht aktuell. Lassen Sie dieses Fenster kurz unverändert im Vordergrund. Falls die Meldung bestehen bleibt, verbinden Sie die Bridge erneut."
-  }
+  },
+  "check": {
+    "title": "Bildschirmeinstellung prüfen",
+    "open": "Einstellungen anzeigen",
+    "notice": "Blickdaten werden gerade keinen Bereichen zugeordnet.",
+    "short": {
+      "ok": "in Ordnung",
+      "warn": "Hinweise vorhanden",
+      "fail": "Einstellungen weichen ab"
+    },
+    "summary": {
+      "ok": "Die Anzeige entspricht den vorgesehenen Einstellungen.",
+      "warn": "Blickdaten können zugeordnet werden. Einzelne Einstellungen weichen von der Vorgabe ab; Seiten können dadurch anders umbrechen oder scrollen.",
+      "fail": "Derzeit werden Blickdaten gespeichert, aber keinen Bereichen (AOIs) zugeordnet. Die Zeilen mit „weicht ab“ zeigen den Grund. Die Studie kann trotzdem fortgesetzt werden."
+    },
+    "column": {
+      "setting": "Einstellung",
+      "current": "Aktuell",
+      "expected": "Vorgesehen",
+      "status": "Status"
+    },
+    "row": {
+      "bridge": "Windows-Bridge",
+      "resolution": "Bildschirmauflösung (vom Browser gemeldet)",
+      "scale": "Windows-Skalierung × Browser-Zoom",
+      "browser_area": "Browserfläche der Studienseite",
+      "fullscreen": "Vollbild",
+      "displays": "Angeschlossene Bildschirme",
+      "zoom_gesture": "Seite per Geste vergrößert oder verschoben",
+      "foreground": "Studienfenster im Vordergrund",
+      "mapping": "AOI-Zuordnung"
+    },
+    "status": {
+      "ok": "in Ordnung",
+      "warn": "Hinweis",
+      "fail": "weicht ab",
+      "info": "ohne Bewertung"
+    },
+    "value": {
+      "size": "{{w}} × {{h}}",
+      "percent": "{{value}} %",
+      "yes": "ja",
+      "no": "nein",
+      "unknown": "nicht feststellbar",
+      "fullscreen_recommended": "ja (empfohlen)",
+      "displays_single": "ein Bildschirm",
+      "displays_multiple": "mehrere Bildschirme",
+      "bridge_idle": "noch nicht geprüft",
+      "bridge_connecting": "Verbindung wird aufgebaut",
+      "bridge_permission_pending": "wartet auf Freigabe in Edge",
+      "bridge_connected": "verbunden",
+      "bridge_unreachable": "nicht erreichbar",
+      "bridge_upgrade_required": "ältere Version (misst kein Fenster)",
+      "bridge_expected": "aktuelle Version, verbunden",
+      "mapping_active": "aktiv",
+      "mapping_ready": "bereit (startet auf den Studienseiten)",
+      "mapping_checking": "wird geprüft",
+      "mapping_paused": "auf dieser Seite nicht benötigt",
+      "mapping_waiting": "nicht aktiv",
+      "size_scaled": "{{w}} × {{h}} (bei {{value}} % Skalierung/Zoom)"
+    },
+    "note_native": "Die aktuelle Windows-Bridge misst die Position der Studienseite selbst. Auflösung, Skalierung und Vollbild beeinflussen dann nur das Seitenlayout, nicht die Zuordnung.",
+    "note_legacy": "Ohne die aktuelle Windows-Bridge können Blickdaten nur bei 1920 × 1080 Pixeln, 100 % Skalierung und Zoom sowie im Vollbild (F11) zugeordnet werden. Bei 15,6-Zoll-Geräten steht die Windows-Skalierung häufig auf 125 %: Windows-Einstellungen → System → Anzeige → Skalierung → 100 %. Browser-Zoom zurücksetzen: Strg + 0.",
+    "note_unverified": "Diese Anzeige hält die Studie nicht an. Abweichungen werden protokolliert.",
+    "notice_focus": "Blickdaten werden gerade keinen Bereichen zugeordnet. Bitte einmal in die Studienseite klicken."
+  },
+  "calibration_unverified": "Die Anzeige ist noch nicht bestätigt. Bitte prüfen Sie die Bildschirmeinstellung und starten Sie die Kalibrierung erneut."
 }

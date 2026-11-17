@@ -78,7 +78,9 @@ test.each(['blocked', 'ready'] as const)(
     expect(bridge.send).not.toHaveBeenCalled()
     expect(gazeApi.saveCalibration).not.toHaveBeenCalled()
     expect(complete).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Kalibrierung starten' })).toBeVisible()
+    // It refuses out loud: with nothing holding the page, a dead button would be a riddle.
+    expect(screen.getByText(/Die Anzeige ist noch nicht bestätigt/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Kalibrierung wiederholen' })).toBeVisible()
   },
 )
 

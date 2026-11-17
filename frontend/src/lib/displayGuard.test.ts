@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest'
 import {
   DisplayGuardController,
   displayProblems,
+  isDisplayGuardBlocking,
   type DisplayGuardEvent,
   type DisplayGuardScope,
   type DisplayMetrics,
@@ -544,4 +545,287 @@ test('native proof changes revoke verification even when browser metrics appear 
   expect(controller.check()).toBe(true)
   expect(controller.getSnapshot().phase).toBe('ready')
   expect(controller.allowsSample(now)).toBe(false)
+})
+
+function observing(native?: () => { capable: boolean; proof: null }) {
+  let now = 100_000
+  let monotonic = 0
+  let metrics = { ...lab }
+  const events: DisplayGuardEvent[] = []
+  const controller = new DisplayGuardController(
+    true,
+    () => metrics,
+    () => now,
+    () => monotonic,
+    native ?? (() => ({ capable: false, proof: null })),
+    false,
+  )
+  const configure = (owner: string | null = 'participant', scope: DisplayGuardScope = 'required') =>
+    controller.configure(owner, scope, (event) => events.push(event))
+  const advance = (ms: number) => {
+    now += ms
+    monotonic += ms
+    return controller.check()
+  }
+  const change = (next: Partial<DisplayMetrics>) => {
+    metrics = { ...metrics, ...next }
+  }
+  const kinds = () => events.map((event) => event.event_type.replace('display_guard_', ''))
+  return { controller, events, configure, advance, change, kinds, time: () => now }
+}
+
+describe('observing guard (no blocking)', () => {
+  test('never withholds the task, not even before the display has been checked', () => {
+    const { controller, configure, change } = observing()
+    expect(controller.check()).toBe(true)
+    change({ dpr: 1.25, screenWidth: 1536, screenHeight: 864 })
+    configure()
+    expect(controller.check()).toBe(true)
+    expect(isDisplayGuardBlocking(controller.getSnapshot())).toBe(false)
+    expect(controller.getSnapshot()).toMatchObject({ blocking: false, phase: 'blocked' })
+  })
+
+  test('a correct display verifies itself after the stability window, without a click', () => {
+    const { controller, configure, advance, kinds, events, time } = observing()
+    configure()
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'blocked',
+      reasons: ['checking_display'],
+    })
+    expect(controller.allowsSample(time())).toBe(false)
+    advance(499)
+    expect(controller.getSnapshot().phase).toBe('blocked')
+    advance(1)
+    expect(controller.getSnapshot()).toMatchObject({ phase: 'verified', reasons: [] })
+    expect(kinds()).toEqual(['interrupted', 'resumed'])
+    // The backend cannot close an interval whose two ends share a timestamp.
+    expect(events[1].client_ts).toBeGreaterThan(events[0].client_ts)
+    expect(controller.allowsSample(time())).toBe(true)
+    expect(controller.allowsSample(time() - 1)).toBe(false)
+  })
+
+  test('a wrong display keeps gaze out, keeps the task open and does not flood events', () => {
+    const { controller, configure, advance, change, kinds, time } = observing()
+    change({ dpr: 1.25, screenWidth: 1536, screenHeight: 864, innerWidth: 1536, innerHeight: 864 })
+    configure()
+    for (let i = 0; i < 400; i++) expect(advance(125)).toBe(true)
+    expect(controller.getSnapshot().phase).toBe('blocked')
+    expect(controller.getSnapshot().reasons).toEqual(
+      expect.arrayContaining(['screen_resolution', 'window_size', 'display_scale']),
+    )
+    expect(controller.allowsSample(time())).toBe(false)
+    expect(kinds()).toEqual(['interrupted'])
+  })
+
+  test('a disturbance revokes verification and recovery needs nobody', () => {
+    const { controller, configure, advance, change, kinds, events, time } = observing()
+    configure()
+    advance(500)
+    advance(1000)
+    change({ innerHeight: 950 })
+    expect(advance(125)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ phase: 'blocked', reasons: ['window_size'] })
+    expect(controller.allowsSample(time())).toBe(false)
+    change({ innerHeight: 1080 })
+    advance(125)
+    expect(controller.getSnapshot().phase).toBe('blocked')
+    advance(500)
+    expect(controller.getSnapshot().phase).toBe('verified')
+    expect(kinds()).toEqual(['interrupted', 'resumed', 'interrupted', 'resumed'])
+    // The gap starts at the last observation that was still correct.
+    expect(events[2].client_ts).toBe(time() - 750)
+    expect(events[3].client_ts).toBe(time())
+    expect(controller.allowsSample(time())).toBe(true)
+  })
+
+  test('a display that keeps changing is never verified in between', () => {
+    const { controller, configure, advance, change } = observing()
+    configure()
+    for (let i = 0; i < 20; i++) {
+      change({ innerHeight: i % 2 ? 1080 : 950 })
+      advance(400)
+      expect(controller.getSnapshot().phase).toBe('blocked')
+    }
+  })
+
+  test('losing and regaining focus recovers by itself on a measured page', () => {
+    const { controller, configure, advance, change, kinds } = observing()
+    configure()
+    advance(500)
+    change({ focused: false })
+    controller.interrupt('window_focus')
+    expect(controller.getSnapshot()).toMatchObject({ phase: 'blocked', reasons: ['window_focus'] })
+    change({ focused: true })
+    advance(125)
+    advance(500)
+    expect(controller.getSnapshot().phase).toBe('verified')
+    expect(kinds()).toEqual(['interrupted', 'resumed', 'interrupted', 'resumed'])
+  })
+
+  test('monitored pages report a correct display as ready with nothing pending', () => {
+    const { controller, configure, advance, kinds } = observing()
+    configure('participant', 'monitor')
+    advance(500)
+    expect(controller.getSnapshot()).toMatchObject({ phase: 'ready', reasons: [] })
+    expect(kinds()).toEqual([])
+    configure('participant', 'required')
+    expect(controller.getSnapshot().phase).toBe('blocked')
+    advance(500)
+    expect(controller.getSnapshot().phase).toBe('verified')
+    // Consecutive measured pages and the instructions between them keep it.
+    configure('participant', 'monitor')
+    configure('participant', 'required')
+    expect(controller.getSnapshot().phase).toBe('verified')
+    expect(kinds()).toEqual(['interrupted', 'resumed'])
+  })
+
+  test('returning from a survey or replay verifies again without a confirmation', () => {
+    const { controller, configure, advance, kinds } = observing()
+    configure()
+    advance(500)
+    configure('participant', 'suspended')
+    expect(controller.check()).toBe(true)
+    advance(60_000)
+    configure('participant', 'required')
+    expect(controller.getSnapshot().phase).toBe('blocked')
+    advance(500)
+    expect(controller.getSnapshot().phase).toBe('verified')
+    expect(kinds()).toEqual(['interrupted', 'resumed', 'interrupted', 'resumed'])
+  })
+
+  test('a new participant never inherits the previous verification', () => {
+    const { controller, configure, advance, time } = observing()
+    configure('first')
+    advance(500)
+    expect(controller.allowsSample(time())).toBe(true)
+    configure('second')
+    expect(controller.getSnapshot()).toMatchObject({ owner: 'second', phase: 'blocked' })
+    expect(controller.allowsSample(time())).toBe(false)
+  })
+
+  test('a clock stepping backwards is not verified until time passes the old mark', () => {
+    let now = 100_000
+    let monotonic = 0
+    const controller = new DisplayGuardController(
+      true,
+      () => ({ ...lab }),
+      () => now,
+      () => monotonic,
+      () => ({ capable: false, proof: null }),
+      false,
+    )
+    controller.configure('participant', 'required', () => {})
+    now += 500
+    monotonic += 500
+    controller.check()
+    expect(controller.getSnapshot().phase).toBe('verified')
+    now -= 10_000
+    monotonic += 125
+    controller.check()
+    expect(controller.getSnapshot()).toMatchObject({ phase: 'blocked', reasons: ['clock_changed'] })
+  })
+
+  test('the fullscreen profile waits for a bridge that is still answering, then yields to it', () => {
+    let bridge: { capable: boolean; proof: { id: string } | null; pending?: boolean } = {
+      capable: false,
+      proof: null,
+      pending: true,
+    }
+    const { controller, configure, advance, events } = observing(() => bridge as never)
+    configure()
+    advance(3000)
+    // Correct by the fullscreen rules, but verifying now would be undone at once.
+    expect(controller.getSnapshot()).toMatchObject({
+      profile: 'lab_1080p',
+      phase: 'blocked',
+      reasons: ['checking_display'],
+    })
+    bridge = { capable: true, proof: { id: 'one' } }
+    advance(125)
+    advance(500)
+    expect(controller.getSnapshot()).toMatchObject({
+      profile: 'native_viewport_v1',
+      phase: 'verified',
+    })
+    // No stretch was ever verified under the profile that was about to be replaced.
+    expect(
+      events
+        .filter((event) => event.event_type === 'display_guard_resumed')
+        .map((event) => event.payload.profile),
+    ).toEqual(['native_viewport_v1'])
+  })
+
+  test('a bridge that turns out to be unreachable or older releases the fullscreen profile', () => {
+    let bridge = { capable: false, proof: null, pending: true }
+    const { controller, configure, advance } = observing(() => bridge as never)
+    configure()
+    advance(1000)
+    expect(controller.getSnapshot().phase).toBe('blocked')
+    bridge = { capable: false, proof: null, pending: false }
+    advance(125)
+    expect(controller.getSnapshot()).toMatchObject({ profile: 'lab_1080p', phase: 'verified' })
+    // A later reconnect attempt does not take a standing verification away.
+    bridge = { capable: false, proof: null, pending: true }
+    advance(125)
+    expect(controller.getSnapshot().phase).toBe('verified')
+  })
+
+  test('a bridge that announces itself after the fullscreen profile verified takes over cleanly', () => {
+    let bridge: { capable: boolean; proof: { id: string } | null } = { capable: false, proof: null }
+    const { controller, configure, advance, events, time } = observing(() => bridge as never)
+    configure()
+    advance(500)
+    expect(controller.getSnapshot()).toMatchObject({ profile: 'lab_1080p', phase: 'verified' })
+    bridge = { capable: true, proof: null }
+    advance(125)
+    expect(controller.getSnapshot()).toMatchObject({
+      profile: 'native_viewport_v1',
+      phase: 'blocked',
+    })
+    expect(controller.allowsSample(time())).toBe(false)
+    bridge = { capable: true, proof: { id: 'one' } }
+    advance(125)
+    advance(500)
+    expect(controller.getSnapshot().phase).toBe('verified')
+    // Each profile's last word is a resume later than its interruption.
+    const last = (profile: string, kind: string) =>
+      events
+        .filter((e) => e.payload.profile === profile && e.event_type.endsWith(kind))
+        .slice(-1)[0]
+    expect(last('native_viewport_v1', 'resumed').client_ts).toBeGreaterThan(
+      last('native_viewport_v1', 'interrupted').client_ts,
+    )
+  })
+
+  test('the waiver of the blocking dialog does not exist here', () => {
+    const { controller, configure, change } = observing()
+    change({ dpr: 1.25 })
+    configure()
+    expect(controller.continueUnverified()).toBe(false)
+    expect(controller.getSnapshot().unverifiedContinuation).toBe(false)
+    expect(controller.resume()).toBe(false)
+  })
+
+  test('a bridge that measures the page needs a current measurement, not a confirmation', () => {
+    let proof: { id: string } | null = null
+    const { controller, configure, advance } = observing(() => ({ capable: true, proof }) as never)
+    configure()
+    advance(2000)
+    expect(controller.getSnapshot()).toMatchObject({
+      profile: 'native_viewport_v1',
+      phase: 'blocked',
+      reasons: ['native_measurement'],
+    })
+    proof = { id: 'one' }
+    advance(125)
+    advance(500)
+    expect(controller.getSnapshot().phase).toBe('verified')
+    proof = null
+    advance(125)
+    expect(controller.getSnapshot().phase).toBe('blocked')
+    proof = { id: 'two' }
+    advance(125)
+    advance(500)
+    expect(controller.getSnapshot().phase).toBe('verified')
+  })
 })

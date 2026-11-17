@@ -8,6 +8,61 @@ Deploy the matching frontend and backend and install the rebuilt Windows
 bridge from this release. The earlier bridge packages do not provide native
 viewport measurements.
 
+## Default: the guard observes and never blocks
+
+Since app version `2026-11-18.1` the guard checks the display, shows the
+settings and records them, but does not stop the participant. What follows in
+this document about a dialog, a locked page or **Studienleitung: Fortsetzen**
+applies only to a build with `VITE_LAB_DISPLAY_GUARD_BLOCKING=true`.
+
+In the default build:
+
+- Measured pages mount at once. Their questionnaire visit, CK deadline, video
+  and screen recording start as they would without a guard, whatever the display.
+- A display that is correct and unchanged for 500 ms verifies itself. There is
+  no confirmation, neither initially nor after an interruption, in either
+  profile. Losing verification (resize, zoom, scaling, focus, a second display,
+  a stale or missing native measurement) is recovered the same way.
+- Gaze is admitted for AOI mapping exactly as before: only while the display is
+  verified. Everything else keeps its raw coordinates and exports as `unmapped`
+  with `display_guard_interrupted` or `unverified_display`. The interruption and
+  resume events, the per-layout `display_guard` record and the backend rules are
+  unchanged, so exports and replay need no new handling.
+- A setup that stays wrong produces one open interruption interval (the entry
+  boundary, moved back once to the preceding observation), not a stream of events.
+- Entering a measured page from the welcome page, SoSci, the think-aloud replay
+  or the final page starts with an unverified display for the 500 ms stability
+  window. Consecutive measured pages and the instruction pages between them keep
+  their verification.
+- **Mit aktueller Anzeige fortfahren** does not exist: there is nothing to waive.
+- In-app calibration, where enabled, still refuses to run on an unverified display.
+
+### Where the study lead sees the settings
+
+**Bildschirmeinstellung prüfen** on the welcome page lists each setting as the
+browser reports it next to the intended value: bridge, resolution, scaling ×
+zoom, browser area, full screen, connected displays, pinch zoom, foreground and
+AOI mapping. It is folded away when everything is in order and open otherwise,
+and it follows the display while visible. With a bridge that measures the page,
+resolution, scaling and full screen are layout notes; without one they decide
+whether gaze can be mapped and are shown as deviations. It offers **Vollbild
+öffnen** and **Bridge erneut verbinden** and nothing that confirms or waives.
+
+On measured pages the gaze badge shows **AOI-Zuordnung aktiv.** for both
+profiles. While a real deviation keeps gaze unmapped, a notice offers the same
+table on request; it does not appear during the 500 ms settling after a page
+change and never opens by itself. See the
+[study-lead checklist](LAB_SETUP_CHECKLIST.md).
+
+### Scrollbars
+
+On Windows a scrollbar takes layout space, and the browser announces its
+appearing or disappearing as a `visualViewport` resize without a window resize.
+That is not a display change: a visual-viewport resize that leaves the inner
+window size and the pinch scale as they were no longer revokes verification.
+Before this, any page growing past the screen height (or shrinking back)
+revoked it, which in the blocking build reopened the dialog on a correct setup.
+
 ## Run locally and deploy
 
 Start the backend from this checkout with the usual local database/media
@@ -222,7 +277,12 @@ npm run lint
 npm test
 npm run test:browser
 npx playwright test --config playwright.guard.config.ts
+npx playwright test --config playwright.display-check.config.ts
 ```
+
+The first Playwright suite builds with the blocking flag and covers the dialog;
+the second covers the observing default (tests tagged `@observe`). Set
+`A04_GUARD_PORT` / `A04_DISPLAY_CHECK_PORT` if ports 5194 / 5195 are taken.
 
 The guard suite covers both legacy behavior and native windowed/fullscreen
 mapping, zoom, resize recovery, stale/mismatched proofs, CK and SoSci. Backend
