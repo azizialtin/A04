@@ -80,6 +80,7 @@ class InterceptingCDP(CDP):
         self.pending = {}
         self.tasks = set()
         self.errors = []
+        self.runtime_events = []
         self.reader = asyncio.create_task(self._read())
 
     async def _read(self):
@@ -93,6 +94,9 @@ class InterceptingCDP(CDP):
                     task = asyncio.create_task(self._intercept(message["params"]))
                     self.tasks.add(task)
                     task.add_done_callback(self.tasks.discard)
+                elif message.get("method") in ("Runtime.exceptionThrown", "Log.entryAdded"):
+                    self.runtime_events.append(message)
+                    self.runtime_events = self.runtime_events[-100:]
         finally:
             for future in self.pending.values():
                 if not future.done():
@@ -514,7 +518,8 @@ document.querySelector('#retry').onclick = () => {
     evidence = {
         "hardware_tested": False,
         "origin": origin,
-        "document_intercepted": True,
+        "document_intercepted": False,
+        "document_interception_count": 0,
         "real_study_api_requests_allowed": 0,
         "bridge_mode": "mock",
         "cases": [],
@@ -609,6 +614,8 @@ document.querySelector('#retry').onclick = () => {
                     ],
                     "body": base64.b64encode(html.encode()).decode(),
                 })
+                evidence["document_intercepted"] = True
+                evidence["document_interception_count"] += 1
             elif url == bridge_http:
                 evidence["allowed_loopback_requests"] += 1
                 if permission_delay is not None:
@@ -625,12 +632,35 @@ document.querySelector('#retry').onclick = () => {
             await websockets.connect(target["webSocketDebuggerUrl"]), intercept
         )
         await page.call("Page.enable")
+        await page.call("Runtime.enable")
+        await page.call("Log.enable")
         await page.call("Fetch.enable", {"patterns": [{"urlPattern": "*"}]})
-        await page.call("Page.navigate", {"url": fixture_url})
+        evidence["navigation"] = await page.call("Page.navigate", {"url": fixture_url})
+
+        async def document_state():
+            state = await page.evaluate("""({
+                script:typeof window.permissionState, title:document.title,
+                url:location.href, ready:document.readyState, focused:document.hasFocus(),
+                secure:isSecureContext, body:document.body?.innerText.slice(0,300)
+            })""")
+            evidence["last_document_state"] = state
+            return state
+
+        # Activating a target while navigation is still committing can leave
+        # the second Edge window behind the runner console. First prove that
+        # the fixture loaded, then explicitly activate its actual page window.
+        await eventually(document_state, lambda value: value["script"] == "function"
+                         and value["ready"] == "complete")
         await browser.call("Target.activateTarget", {"targetId": target["id"]})
-        await eventually(lambda: page.evaluate(
-            "typeof permissionState==='function' && document.hasFocus()"
-        ))
+        await page.call("Page.bringToFront")
+
+        async def foreground_document():
+            state = await document_state()
+            if not state["focused"]:
+                await page.call("Page.bringToFront")
+            return state
+
+        await eventually(foreground_document, lambda value: value["focused"])
         assert await page.evaluate("isSecureContext && location.origin") == origin
         initial_permission = await page.evaluate("permissionState()")
         evidence["initial_permission"] = initial_permission
@@ -703,6 +733,19 @@ document.querySelector('#retry').onclick = () => {
     finally:
         if permission_delay is not None:
             permission_delay.set()
+        if page:
+            evidence["interception_errors"] = page.errors
+            evidence["runtime_events"] = page.runtime_events
+            with contextlib.suppress(Exception):
+                evidence["final_document_state"] = await page.evaluate("""({
+                    script:typeof window.permissionState,title:document.title,
+                    url:location.href,ready:document.readyState,focused:document.hasFocus(),
+                    body:document.body?.innerText.slice(0,300)
+                })""")
+                screenshot = await page.call("Page.captureScreenshot", {"format": "png"})
+                Path("native-viewport-permission-last.png").write_bytes(
+                    base64.b64decode(screenshot["data"])
+                )
         Path("native-viewport-permission-windows.json").write_text(
             json.dumps(evidence, indent=2), encoding="utf-8"
         )
