@@ -1,3 +1,5 @@
+import type { NativeViewport } from './nativeViewport'
+
 // Where the clip sits on the physical screen. The tracker reports gaze against
 // the whole display, so without this a sample cannot be placed on the video —
 // not during the replay, and not afterwards from the archived data either.
@@ -17,7 +19,8 @@ export interface GazeGeometry {
   frame: { w: number; h: number }
   dpr: number
   visual_viewport?: { scale: number; x: number; y: number; w: number; h: number }
-  display_guard?: { profile: 'lab_1080p'; verified: boolean }
+  native_viewport?: NativeViewport
+  display_guard?: { profile: 'lab_1080p' | 'native_viewport_v1'; verified: boolean }
 }
 
 export interface GazeAoi {

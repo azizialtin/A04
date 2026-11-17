@@ -21,6 +21,11 @@
     "viewport_zoom": "The visible page area is zoomed or shifted.",
     "multiple_displays": "The browser reports multiple displays.",
     "window_focus": "The study window is not in the foreground.",
-    "clock_changed": "The system clock has changed."
-  }
+    "clock_changed": "The system clock has changed.",
+    "native_measurement": "The Windows bridge must confirm the current study page position."
+  },
+  "native_setup": "The Windows bridge measures the study page’s position on the display directly. Fullscreen and windowed mode are supported. Keep the study page in the foreground on the eye tracker’s display.",
+  "native_ready": "The study page’s position has been measured. The researcher can confirm gaze mapping. Later window-size changes will be measured automatically.",
+  "mapping_ready": "AOI mapping active.",
+  "mapping_waiting": "AOI mapping is waiting for a valid display measurement."
 }

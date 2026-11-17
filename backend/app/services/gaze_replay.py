@@ -34,7 +34,13 @@ from starlette.concurrency import run_in_threadpool
 
 from app.models.interaction_log import InteractionLog
 from app.services.display_guard import DisplayGuardIntervals, load_display_guard_intervals
-from app.services.gaze_analysis import GazeLayout, averaged_gaze, unsupported_mapping_reason
+from app.services.gaze_analysis import (
+    GazeLayout,
+    averaged_gaze,
+    native_viewport_contains,
+    screen_to_viewport,
+    unsupported_mapping_reason,
+)
 
 PLAYBACK_EVENTS = (
     "video_started",
@@ -158,23 +164,22 @@ def to_video_frame(x: float, y: float, geo: dict[str, Any]) -> tuple[float, floa
     Returns None when the participant was looking somewhere other than the clip
     — at the notes box, the timer, or off the window entirely.
 
-    The viewport's origin on the screen is derived from the window box: browser
-    chrome is assumed to sit above the viewport with symmetric side borders.
-    That is exact in fullscreen, where outer and inner are the same.
+    Native viewport bounds account for browser chrome, position and scaling.
+    Historical recordings retain their original estimated window transform.
     """
     if not geo.get("video"):
         return None
-    screen, win, box = geo["screen"], geo["window"], geo["video"]
+    box = geo["video"]
     frame = geo.get("frame") or {"w": 0, "h": 0}
-    if not (screen["w"] and screen["h"] and box["w"] and box["h"]):
+    coordinates = screen_to_viewport(x, y, geo)
+    if coordinates is None or not (box["w"] and box["h"]):
         return None
-
-    viewport_x = win["x"] + (win["outer_w"] - win["inner_w"]) / 2
-    viewport_y = win["y"] + (win["outer_h"] - win["inner_h"])
-
-    # Screen pixels, then viewport pixels, then pixels within the video element.
-    ex = x * screen["w"] - viewport_x - box["x"]
-    ey = y * screen["h"] - viewport_y - box["y"]
+    px, py, viewport_x, viewport_y, method = coordinates
+    if method == "native_viewport" and not native_viewport_contains(px, py, geo):
+        return None
+    # Viewport CSS pixels, then pixels within the video element.
+    ex = viewport_x - box["x"]
+    ey = viewport_y - box["y"]
 
     # object-fit: contain letterboxes the picture inside the element box.
     if frame["w"] and frame["h"]:

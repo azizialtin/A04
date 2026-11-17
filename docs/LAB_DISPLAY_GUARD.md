@@ -1,153 +1,180 @@
-# Lab display guard
+# Lab display guard and native viewport mapping
 
-The lab display guard protects measured pages from changes to the display,
-fullscreen state, zoom and focus. Deploy the frontend and backend from the same
-release: the backend provides the matching AOI and replay exclusions.
+The current Windows bridge measures the study page's content rectangle in
+physical desktop pixels. The app combines that rectangle with the browser's
+CSS layout and device-pixel ratio (DPR), so gaze and AOIs can be mapped in both
+windowed and fullscreen mode without estimating browser toolbar heights.
+Deploy the matching frontend and backend and install the rebuilt Windows
+bridge from this release. The earlier bridge packages do not provide native
+viewport measurements.
 
-## Run locally
+## Run locally and deploy
 
-Start the backend from this same checkout with the usual local database/media
-configuration. Point `frontend/.env.local` at that local backend, then run:
+Start the backend from this checkout with the usual local database/media
+configuration. Point `frontend/.env.local` at it, then run:
 
 ```sh
 cd frontend
 npm run dev:lab
 ```
 
-`VITE_LAB_DISPLAY_GUARD=true` also enables the guard explicitly. Normal `npm run
-dev` and production builds remain unchanged unless that build-time flag is set.
-Do not test the guarded frontend against an older backend without those export
-and replay exclusions.
+`VITE_LAB_DISPLAY_GUARD=true` also enables the guard. The
+[LRZ deployment](../infrastructure/lrz/README.md) passes this build-time flag by
+default. Generic Docker builds need `--build-arg VITE_LAB_DISPLAY_GUARD=true`.
+Changing an environment variable on an already built web container does not
+change the bundle: rebuild the web image. The backend must understand the
+`native_viewport_v1` geometry and per-sample proof fields before the new bridge
+is used. No database migration is required for these additional JSON fields.
 
-## Production builds
+On the lab PC, close the old bridge, unpack the new Windows package into its
+own folder, and start its normal LRZ launcher. Refresh the study page to load
+the matching frontend. Keep `CALIBRATION_ENABLED=false`; the bridge update does
+not enable in-app calibration.
 
-The [LRZ deployment](../infrastructure/lrz/README.md) enables the guard by default.
-Its Compose build passes `VITE_LAB_DISPLAY_GUARD=true` unless the private
-deployment environment explicitly sets it to `false`. Keep the example's
-explicit `true` setting for the lab. Generic Docker builds default to `false`;
-enable them with `--build-arg VITE_LAB_DISPLAY_GUARD=true`.
+## Supported display setup
 
-This is a Vite build-time setting. Rebuild the web image when changing it;
-setting an environment variable on an already built nginx container does not
-change the bundle. Deploy the matching API image alongside it. LRZ keeps
-`CALIBRATION_ENABLED=false` for the API and migration service, independently
-of this frontend setting.
+Use one physical monitor, the same monitor calibrated for the Tobii tracker
+and used for screen recording. The native provider verifies that only one
+monitor is active and that the study's content area lies entirely within it.
+The researcher must still confirm the physical tracker/display pairing.
 
-The bridge source and Windows build workflow are unchanged from release
-`35fa85beeb44b77a39be6834679d593d44c9fa05`. That Windows package remains compatible;
-the guard requires the newer frontend and backend, not a bridge update.
+The reported lab monitor is 15.6 inches at 1920 × 1080. Fullscreen at 100%
+Windows scaling and 100% Edge zoom remains the layout-regression baseline,
+but it is no longer required for native coordinate mapping. Windowed,
+maximized and fullscreen Edge are supported. Desktop browser zoom and Windows
+scaling are supported when the physical content dimensions agree with the
+reported CSS viewport and DPR. A smaller CSS viewport may need scrolling;
+this does not change the authored page layout or option order.
 
-## Display profile
-
-The lab profile expects one display at 1920 × 1080, Windows scaling 100%, Edge
-zoom 100%, a fullscreen viewport and window at screen origin (0, 0). Browser
-fullscreen (F11) and the page's fullscreen button are both supported. If the
-browser exposes `screen.isExtended`, an extended desktop is rejected. The
-operator must still confirm the physical tracker/display pairing; a browser
-cannot identify the calibrated physical monitor from its dimensions alone.
+Pinch zoom/panning, multiple monitors, content outside the calibrated display,
+an ambiguous browser window, or a missing/stale native measurement are not
+converted using guessed offsets. Keep the study tab in the foreground. The
+existing guard intercepts Ctrl/Cmd plus/minus and Ctrl-wheel on measured pages;
+zoom selected before entry or through browser controls is still measured.
 
 ## Participant behavior
 
-- The researcher can choose **Mit aktueller Anzeige fortfahren** at any display
-  size, including windowed mode or fullscreen that fails the browser checks.
-  This explicitly permits the study to continue with unverified gaze geometry.
-  Answers, video controls, navigation and existing deadlines remain usable.
-  The permission survives page changes, resizing and SoSci return, until reload
-  or logout; it never transfers to another participant. The dialog explains
-  that unverified gaze is excluded from AOI analysis and lists failed checks.
-- Without that continuation choice, entry into the first gaze-recording page requires valid settings for at least
-  500 ms and explicit **Studienleitung: Fortsetzen** confirmation. Correct
-  settings alone do not dismiss the guard. The required pages follow the same
-  capture definition as the recorder: in-app questionnaires, video cases,
-  diagnosis pages and case-outro pages with an assigned questionnaire.
-- Welcome, text/instruction pages, section and case introductions, phase
-  transitions, and outros without a questionnaire remain usable at any display
-  size. They monitor settings silently. Verification carries across them when
-  settings remain valid, so ordinary instructions do not add another popup.
-  A display or focus change silently revokes verification; the next measured
-  page then waits for confirmation before mounting or starting its visit/timer.
-- Without unverified continuation, resize, zoom, movement, fullscreen changes, and focus loss on measured pages
-  block participant input. Ctrl/Cmd plus/minus and Ctrl-wheel are intercepted
-  while guarded; Ctrl+0 remains available to restore zoom. Browser menus and OS
-  controls cannot be completely disabled by a web page.
-- The current page stays mounted, retaining its draft. Video pauses, without
-  ending the recording or restarting playback automatically after recovery.
-  The operator restores the display and explicitly resumes, or chooses
-  continuation with the current display. Subsequent resize/focus changes do
-  not pause video or lock input after that choice.
-- CK's server deadline continues. Expiry saves the current draft through the
-  existing finish-CK path, including retry behavior, and advances once. The next
-  PCK page waits behind the guard until verification or unverified continuation. Case deadlines also
-  continue. Manual advance and supervisor navigation are blocked during an
-  interruption unless unverified continuation has been chosen.
-- SoSci pages, think-aloud replay and the final page are exempt. SoSci can open
-  in its separate tab. Returning from these pages requires fresh verification
-  before measured content unless unverified continuation has been chosen,
-  including when an ordinary introduction is in between.
-  Display-picker focus loss on introductory pages does not block their controls.
-- In-app calibration remains disabled (`CALIBRATION_ENABLED=false`); calibrate
-  externally before the first measured page. Its existing safety guard remains
-  available if calibration is explicitly enabled in a future change. This scope
-  change does not enable or move calibration, or change which pages record gaze.
+- The first measured page waits for a fresh native measurement stable for
+  500 ms and explicit **Studienleitung: Fortsetzen** confirmation. Until then,
+  its questionnaire visit and timer do not start. Measured pages remain the
+  in-app questionnaires, case videos, diagnosis pages and case outros with an
+  assigned questionnaire.
+- After this initial native confirmation, moving/resizing the window, changing
+  zoom or fullscreen, or returning focus temporarily revokes verification.
+  Fresh, stable native measurements automatically restore access after 500 ms;
+  another operator confirmation is not needed. The draft stays mounted. A
+  paused video does not restart automatically; its Play control becomes usable
+  again. Recording is not restarted by a display change.
+- Welcome, instruction pages, section/case introductions, phase transitions
+  and outros without questionnaires stay usable while display settings are
+  checked. SoSci, think-aloud replay and the final page are exempt from the
+  display lock. SoSci opens normally in a separate tab. On returning to a
+  measured page, native mapping is measured again and recovers automatically
+  if this participant already completed the initial native confirmation.
+- CK's server deadline always continues once started. A display interruption
+  does not reset or pause it. Expiry saves the partial answer through the
+  existing retry-safe finish-CK path and advances once; PCK becomes accessible
+  after the native measurement is valid again. Case deadlines also continue.
+- The gaze badge distinguishes raw eye-coordinate reception from
+  **AOI-Zuordnung aktiv.** The latter requires an admitted sample with a fresh
+  native proof and a verified, visible DOM layout. A connected tracker, raw
+  sample counts or a measured window alone are insufficient.
+- **Mit aktueller Anzeige fortfahren** remains an explicit fallback for
+  continuing without verified mapping. It retains answers and deadlines, but
+  does not make uncertain gaze valid for AOIs. It lasts until reload/logout and
+  never transfers to another participant. Choosing it disables automatic
+  native re-verification for that continuation: reload and confirm normally
+  before collecting verified AOI data again.
 
-The resume control is an operator acknowledgement, not an authenticated
-supervisor login. Original research wording, MESP option order, PCK/MESP page
-structure and ordinary layouts are unchanged.
+The confirmation is an operator acknowledgement, not an authenticated
+supervisor login. In-app calibration remains disabled; calibrate and validate
+externally in Tobii Pro Eye Tracker Manager. Approved study wording, MESP
+option order and PCK/MESP page structure remain unchanged.
 
-## Gaze and replay behavior
+## Measurement and export behavior
 
-The guard checks geometry on browser events, every 125 ms, before protected
-actions, and on every received gaze sample. Queued resize/focus events also
-invalidate verification when the display was restored before their handlers
-ran. Their exclusion begins at a verified observation before the event; very
-old delayed events conservatively fall back to the last verification time.
+The app requests native measurements every 125 ms through a session-scoped
+bridge connection. A random tab marker identifies the foreground study
+window without including participant identifiers. Correlated replies must
+match the current tab, browser dimensions and DPR. A browser proof expires
+after 500 ms. The bridge also reads native geometry at the SDK gaze callback,
+so a sample carries its viewport generation and observation time rather than
+inheriting the last window position seen by a browser timer.
 
-Raw samples, timestamps, coordinates, validity and pupil fields are retained.
-Samples received while blocked or continuing unverified have no geometry reference. Geometry snapshots
-carry optional `display_guard` verification metadata. Durable interruption and
-resume events use the participant event outbox and integer browser timestamps.
-The distinct `display_guard_continued_unverified` event records the continuation
-choice. It is **not** a resume event and does not end the exclusion interval.
-Restoring fullscreen dimensions alone never certifies gaze after this choice.
-Reload and perform normal verified confirmation to resume verified collection.
+Stored geometry uses `display_guard.profile=native_viewport_v1` and includes
+physical display/content bounds, CSS viewport dimensions, DPR and the native
+viewport identifier. Samples retain `viewport_id` and `viewport_ts`. Mapping
+requires a matching generation, an observation within 50 ms of the sample,
+and a verified DOM snapshot that existed at the sample time. Heartbeats do
+not create duplicate layout snapshots. Browser resize/focus events and native
+generation changes invalidate the preceding verification conservatively;
+queued events can still correct an earlier interval.
 
-The backend combines those boundaries per participant, across recordings and
-reloads. Delayed event delivery can therefore invalidate samples already
-uploaded. Such samples remain in CSV with `mapping_reason` set to
-`display_guard_interrupted` or `unverified_display`, and AOI `unmapped`.
-Resuming requires a fresh verified geometry snapshot before AOI mapping resumes.
+For native data, the shared AOI/clip-replay transform is:
 
-Both screen and clip replay return explicit suppression intervals, preventing
-interpolation or a held gaze dot from bridging an uncertain interval. Raw
-recording files are not rewritten. Historical recordings without guard metadata
-retain their prior behavior. No database migration is required.
+```text
+physicalX = display.x + normalizedGazeX × display.w
+viewportX = (physicalX - content.x) / dpr
+```
+
+The Y calculation is identical. DOM AOIs already use viewport CSS coordinates,
+so ordinary document scrolling does not need another scroll subtraction.
+`mapping_method=native_viewport` distinguishes this from historical
+`window_estimate` data. Gaze on browser chrome or outside the content area is
+`offscreen` with `mapping_reason=outside_viewport`; valid gaze inside the page
+continues to map to AOIs.
+
+Raw coordinates, timestamps, eye validity and pupil values are retained during
+brief uncertain transitions. Those samples remain unmapped rather than being
+assigned to the wrong AOI. Reasons include `display_guard_interrupted`,
+`unverified_display`, `native_viewport_mismatch` and `stale_native_viewport`.
+The mapping-waiting badge makes this visible. Durable interruption/resume
+boundaries are scoped by participant and guard profile; an old open
+`lab_1080p` interval does not suppress newly verified native data.
+
+Screen and clip replay retain suppression intervals so a gaze dot is not held
+or interpolated across an uncertain gap. Screen replay assumes the capture
+covers the same single calibrated monitor. Raw recording files are not
+rewritten, and historical records keep their original interpretation.
+
+## Legacy fallback
+
+If a bridge has never advertised native viewport support, the previous
+`lab_1080p` profile remains available: one 1920 × 1080 display, 100% scaling and
+zoom, fullscreen viewport/window at origin, and explicit confirmation after
+interruptions. This is not the accurate windowed-mapping path. Install the new
+Windows bridge for that path. Once native support has been advertised for the
+current participant, a disconnect cannot silently downgrade to legacy
+geometry; the native measurement must recover.
 
 ## Verification on the lab PC
 
-1. Verify the bridge's real Fusion connection and 120 Hz samples; calibrate on
-   the intended 15.6-inch display at the required settings.
-2. Start a synthetic participant and walk through the unblocked introduction.
-   Enter fullscreen and confirm the guard before the first measured page.
-   Check known fixation targets on the video, notes, code, question, response
-   controls and a popup; compare the exported AOIs and screen replay.
-3. Resize or zoom during a draft and during video playback. Confirm the page
-   blocks, the draft remains, video pauses, and restoration alone does not
-   resume the task. Confirm no replay dot or mapped AOI appears in the excluded
-   interval, while raw sample counts remain intact.
-4. Open and return from SoSci. Confirm it works and the next required page asks
-   for verification. During a separate synthetic CK run, leave the guard open
-   across the deadline and confirm the partial answer saves once and PCK waits
-   for resume.
-5. At a nonmatching window size, choose **Mit aktueller Anzeige fortfahren**.
-   Confirm answers and video playback work across another resize and SoSci
-   return. Verify the CK deadline is unchanged, expiry saves once, and PCK is
-   accessible. Confirm these gaze samples remain unmapped with no replay dot.
+1. Close the old bridge and start the new package. Run
+   `Check-eye-tracker.cmd` with the normal bridge closed first, then restart the
+   bridge. Verify the real Fusion, 120 Hz and valid gaze samples. Calibrate and
+   validate externally on the intended single monitor.
+2. Start a synthetic participant in an ordinary Edge window. Confirm the
+   initial measured display, then check both raw reception and
+   **AOI-Zuordnung aktiv.** Look at known targets on the video, code,
+   instructions, response controls and a popup. Compare the replay and exported
+   AOIs with those targets; check `mapping_method=native_viewport`.
+3. Move and resize the window, maximize it, enter/leave fullscreen and test the
+   intended browser zoom. Confirm drafts remain, the display measurement
+   recovers automatically and stable gaze maps correctly in each mode. Only
+   transition/invalid samples should remain unmapped. Recheck the physical
+   fixation targets after each change.
+4. Open and return from SoSci. During a separate short synthetic CK test, keep
+   the display interrupted across expiry and confirm the partial answer saves
+   once, the deadline is unchanged and PCK becomes accessible after recovery.
+5. Test a missing bridge or unverified continuation separately. Confirm the
+   badge does not claim active AOI mapping merely because raw gaze arrives.
+   Reload and confirm the measured setup before the actual data-collection run.
 
-Automated tests verify app behavior with synthetic gaze; physical accuracy,
-calibration quality and actual Windows/Edge display pairing still require this
-lab check. This guard prevents uncertain samples being presented as verified
-mapping; it cannot guarantee the accuracy of an eye tracker or detect every
-physical change to the lab equipment.
+Automated tests check transformations and data integrity with synthetic gaze.
+The Windows build also compares native measurements with actual Edge pointer
+coordinates driven by the OS cursor. These checks do not measure Tobii
+calibration accuracy, participant positioning or device latency; physical
+fixation validation on the lab PC remains necessary.
 
 ## Automated checks
 
@@ -160,10 +187,10 @@ npm run test:browser
 npx playwright test --config playwright.guard.config.ts
 ```
 
-The dedicated guard suite enables the feature and uses a 1920 × 1080 screen.
-Its focus test uses a disposable Chromium process with genuine browser focus,
-since normal Playwright contexts emulate an always-focused page. The existing
-real-API Playwright suite checks complete pilot flow, exports, persisted timing
-and page layouts against an isolated database. Backend guard tests cover late
-events, duplicate boundaries, reloads, raw-row preservation, replay gaps and
-legacy compatibility.
+The guard suite covers both legacy behavior and native windowed/fullscreen
+mapping, zoom, resize recovery, stale/mismatched proofs, CK and SoSci. Backend
+regressions cover CSV/replay mapping, profile isolation, delayed events and
+legacy compatibility. The Windows bridge workflow runs
+`test_native_viewport_windows.py` before packaging, using Edge and physical
+cursor positions; its artifact manifest records the checks and explicitly
+states that the eye-tracker hardware was not tested by CI.

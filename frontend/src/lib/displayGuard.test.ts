@@ -450,3 +450,98 @@ test('restoring display after unverified continuation still requires a real veri
   expect(s.controller.allowsSample(s.time())).toBe(true)
   expect(s.events.filter((event) => event.event_type === 'display_guard_resumed')).toHaveLength(2)
 })
+
+test('native mapping verifies a windowed scaled viewport and automatically remeasures after resize', () => {
+  let now = 100_000
+  let metrics = {
+    ...lab,
+    innerWidth: 1200,
+    innerHeight: 720,
+    outerWidth: 1536,
+    outerHeight: 980,
+    dpr: 1.25,
+    x: -8,
+  }
+  const native = {
+    capable: true,
+    proof: {
+      id: 'native-1',
+      tab_id: 'a'.repeat(32),
+      display: { x: 0, y: 0, w: 1920, h: 1080 },
+      content: { x: 100, y: 100, w: 1500, h: 900 },
+      css: { w: 1200, h: 720 },
+      dpr: 1.25,
+    } as import('./nativeViewport').NativeViewport | null,
+  }
+  const events: DisplayGuardEvent[] = []
+  const controller = new DisplayGuardController(
+    true,
+    () => metrics,
+    () => now,
+    () => now,
+    () => native,
+  )
+  controller.configure('participant', 'required', (event) => events.push(event))
+  now += 500
+  expect(controller.check()).toBe(false)
+  expect(controller.getSnapshot()).toMatchObject({ profile: 'native_viewport_v1', phase: 'ready' })
+  expect(controller.resume()).toBe(true)
+  expect(controller.allowsSample(now)).toBe(true)
+  native.proof = null
+  now += 20
+  expect(controller.check()).toBe(false)
+  expect(controller.allowsSample(now)).toBe(false)
+  metrics = { ...metrics, innerWidth: 1000 }
+  native.proof = {
+    id: 'native-2',
+    tab_id: 'a'.repeat(32),
+    display: { x: 0, y: 0, w: 1920, h: 1080 },
+    content: { x: 100, y: 100, w: 1250, h: 900 },
+    css: { w: 1000, h: 720 },
+    dpr: 1.25,
+  }
+  controller.check()
+  now += 500
+  expect(controller.check()).toBe(true)
+  expect(controller.getSnapshot().phase).toBe('verified')
+  expect(events.filter((event) => event.event_type === 'display_guard_resumed')).toHaveLength(2)
+  expect(
+    events
+      .filter((event) => event.event_type === 'display_guard_resumed')
+      .every((event) => event.payload.profile === 'native_viewport_v1'),
+  ).toBe(true)
+})
+
+test('native proof changes revoke verification even when browser metrics appear unchanged', () => {
+  let now = 100_000
+  const native = {
+    capable: true,
+    proof: {
+      id: 'native-1',
+      tab_id: 'a'.repeat(32),
+      display: { x: 0, y: 0, w: 1920, h: 1080 },
+      content: { x: 0, y: 0, w: 1920, h: 1080 },
+      css: { w: 1920, h: 1080 },
+      dpr: 1,
+    },
+  }
+  const controller = new DisplayGuardController(
+    true,
+    () => lab,
+    () => now,
+    () => now,
+    () => native,
+  )
+  controller.configure('participant', 'required')
+  now += 500
+  controller.resume()
+  native.proof = { ...native.proof, id: 'native-2' }
+  expect(controller.check()).toBe(false)
+  expect(controller.getSnapshot().phase).toBe('blocked')
+  expect(controller.allowsSample(now)).toBe(false)
+  expect(controller.continueUnverified()).toBe(true)
+  now += 500
+  expect(controller.check()).toBe(true)
+  expect(controller.getSnapshot().phase).toBe('ready')
+  expect(controller.allowsSample(now)).toBe(false)
+})

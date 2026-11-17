@@ -217,58 +217,96 @@ unmapped. If an additional layout reaches the backend, it preserves the earlier
 snapshots and appends one terminal unavailable-layout marker. The layout limit
 does not cap the number of raw gaze samples exported.
 
-`screen_x`/`screen_y` are normalized display coordinates. `screen_px`/`screen_py`
-and `viewport_x`/`viewport_y` use CSS pixels and the recorded browser window
-dimensions; `mapping_method=window_estimate` identifies this derivation.
-New recordings also retain visual viewport scale/offsets and, where the
-browser exposes it, whether multiple displays are connected. Known unsupported
-zoom/pan, multiple displays, and a window wholly outside the assumed display
-produce `unmapped` with `mapping_reason=unsupported_visual_viewport`,
-`multiple_displays`, or `window_outside_screen`. Candidate coordinates and raw
-samples remain available. Missing display information (or `is_extended=false`)
-does not certify the mapping. Desktop zoom, browser chrome, display scaling,
-and tracker/display identity still require verification on the actual setup.
+`screen_x`/`screen_y` are normalized display coordinates. For the new native
+Windows path, `screen_px`/`screen_py` are physical desktop pixels and
+`viewport_x`/`viewport_y` are CSS pixels. `mapping_method=native_viewport`
+identifies the transform: subtract the measured physical browser-content
+origin from the physical gaze point, then divide by the recorded DPR. Browser
+chrome is not estimated. The sample's `viewport_id` must match its recorded
+native geometry, and `viewport_ts` must be within 50 ms of its gaze timestamp.
+A visible, verified DOM layout must also exist at the sample time.
+
+Historical `mapping_method=window_estimate` rows retain their earlier
+browser-reported screen units and outer/inner-window calculation. Do not mix
+the screen-pixel units of these two mapping methods without conversion.
+Missing display information does not certify mapping. Native mapping supports
+windowed/fullscreen mode, desktop browser zoom and Windows scaling when the
+physical bounds agree with the CSS viewport and DPR. Pinch zoom/pan, multiple
+monitors, ambiguous/stale native bounds or content outside the calibrated
+monitor remain unsupported. Gaze on browser chrome is `offscreen` with
+`mapping_reason=outside_viewport`, rather than a hit on page content.
+
 Visible notification cards and unsent-write notices take precedence over the
 content they cover; a modal excludes notices painted behind its backdrop.
-Layout observations are coalesced to animation frames, and browser-window
-movement is checked once per second. Samples around a change can therefore
-reference the preceding layout. Transition intervals are not currently marked
-uncertain; exact layout references alone do not establish transition timing.
-The bridge timestamps gaze when its SDK callback arrives, which also leaves
-device-to-callback latency unmeasured. Avoid treating transition samples as
-precisely synchronized evidence until this has been validated or addressed.
-An AOI debug overlay can verify the DOM rectangles and modal precedence. It
-does **not** calibrate the tracker or establish physical gaze accuracy. Validate
-with the lab's tracker, calibrated display and intended browser zoom before
-interpreting small areas. AOI hits are sample labels, not fixations or dwell
-time measurements.
+Browser DOM observations are coalesced to animation frames. The native bridge
+also measures at the SDK callback and tags every sample with the relevant
+viewport generation. Resize/focus/generation transitions temporarily revoke
+verification; uncertain samples retain their raw values but do not receive
+guessed AOIs or replay dots. Durable interruption intervals are scoped by guard
+profile, so earlier `lab_1080p` interruptions do not invalidate newly verified
+`native_viewport_v1` geometry. Device-to-callback latency remains unmeasured.
+
+An AOI debug overlay verifies DOM rectangles and modal precedence. It does
+**not** calibrate the tracker or establish physical gaze accuracy. Validate
+with the lab's tracker and calibrated display before interpreting small areas.
+AOI hits are sample labels, not fixations or dwell-time measurements.
 
 ### Fusion lab display
 
 The reported lab setup is a Tobii Pro Fusion at 120 Hz, Windows, Edge, and a
-15.6-inch 1920×1080 display with Windows scaling at 100%. The layout regression
-baseline is a **1920×1080 CSS viewport**, so use Edge at 100% zoom (`Ctrl+0`) and
-fullscreen (`F11`) on the tracker-calibrated display. A maximized window with
-tabs, a toolbar or the Windows taskbar has less usable height. These Edge
-shortcuts are documented by [Microsoft](https://support.microsoft.com/en-us/edge/keyboard-shortcuts-in-microsoft-edge).
-Browser zoom and fullscreen have not yet been confirmed on the physical lab PC.
+15.6-inch 1920×1080 display with Windows scaling at 100%. Install the rebuilt
+Windows bridge from the native-viewport release; earlier packages cannot
+provide the physical browser-content measurements required for accurate
+windowed AOI mapping. Use one physical monitor for the tracker, browser and
+screen recording. Close the old bridge before starting the new package, and
+refresh the app to load the matching frontend/backend release.
 
-Calibrate and validate in Eye Tracker Manager before a sitting. Run
-`Check-eye-tracker.cmd` and check that the real device reports Fusion, 120 Hz,
-and valid samples; a successful connection alone is insufficient. The bridge
-reads the device's configured frequency and physical display area. The monitor
-diagonal is not a substitute for that measured/configured area. Tobii lists
-120 Hz support and a 50–80 cm operating distance for
+The layout-regression baseline remains a **1920×1080 CSS viewport** at 100%
+zoom, but native mapping works in an ordinary window, maximized or fullscreen.
+Desktop zoom/scaling are measured through physical content bounds and DPR;
+a smaller CSS viewport can require scrolling without changing authored option
+order. Edge's `Ctrl+0` reset and `F11` fullscreen shortcuts are documented by
+[Microsoft](https://support.microsoft.com/en-us/edge/keyboard-shortcuts-in-microsoft-edge).
+Pinch zoom and multiple displays remain unsupported.
+
+Calibrate and validate in Eye Tracker Manager before a sitting. In-app
+calibration stays disabled (`CALIBRATION_ENABLED=false`). Run
+`Check-eye-tracker.cmd` with the normal bridge closed, then start it again.
+Check that the real device reports Fusion, 120 Hz and valid samples; a
+successful connection alone is insufficient. The bridge reads the device's
+configured frequency and physical display area. The monitor diagonal is not a
+substitute for that measured/configured area. Tobii lists 120 Hz support and a
+50–80 cm operating distance for
 [Fusion](https://www.tobii.com/products/eye-trackers/screen-based/tobii-pro-fusion).
 
-Before collecting research data, make a short test recording on that PC. Look
-at known targets in the video, instructions, answer controls and a popup, then
-check the recorded gaze, replay and AOI export against those targets. Use the
-same display for the tracker, browser and screen recording. Software tests
-verify the mapping and data path with synthetic samples; they cannot measure
-the participant's calibration accuracy, physical alignment or device latency.
+Before collecting research data, make a short test recording on that PC in
+both windowed and fullscreen mode. Confirm the initial display measurement,
+then require **AOI-Zuordnung aktiv.** as well as raw gaze reception. That status
+requires an admitted sample with a matching native proof and verified DOM
+layout; raw sample counts alone are not enough. Look at known targets in the
+video, instructions, answer controls and a popup, then compare the recording,
+replay and AOI export against those targets. Repeat after moving/resizing the
+window and changing the intended zoom. Subsequent valid measurements recover
+automatically; brief transition samples remain unmapped. Software and Windows
+cursor tests verify the mapping path but cannot measure participant calibration
+accuracy, physical alignment or device latency. See
+[lab display guard](LAB_DISPLAY_GUARD.md) for the complete acceptance checklist.
 
 ## During a session
+
+- **Display measurement after moving or resizing the window.** The first native
+  measurement needs researcher confirmation. Later display changes briefly
+  block measured pages while fresh geometry stabilizes, then restore access
+  automatically. Drafts stay mounted; video remains paused until Play is
+  pressed. CK and case deadlines continue, and CK expiry still saves once and
+  moves to PCK. SoSci is exempt; returning to the study remeasures the native
+  viewport without another confirmation after the initial native setup.
+- **Raw gaze arrives but AOI mapping is waiting.** Check the updated Windows
+  bridge, foreground study tab and single calibrated display. A bridge
+  disconnect cannot silently downgrade a native session to estimated geometry.
+  **Mit aktueller Anzeige fortfahren** permits unverified continuation but does
+  not certify those samples for AOIs. Reload and confirm the measured setup
+  before collecting verified gaze/AOI data again.
 
 - **Navigation after a connectivity warning.** Requests still try the lab API
   even when Windows reports no Internet connection. Actual request failures

@@ -76,8 +76,16 @@ export default function DisplayGuard({
             aoiId="display_guard_dialog"
           >
             <p>{t('body')}</p>
-            <p>{t('setup')}</p>
-            <p role="status">{t(state.phase === 'ready' ? 'ready' : 'waiting')}</p>
+            <p>{t(state.profile === 'native_viewport_v1' ? 'native_setup' : 'setup')}</p>
+            <p role="status">
+              {t(
+                state.phase === 'ready'
+                  ? state.profile === 'native_viewport_v1'
+                    ? 'native_ready'
+                    : 'ready'
+                  : 'waiting',
+              )}
+            </p>
             {state.phase !== 'ready' && (
               <ul>
                 {state.reasons.map((reason) => (

@@ -1,4 +1,5 @@
 import { captureGeometry, type GazeAoi, type GazeLayout } from './gazeGeometry'
+import { currentNativeViewport } from './nativeViewport'
 import { displayGuardGeometry } from './displayGuard'
 
 type Box = { x: number; y: number; w: number; h: number }
@@ -107,6 +108,7 @@ export function capturePageGeometry(): GazeLayout {
   const viewport = window.visualViewport
   const isExtended = (window.screen as Screen & { isExtended?: boolean }).isExtended
   const guard = displayGuardGeometry()
+  const native = currentNativeViewport()
   return {
     ts: Date.now(),
     screen: {
@@ -139,6 +141,7 @@ export function capturePageGeometry(): GazeLayout {
     active_modal: modal ? modal.dataset.aoiModal || 'dialog' : null,
     visible: document.visibilityState !== 'hidden' && document.hasFocus(),
     ...(guard ? { display_guard: guard } : {}),
+    ...(native ? { native_viewport: native } : {}),
   }
 }
 

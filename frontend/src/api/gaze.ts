@@ -21,6 +21,8 @@ export interface GazeSample {
   lpd?: number | null
   rpd?: number | null
   device_ts?: number | null
+  viewport_id?: string | null
+  viewport_ts?: number | null
   // The observed layout for this sample; null means no unambiguous layout was available.
   geometry_ts?: number | null
 }

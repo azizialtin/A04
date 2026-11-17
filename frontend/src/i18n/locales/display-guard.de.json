@@ -21,6 +21,11 @@
     "viewport_zoom": "Der sichtbare Seitenausschnitt ist vergrößert oder verschoben.",
     "multiple_displays": "Der Browser meldet mehrere Bildschirme.",
     "window_focus": "Das Studienfenster ist nicht im Vordergrund.",
-    "clock_changed": "Die Systemzeit wurde verändert."
-  }
+    "clock_changed": "Die Systemzeit wurde verändert.",
+    "native_measurement": "Die Windows-Bridge muss die aktuelle Position der Studienseite noch bestätigen."
+  },
+  "native_setup": "Die Bildschirmposition der Studienseite wird direkt durch die Windows-Bridge gemessen. Vollbild und Fenstermodus werden unterstützt. Bitte lassen Sie die Studienseite auf dem Bildschirm des Eye-Trackers im Vordergrund.",
+  "native_ready": "Die Position der Studienseite wurde gemessen. Die Studienleitung kann die Blickdaten-Zuordnung bestätigen. Änderungen der Fenstergröße werden anschließend automatisch neu vermessen.",
+  "mapping_ready": "AOI-Zuordnung aktiv.",
+  "mapping_waiting": "AOI-Zuordnung wartet auf eine gültige Bildschirmmessung."
 }

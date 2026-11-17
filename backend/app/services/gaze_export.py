@@ -13,7 +13,21 @@ from typing import Any
 from app.services.display_guard import DisplayGuardIntervals
 from app.services.gaze_analysis import GazeLayout, finite_number
 
-RAW_COLUMNS = ["ts", "device_ts", "geometry_ts", "lx", "ly", "rx", "ry", "lv", "rv", "lpd", "rpd"]
+RAW_COLUMNS = [
+    "ts",
+    "device_ts",
+    "geometry_ts",
+    "lx",
+    "ly",
+    "rx",
+    "ry",
+    "lv",
+    "rv",
+    "lpd",
+    "rpd",
+    "viewport_id",
+    "viewport_ts",
+]
 DERIVED_COLUMNS = [
     "screen_x",
     "screen_y",

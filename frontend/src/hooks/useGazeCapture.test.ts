@@ -6,6 +6,7 @@ import type { GazeLayout } from '../lib/gazeGeometry'
 import { useGazeCapture } from './useGazeCapture'
 import { enqueue } from '../lib/outbox'
 import { gazeDeliveryWarning, resetGazeDeliverySession } from '../lib/gazeDelivery'
+import * as nativeMapping from '../lib/nativeViewport'
 import { displayGuardAllowsSample } from '../lib/displayGuard'
 vi.mock('../lib/outbox', () => ({ enqueue: vi.fn() }))
 
@@ -595,4 +596,168 @@ test('late row creation after leaving saves already received discovery frames wi
     socket.sent.filter((message) => (message as { type: string }).type === 'start_gaze'),
   ).toHaveLength(1)
   expect(socket.closed).toBe(true)
+})
+
+test('native gaze retains per-sample proof and maps only matching contemporaneous generations', async () => {
+  const proof: nativeMapping.NativeViewport = {
+    id: 'native-1',
+    tab_id: 'a'.repeat(32),
+    display: { x: 0, y: 0, w: 1920, h: 1080 },
+    content: { x: 100, y: 100, w: 1600, h: 900 },
+    css: { w: 1600, h: 900 },
+    dpr: 1,
+  }
+  vi.spyOn(nativeMapping, 'getNativeViewportSnapshot').mockReturnValue({
+    owner: 'person',
+    capable: true,
+    tabId: proof.tab_id,
+    proof,
+    errorCode: null,
+  })
+  vi.spyOn(nativeMapping, 'currentNativeViewport').mockReturnValue(proof)
+  layout = {
+    ...layout,
+    native_viewport: proof,
+    display_guard: { profile: 'native_viewport_v1', verified: true },
+  }
+  const { unmount, result } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  for (const [ts, viewport_ts, viewport_id] of [
+    [100010, 100010, proof.id],
+    [100020, 99900, proof.id],
+    [100030, 100030, 'old-generation'],
+  ] as const) {
+    socket.say({
+      type: 'gaze',
+      ts,
+      viewport_ts,
+      viewport_id,
+      lx: 0.3,
+      ly: 0.4,
+      lv: true,
+      rv: false,
+    })
+  }
+  expect(result.current.mappingVerified).toBe(false)
+  socket.say({
+    type: 'gaze',
+    ts: 100040,
+    viewport_ts: 100040,
+    viewport_id: proof.id,
+    lx: 0.3,
+    ly: 0.4,
+    lv: true,
+    rv: false,
+  })
+  expect(result.current.mappingVerified).toBe(true)
+  act(() => guardListeners.forEach((listener) => listener()))
+  expect(result.current.mappingVerified).toBe(false)
+  unmount()
+  await act(async () => {})
+  const saved = upload.mock.calls.flatMap(([, batch]) => batch)
+  expect(saved.map((sample) => sample.geometry_ts)).toEqual([100000, null, null, 100000])
+  expect(saved.map((sample) => sample.viewport_id)).toEqual([
+    proof.id,
+    proof.id,
+    'old-generation',
+    proof.id,
+  ])
+  expect(saved.map((sample) => sample.viewport_ts)).toEqual([100010, 99900, 100030, 100040])
+})
+
+test('a new native generation cannot borrow a previous layout or a future DOM measurement', async () => {
+  let proof: nativeMapping.NativeViewport = {
+    id: 'native-1',
+    tab_id: 'a'.repeat(32),
+    display: { x: 0, y: 0, w: 1920, h: 1080 },
+    content: { x: 100, y: 100, w: 1600, h: 900 },
+    css: { w: 1600, h: 900 },
+    dpr: 1,
+  }
+  vi.spyOn(nativeMapping, 'getNativeViewportSnapshot').mockImplementation(() => ({
+    owner: 'person',
+    capable: true,
+    tabId: proof.tab_id,
+    proof,
+    errorCode: null,
+  }))
+  vi.spyOn(nativeMapping, 'currentNativeViewport').mockImplementation(() => proof)
+  layout = {
+    ...layout,
+    native_viewport: proof,
+    display_guard: { profile: 'native_viewport_v1', verified: true },
+  }
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100100)
+  proof = { ...proof, id: 'native-2', content: { ...proof.content, x: 150 } }
+  layout = { ...layout, native_viewport: proof }
+  for (const ts of [100050, 100150])
+    socket.say({
+      type: 'gaze',
+      ts,
+      viewport_ts: ts,
+      viewport_id: proof.id,
+      lx: 0.3,
+      ly: 0.4,
+      lv: true,
+      rv: false,
+    })
+  unmount()
+  await act(async () => {})
+  const saved = upload.mock.calls.flatMap(([, batch]) => batch)
+  expect(saved.map((sample) => sample.geometry_ts)).toEqual([null, 100100])
+})
+
+test('native resume cannot claim mapping before a verified DOM snapshot exists', async () => {
+  const proof: nativeMapping.NativeViewport = {
+    id: 'native-1',
+    tab_id: 'a'.repeat(32),
+    display: { x: 0, y: 0, w: 1920, h: 1080 },
+    content: { x: 100, y: 100, w: 1600, h: 900 },
+    css: { w: 1600, h: 900 },
+    dpr: 1,
+  }
+  vi.spyOn(nativeMapping, 'getNativeViewportSnapshot').mockReturnValue({
+    owner: 'person',
+    capable: true,
+    tabId: proof.tab_id,
+    proof,
+    errorCode: null,
+  })
+  vi.spyOn(nativeMapping, 'currentNativeViewport').mockReturnValue(proof)
+  layout = {
+    ...layout,
+    native_viewport: proof,
+    display_guard: { profile: 'native_viewport_v1', verified: false },
+  }
+  const { unmount, result } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  const send = (ts: number) =>
+    socket.say({
+      type: 'gaze',
+      ts,
+      viewport_ts: ts,
+      viewport_id: proof.id,
+      lx: 0.3,
+      ly: 0.4,
+      lv: true,
+      rv: false,
+    })
+  send(100010)
+  expect(result.current.mappingVerified).toBe(false)
+  vi.setSystemTime(100100)
+  layout = { ...layout, display_guard: { profile: 'native_viewport_v1', verified: true } }
+  act(() => observers.forEach((listener) => listener()))
+  send(100050)
+  expect(result.current.mappingVerified).toBe(false)
+  send(100150)
+  expect(result.current.mappingVerified).toBe(true)
+  unmount()
+  await act(async () => {})
+  expect(upload.mock.calls.flatMap(([, batch]) => batch).map((s) => s.geometry_ts)).toEqual([
+    null,
+    null,
+    100100,
+  ])
 })

@@ -6,6 +6,12 @@ import { sameLayout, type GazeLayout } from '../lib/gazeGeometry'
 import { openGazeConnection, type GazeHealth } from '../lib/gazeConnection'
 import { gazeDeliveryGeneration, reportGazeDelivery } from '../lib/gazeDelivery'
 import { enqueue } from '../lib/outbox'
+import {
+  currentNativeViewport,
+  getNativeViewportSnapshot,
+  nativeSampleMatches,
+  NATIVE_VIEWPORT_PROFILE,
+} from '../lib/nativeViewport'
 import { displayGuardAllowsSample, subscribeDisplayGuard } from '../lib/displayGuard'
 
 const FLUSH_INTERVAL_MS = 2000
@@ -15,6 +21,7 @@ const MAX_LAYOUTS = 10_000
 
 /** Each measured screen owns its recording, samples, and timestamped DOM layouts. */
 export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120) {
+  const [mappingVerified, setMappingVerified] = useState<boolean | null>(null)
   const [health, setHealth] = useState<GazeHealth>({ state: 'connecting', received: 0, valid: 0 })
   const [issue, setIssue] = useState<'recording_failed' | 'upload_failed' | 'data_lost' | null>(
     null,
@@ -28,6 +35,13 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
   useEffect(() => {
     if (!stepKind || stepIndex === undefined) return
     let active = true
+    let mappedSample: boolean | null = null
+    setMappingVerified(null)
+    const reportMapping = (value: boolean | null) => {
+      if (!active || mappedSample === value) return
+      mappedSample = value
+      setMappingVerified(value)
+    }
     const deliveryGeneration = gazeDeliveryGeneration()
     setIssue(null)
     let currentIssue: typeof issue = null
@@ -91,6 +105,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     const layouts: GazeLayout[] = []
     const observed: number[] = []
     const timestampCounts = new Map<number, number>()
+    const nativeLayoutProofs = new Map<number, { id?: string; verified: boolean }>()
     let latest: GazeLayout | null = null
     let initialLayout: GazeLayout | null = null
     let sampleWork: Promise<void> | null = null
@@ -114,10 +129,14 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       observed.push(next.ts)
       if (next.ts < observed[observed.length - 2]) observed.sort((a, b) => a - b)
       timestampCounts.set(next.ts, (timestampCounts.get(next.ts) ?? 0) + 1)
+      nativeLayoutProofs.set(next.ts, {
+        id: next.native_viewport?.id,
+        verified: next.display_guard?.verified === true && next.visible !== false,
+      })
       return true
     }
 
-    const geometryAt = (timestamp: number): number | null => {
+    const geometryAt = (timestamp: number, nativeId?: string): number | null => {
       if (clockUncertain || (unavailableFrom !== null && timestamp >= unavailableFrom)) return null
       let low = 0
       let high = observed.length
@@ -127,7 +146,13 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
         else high = middle
       }
       const snapshot = observed[low - 1]
-      return snapshot !== undefined && timestampCounts.get(snapshot) === 1 ? snapshot : null
+      return snapshot !== undefined &&
+        timestampCounts.get(snapshot) === 1 &&
+        (nativeId === undefined ||
+          (nativeLayoutProofs.get(snapshot)?.id === nativeId &&
+            nativeLayoutProofs.get(snapshot)?.verified === true))
+        ? snapshot
+        : null
     }
 
     const flushLayouts = (final = false): Promise<void> => {
@@ -300,6 +325,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       onHealth: (value) => {
         currentHealth = value
         setHealth(value)
+        if (value.state !== 'tracking' && getNativeViewportSnapshot().capable) reportMapping(false)
         logTransition()
       },
       onReady: (frequency, start) => {
@@ -307,6 +333,23 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       },
       onSample: (msg) => {
         if (!active) return
+        // A new proof never borrows an older DOM layout. Measure now, so samples
+        // captured before this measurement remain outside its timestamp boundary.
+        const native = currentNativeViewport()
+        const usesNative = getNativeViewportSnapshot().capable
+        if (usesNative && latest?.native_viewport?.id !== native?.id) syncGeometry()
+        const nativeAllowed =
+          !usesNative ||
+          (latest?.display_guard?.profile === NATIVE_VIEWPORT_PROFILE &&
+            latest.display_guard.verified === true &&
+            latest.visible !== false &&
+            latest.native_viewport?.id === native?.id &&
+            nativeSampleMatches(msg, native))
+        const geometryReference =
+          nativeAllowed && displayGuardAllowsSample(msg.ts as number)
+            ? geometryAt(msg.ts as number, usesNative ? native?.id : undefined)
+            : null
+        reportMapping(usesNative ? geometryReference !== null : null)
         samples.push({
           ts: msg.ts as number,
           lx: typeof msg.lx === 'number' ? msg.lx : null,
@@ -318,9 +361,16 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
           lpd: typeof msg.lpd === 'number' ? msg.lpd : null,
           rpd: typeof msg.rpd === 'number' ? msg.rpd : null,
           device_ts: typeof msg.device_ts === 'number' ? msg.device_ts : null,
-          geometry_ts: displayGuardAllowsSample(msg.ts as number)
-            ? geometryAt(msg.ts as number)
-            : null,
+          ...(usesNative
+            ? {
+                viewport_id: typeof msg.viewport_id === 'string' ? msg.viewport_id : null,
+                viewport_ts:
+                  typeof msg.viewport_ts === 'number' && Number.isFinite(msg.viewport_ts)
+                    ? msg.viewport_ts
+                    : null,
+              }
+            : {}),
+          geometry_ts: geometryReference,
         })
         if (samples.length > MAX_PENDING) {
           samples.shift()
@@ -344,6 +394,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     // rejected synchronously; the next frame supplies the verified layout.
     let guardFrame = 0
     const stopGuard = subscribeDisplayGuard(() => {
+      if (getNativeViewportSnapshot().capable) reportMapping(false)
       if (guardFrame) return
       guardFrame = requestAnimationFrame(() => {
         guardFrame = 0
@@ -369,5 +420,5 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       void finalizeRecording(id)
     }
   }, [videoId, stepKind, stepIndex, questionnaireId, fallbackRateHz])
-  return { ...health, issue, retry: () => retry.current() }
+  return { ...health, issue, mappingVerified, retry: () => retry.current() }
 }

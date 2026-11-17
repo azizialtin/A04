@@ -1,7 +1,16 @@
+import {
+  currentNativeViewport,
+  getNativeViewportSnapshot,
+  NATIVE_VIEWPORT_PROFILE,
+  type NativeViewport,
+} from './nativeViewport'
+
 export const DISPLAY_GUARD_ENABLED =
   import.meta.env.MODE === 'lab' || import.meta.env.VITE_LAB_DISPLAY_GUARD === 'true'
 export const DISPLAY_GUARD_PROFILE = 'lab_1080p' as const
 export const DISPLAY_STABLE_MS = 500
+
+export type DisplayGuardProfile = typeof DISPLAY_GUARD_PROFILE | typeof NATIVE_VIEWPORT_PROFILE
 
 export type DisplayGuardScope = 'required' | 'monitor' | 'suspended'
 
@@ -16,6 +25,7 @@ export type DisplayGuardReason =
   | 'multiple_displays'
   | 'window_focus'
   | 'clock_changed'
+  | 'native_measurement'
 
 export interface DisplayMetrics {
   screenWidth: number
@@ -35,6 +45,7 @@ export interface DisplayMetrics {
 
 export interface DisplayGuardSnapshot {
   enabled: boolean
+  profile?: DisplayGuardProfile
   phase: 'disabled' | 'suspended' | 'blocked' | 'ready' | 'verified'
   owner: string | null
   required: boolean
@@ -50,7 +61,7 @@ export interface DisplayGuardEvent {
     'display_guard_interrupted' | 'display_guard_resumed' | 'display_guard_continued_unverified'
   client_ts: number
   payload: {
-    profile: typeof DISPLAY_GUARD_PROFILE
+    profile: DisplayGuardProfile
     detected_at: number
     reasons: DisplayGuardReason[]
   }
@@ -116,6 +127,8 @@ export class DisplayGuardController {
   private verifiedAt = Infinity
   private verifiedObservations: number[] = []
   private interruptedFrom: number | null = null
+  private nativeConfirmed = false
+  private nativeGeometryId: string | null = null
   private sink: (event: DisplayGuardEvent) => void = () => {}
 
   constructor(
@@ -123,9 +136,14 @@ export class DisplayGuardController {
     private read = readDisplayMetrics,
     private wallTime = Date.now,
     private monotonicTime = () => performance.now(),
+    private native = (): { capable: boolean; proof: NativeViewport | null } => ({
+      capable: getNativeViewportSnapshot().capable,
+      proof: currentNativeViewport(),
+    }),
   ) {
     this.snapshot = {
       enabled,
+      profile: DISPLAY_GUARD_PROFILE,
       phase: enabled ? 'blocked' : 'disabled',
       owner: null,
       required: false,
@@ -160,7 +178,11 @@ export class DisplayGuardController {
     this.sink({
       event_type,
       client_ts: Math.max(0, Math.floor(timestamp)),
-      payload: { profile: DISPLAY_GUARD_PROFILE, detected_at: this.wallTime(), reasons },
+      payload: {
+        profile: this.snapshot.profile ?? DISPLAY_GUARD_PROFILE,
+        detected_at: this.wallTime(),
+        reasons,
+      },
     })
   }
 
@@ -186,6 +208,9 @@ export class DisplayGuardController {
       this.interruptedFrom = null
       this.stableSince = null
       this.suspendedAt = null
+      this.nativeConfirmed = false
+      this.nativeGeometryId = null
+      this.publish({ profile: DISPLAY_GUARD_PROFILE })
     }
     if (!owner || scope === 'suspended') {
       this.stableSince = null
@@ -297,7 +322,44 @@ export class DisplayGuardController {
     if (!this.snapshot.enabled || this.snapshot.phase === 'suspended') return true
     if (!this.snapshot.owner) return false
     const now = this.wallTime()
-    const reasons = displayProblems(this.read(), this.snapshot.focusRequired)
+    const native = this.native()
+    if (native.capable && this.snapshot.profile !== NATIVE_VIEWPORT_PROFILE) {
+      if (this.snapshot.phase === 'verified')
+        this.invalidate(['native_measurement'], this.lastObserved ?? now)
+      this.stableSince = null
+      this.verifiedAt = Infinity
+      this.verifiedObservations = []
+      this.interruptedFrom = this.snapshot.required ? now : null
+      this.nativeConfirmed = false
+      this.nativeGeometryId = null
+      this.publish({
+        profile: NATIVE_VIEWPORT_PROFILE,
+        phase: 'blocked',
+        reasons: ['native_measurement'],
+      })
+      if (this.snapshot.required)
+        this.event('display_guard_interrupted', now, ['native_measurement'])
+    }
+    const usesNative = this.snapshot.profile === NATIVE_VIEWPORT_PROFILE
+    const metrics = this.read()
+    const reasons: DisplayGuardReason[] = usesNative
+      ? [
+          ...(!native.proof ? ['native_measurement' as const] : []),
+          ...(this.snapshot.focusRequired && (!metrics.visible || !metrics.focused)
+            ? ['window_focus' as const]
+            : []),
+          ...(metrics.extended ? ['multiple_displays' as const] : []),
+          ...(metrics.viewport &&
+          (metrics.viewport.scale !== 1 || metrics.viewport.x !== 0 || metrics.viewport.y !== 0)
+            ? ['viewport_zoom' as const]
+            : []),
+        ]
+      : displayProblems(metrics, this.snapshot.focusRequired)
+    if (usesNative && native.proof && native.proof.id !== this.nativeGeometryId) {
+      if (this.nativeGeometryId !== null)
+        this.invalidate(['native_measurement'], this.lastObserved ?? now)
+      this.nativeGeometryId = native.proof.id
+    }
     if (now < this.largestTimestamp) reasons.push('clock_changed')
     this.largestTimestamp = Math.max(now, this.largestTimestamp)
     const preceding = Math.min(this.lastObserved ?? now, now)
@@ -316,6 +378,16 @@ export class DisplayGuardController {
     }
     this.stableSince ??= this.monotonicTime()
     const ready = this.monotonicTime() - this.stableSince >= DISPLAY_STABLE_MS
+    if (
+      ready &&
+      usesNative &&
+      this.nativeConfirmed &&
+      !this.snapshot.unverifiedContinuation &&
+      this.snapshot.required
+    ) {
+      this.confirm(now)
+      return true
+    }
     this.publish({
       phase: ready ? 'ready' : 'blocked',
       reasons: [ready ? 'confirmation_required' : 'checking_display'],
@@ -326,13 +398,17 @@ export class DisplayGuardController {
   resume = (): boolean => {
     this.check()
     if (!this.snapshot.required || this.snapshot.phase !== 'ready') return false
-    const now = this.wallTime()
+    this.confirm(this.wallTime())
+    return true
+  }
+
+  private confirm(now: number) {
+    this.nativeConfirmed = this.snapshot.profile === NATIVE_VIEWPORT_PROFILE
     this.verifiedAt = now
     this.verifiedObservations = [now]
     this.event('display_guard_resumed', now, [])
     this.interruptedFrom = null
     this.publish({ phase: 'verified', reasons: [], unverifiedContinuation: false })
-    return true
   }
 
   /** Permit piloting without closing the gaze-exclusion interval or claiming verification. */
@@ -377,7 +453,7 @@ export function displayGuardGeometry() {
   if (!getDisplayGuardSnapshot().enabled) return undefined
   checkDisplayGuard()
   return {
-    profile: DISPLAY_GUARD_PROFILE,
+    profile: getDisplayGuardSnapshot().profile ?? DISPLAY_GUARD_PROFILE,
     verified: getDisplayGuardSnapshot().required && getDisplayGuardSnapshot().phase === 'verified',
   }
 }

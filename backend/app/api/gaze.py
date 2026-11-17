@@ -78,8 +78,29 @@ class GazeAOI(Rect):
 
 
 class DisplayGuard(BaseModel):
-    profile: Literal["lab_1080p"]
+    profile: Literal["lab_1080p", "native_viewport_v1"]
     verified: StrictBool
+
+
+class NativeSize(BaseModel):
+    w: float = Field(gt=0, allow_inf_nan=False, strict=True)
+    h: float = Field(gt=0, allow_inf_nan=False, strict=True)
+
+
+class NativeRect(NativeSize):
+    x: float = Field(allow_inf_nan=False, strict=True)
+    y: float = Field(allow_inf_nan=False, strict=True)
+
+
+class NativeViewport(BaseModel):
+    """Native physical bounds paired with this tab's CSS viewport and generation."""
+
+    id: str = Field(min_length=1, max_length=128)
+    tab_id: str = Field(pattern=r"^[0-9a-fA-F]{32}$")
+    display: NativeRect
+    content: NativeRect
+    css: NativeSize
+    dpr: float = Field(gt=0, allow_inf_nan=False, strict=True)
 
 
 class GazeGeometry(BaseModel):
@@ -100,10 +121,12 @@ class GazeGeometry(BaseModel):
     active_modal: str | None = Field(default=None, max_length=120)
     visible: bool = True
     display_guard: DisplayGuard | None = None
+    native_viewport: NativeViewport | None = None
 
     def snapshot(self) -> dict:
         # Keep retries of historical snapshots equal to their stored shape.
-        return self.model_dump(exclude={"display_guard"} if self.display_guard is None else set())
+        absent = {key for key in ("display_guard", "native_viewport") if getattr(self, key) is None}
+        return self.model_dump(exclude=absent)
 
 
 class StartRecordingRequest(BaseModel):
@@ -133,6 +156,8 @@ class GazeSample(BaseModel):
     lpd: float | None = None
     rpd: float | None = None
     device_ts: int | None = None
+    viewport_id: str | None = Field(default=None, min_length=1, max_length=128)
+    viewport_ts: float | None = Field(default=None, allow_inf_nan=False, strict=True)
 
 
 class BatchSamplesRequest(BaseModel):

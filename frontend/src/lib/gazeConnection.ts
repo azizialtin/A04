@@ -1,3 +1,4 @@
+import { nativeGazeLease, subscribeNativeViewport } from './nativeViewport'
 import { TOBII_WS_URL } from './tobii'
 
 export type GazeState =
@@ -37,6 +38,7 @@ export function openGazeConnection(options: {
   let ready = false
   let requested = false
   let mock = false
+  let nativeTab = nativeGazeLease().tab_id
 
   const publish = (next: GazeState = state, error_code: string | null = null) => {
     state = next
@@ -83,7 +85,7 @@ export function openGazeConnection(options: {
     const start = () => {
       if (!current() || requested) return
       try {
-        ws.send(JSON.stringify({ type: 'start_gaze' }))
+        ws.send(JSON.stringify({ type: 'start_gaze', ...nativeGazeLease() }))
         requested = true
         startedAt = performance.now()
         if (state !== 'tracker_missing') publish('waiting_samples')
@@ -164,6 +166,14 @@ export function openGazeConnection(options: {
       else if (received === 1) publish('invalid_samples')
     }
   }
+  const stopNative = subscribeNativeViewport(() => {
+    const tab = nativeGazeLease().tab_id
+    if (!active || tab === nativeTab) return
+    nativeTab = tab
+    attempts = 0
+    publish('connecting')
+    connect()
+  })
   const watchdog = window.setInterval(() => {
     if (!active) return
     if (requested && performance.now() - (lastSample || startedAt) > 5000) {
@@ -193,6 +203,7 @@ export function openGazeConnection(options: {
     },
     close: () => {
       active = false
+      stopNative()
       window.clearTimeout(retryTimer)
       window.clearInterval(watchdog)
       retire()

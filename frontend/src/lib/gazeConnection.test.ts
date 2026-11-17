@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { openGazeConnection } from './gazeConnection'
 
+const lease = vi.hoisted(() => ({ tab: null as string | null, listeners: new Set<() => void>() }))
+vi.mock('./nativeViewport', () => ({
+  nativeGazeLease: () => (lease.tab ? { tab_id: lease.tab } : {}),
+  subscribeNativeViewport: (listener: () => void) => {
+    lease.listeners.add(listener)
+    return () => lease.listeners.delete(listener)
+  },
+}))
+
 class Socket {
   static OPEN = 1
   static all: Socket[] = []
@@ -31,6 +40,8 @@ beforeEach(() => {
     toFake: ['Date', 'performance', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
   })
   Socket.all = []
+  lease.tab = null
+  lease.listeners.clear()
   health.mockReset()
   sample.mockReset()
   vi.stubGlobal('WebSocket', Socket)
@@ -170,4 +181,26 @@ test('SDK failures retain their diagnostic code without exposing free-text bridg
     expect.objectContaining({ state: 'tracker_missing', error_code: 'sdk_unavailable' }),
   )
   expect(health.mock.lastCall![0]).not.toHaveProperty('error')
+})
+
+test('a native capability arriving after capture starts rebinds that socket without trusting its old stream', () => {
+  status()
+  gaze()
+  const old = Socket.all[0],
+    oldHandler = old.onmessage!
+  expect(old.sent).toContainEqual({ type: 'start_gaze' })
+  lease.tab = 'a'.repeat(32)
+  lease.listeners.forEach((listener) => listener())
+  expect(old.closed).toBe(true)
+  expect(old.sent).toContainEqual({ type: 'stop_gaze' })
+  expect(Socket.all).toHaveLength(2)
+  status()
+  expect(Socket.all[1].sent).toContainEqual({ type: 'start_gaze', tab_id: lease.tab })
+  const previous = sample.mock.calls.length
+  oldHandler({ data: JSON.stringify({ type: 'gaze', ts: 10, lv: true, lx: 0.4, ly: 0.5 }) })
+  expect(sample).toHaveBeenCalledTimes(previous)
+  gaze()
+  expect(sample).toHaveBeenCalledTimes(previous + 1)
+  connection.close()
+  expect(lease.listeners.size).toBe(0)
 })

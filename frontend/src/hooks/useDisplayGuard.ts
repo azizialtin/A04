@@ -6,6 +6,7 @@ import {
   type DisplayGuardScope,
   type DisplayGuardSnapshot,
 } from '../lib/displayGuard'
+import { nativeViewport } from '../lib/nativeViewport'
 import { enqueue } from '../lib/outbox'
 
 export function useDisplayGuard(
@@ -18,6 +19,7 @@ export function useDisplayGuard(
 
   useLayoutEffect(() => {
     displayGuard.configure(owner ?? null, scope, (event) => enqueue('event', { ...event }))
+    if (DISPLAY_GUARD_ENABLED) nativeViewport.configure(owner ?? null, scope !== 'suspended')
   }, [owner, scope])
 
   useLayoutEffect(() => {
@@ -35,12 +37,14 @@ export function useDisplayGuard(
     }
     const geometryChanged = (event: Event) => {
       displayGuard.interrupt('window_size', eventTime(event))
+      nativeViewport.invalidate('checking_display')
       check()
     }
     const focusChanged = (event: Event) => {
       // A queued blur can originate on the preceding measured page. Quiet
       // pages keep that boundary without preventing their own interaction.
       displayGuard.interrupt('window_focus', eventTime(event))
+      nativeViewport.invalidate('window_focus')
       check()
     }
     const keys = (event: KeyboardEvent) => {
@@ -66,9 +70,12 @@ export function useDisplayGuard(
     document.addEventListener('wheel', wheel, { capture: true, passive: false })
     window.visualViewport?.addEventListener('resize', geometryChanged)
     window.visualViewport?.addEventListener('scroll', check)
+    const stopNative = nativeViewport.subscribe(check)
     const timer = window.setInterval(check, 125)
     return () => {
       clearInterval(timer)
+      stopNative()
+      nativeViewport.release(owner)
       window.removeEventListener('resize', geometryChanged)
       window.removeEventListener('focus', check)
       window.removeEventListener('blur', focusChanged)

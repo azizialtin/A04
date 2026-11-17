@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 
 import type { SessionStep } from '../src/api/participant'
 import type { Question } from '../src/lib/questionnaire'
+import type { NativeViewport } from '../src/lib/nativeViewport'
 
 const API = 'http://a04.invalid'
 const PARTICIPANT = 'QA-DISPLAY-GUARD'
@@ -45,7 +46,29 @@ function questionnaire(index = 0, ck = false): SessionStep {
   }
 }
 
-async function setup(page: Page, steps: SessionStep[], ckDuration = 420_000) {
+type NativeFixture = {
+  x: number
+  y: number
+  generation: number
+  proof?: NativeViewport
+  gaze: [number, number]
+  sampleId?: string
+  sampleDelay?: number
+  unavailable?: boolean
+}
+const nativeFixture = (x = 120, y = 90): NativeFixture => ({
+  x,
+  y,
+  generation: 0,
+  gaze: [0.5, 0.5],
+})
+
+async function setup(
+  page: Page,
+  steps: SessionStep[],
+  ckDuration = 420_000,
+  native?: NativeFixture,
+) {
   const state = {
     current: 0,
     visits: [] as Record<string, unknown>[],
@@ -55,7 +78,16 @@ async function setup(page: Page, steps: SessionStep[], ckDuration = 420_000) {
     finishes: [] as Record<string, unknown>[],
     recordings: [] as Record<string, unknown>[],
     layouts: [] as Record<string, unknown>[],
-    samples: [] as { ts: number; geometry_ts: number | null; lpd?: number; rpd?: number }[],
+    samples: [] as {
+      ts: number
+      geometry_ts: number | null
+      lpd?: number
+      rpd?: number
+      lx: number
+      ly: number
+      viewport_id?: string | null
+      viewport_ts?: number | null
+    }[],
     commands: [] as string[],
     screenStarts: 0,
     unexpected: [] as string[],
@@ -79,6 +111,7 @@ async function setup(page: Page, steps: SessionStep[], ckDuration = 420_000) {
       JSON.stringify({
         type: 'status',
         connected: true,
+        ...(native ? { native_viewport: true } : {}),
         frequency: 120,
         screen_recording: true,
         stimulus_audio: false,
@@ -88,8 +121,57 @@ async function setup(page: Page, steps: SessionStep[], ckDuration = 420_000) {
     )
     let timer: ReturnType<typeof setInterval> | undefined
     socket.onMessage((message) => {
-      const command = JSON.parse(String(message)).type as string
+      const request = JSON.parse(String(message))
+      const command = request.type as string
       state.commands.push(command)
+      if (native && command === 'viewport_probe') {
+        if (native.unavailable) {
+          socket.send(
+            JSON.stringify({
+              type: 'viewport_status',
+              request_id: request.request_id,
+              tab_id: request.tab_id,
+              ok: false,
+              error_code: 'not_foreground',
+              observed_at: Date.now(),
+            }),
+          )
+          return
+        }
+        const content = {
+          x: native.x,
+          y: native.y,
+          w: Math.round(request.css.w * request.dpr),
+          h: Math.round(request.css.h * request.dpr),
+        }
+        const previous = native.proof
+        if (
+          !previous ||
+          previous.tab_id !== request.tab_id ||
+          previous.dpr !== request.dpr ||
+          JSON.stringify(previous.content) !== JSON.stringify(content)
+        )
+          native.generation++
+        native.proof = {
+          id: `native-browser-test:${native.generation}`,
+          tab_id: request.tab_id,
+          display: { x: 0, y: 0, w: 1920, h: 1080 },
+          content,
+          css: request.css,
+          dpr: request.dpr,
+        }
+        socket.send(
+          JSON.stringify({
+            type: 'viewport_status',
+            request_id: request.request_id,
+            tab_id: request.tab_id,
+            ok: true,
+            observed_at: Date.now(),
+            native_viewport: native.proof,
+          }),
+        )
+        return
+      }
       if (command === 'start_gaze' && !timer)
         timer = setInterval(
           () =>
@@ -97,10 +179,18 @@ async function setup(page: Page, steps: SessionStep[], ckDuration = 420_000) {
               JSON.stringify({
                 type: 'gaze',
                 ts: Date.now(),
-                lx: 0.5,
-                ly: 0.5,
-                rx: 0.5,
-                ry: 0.5,
+                lx: native?.gaze[0] ?? 0.5,
+                ly: native?.gaze[1] ?? 0.5,
+                rx: native?.gaze[0] ?? 0.5,
+                ry: native?.gaze[1] ?? 0.5,
+                ...(native
+                  ? {
+                      viewport_id: native.unavailable
+                        ? null
+                        : (native.sampleId ?? native.proof?.id ?? null),
+                      viewport_ts: Date.now() - (native.sampleDelay ?? 0),
+                    }
+                  : {}),
                 lv: true,
                 rv: true,
                 lpd: 3.2,
@@ -1315,5 +1405,250 @@ test('unverified continuation recovers an interrupted draft and does not recerti
   expect(state.responses[0]).toMatchObject({
     answers: { answer_0: 'Bereits begonnene Antwort bleibt bestehen' },
   })
+  expect(state.unexpected).toEqual([])
+})
+
+for (const mode of ['windowed', 'fullscreen', 'zoomed'] as const) {
+  test(`native viewport maps received gaze against actual DOM AOIs in ${mode} mode`, async ({
+    page,
+  }, info) => {
+    const native = nativeFixture(mode === 'fullscreen' ? 0 : 120, mode === 'fullscreen' ? 0 : 90)
+    const dpr = mode === 'zoomed' ? 1.25 : 1
+    await page.addInitScript((scale) => {
+      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => scale })
+      Object.defineProperty(window.screen, 'width', { configurable: true, get: () => 1920 })
+      Object.defineProperty(window.screen, 'height', { configurable: true, get: () => 1080 })
+    }, dpr)
+    await page.setViewportSize(
+      mode === 'fullscreen' ? { width: 1920, height: 1080 } : { width: 1152, height: 640 },
+    )
+    const state = await setup(page, [questionnaire(), questionnaire(1)], 420_000, native)
+    await page.goto('/session')
+    if (mode === 'fullscreen') await page.getByRole('button', { name: 'Vollbild öffnen' }).click()
+    await expect(
+      page.getByText('Die Position der Studienseite wurde gemessen.', { exact: false }),
+    ).toBeVisible()
+    await resume(page)
+    await expect.poll(() => state.recordings.length).toBe(1)
+    await page.locator('textarea').fill('Erfasste Antwort mit gemessener Fensterposition')
+    const target = await page.locator('textarea').evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return {
+        x: r.x + r.width / 2,
+        y: r.y + r.height / 2,
+        aoi: el.closest('[data-aoi]')?.getAttribute('data-aoi'),
+      }
+    })
+    expect(target.aoi).toBeTruthy()
+    const proof = native.proof!
+    native.gaze = [
+      (proof.content.x + target.x * proof.dpr) / proof.display.w,
+      (proof.content.y + target.y * proof.dpr) / proof.display.h,
+    ]
+    const from = Date.now()
+    await expect
+      .poll(
+        () =>
+          state.samples.filter((sample) => sample.ts > from && sample.geometry_ts !== null).length,
+      )
+      .toBeGreaterThan(5)
+    const rows = state.samples.filter((sample) => sample.ts > from && sample.geometry_ts !== null)
+    expect(
+      rows.every(
+        (sample) =>
+          sample.viewport_id === proof.id && Math.abs(sample.viewport_ts! - sample.ts) <= 50,
+      ),
+    ).toBe(true)
+    const layouts = [state.recordings[0].geometry, ...state.layouts] as Array<
+      Record<string, unknown>
+    >
+    for (const row of rows) {
+      const geometry = layouts.find((layout) => layout.ts === row.geometry_ts)!
+      expect(geometry).toMatchObject({
+        display_guard: { profile: 'native_viewport_v1', verified: true },
+        native_viewport: proof,
+      })
+      const x = (row.lx * proof.display.w - proof.content.x) / proof.dpr
+      const y = (row.ly * proof.display.h - proof.content.y) / proof.dpr
+      const areas = geometry.aois as Array<{
+        id: string
+        x: number
+        y: number
+        w: number
+        h: number
+      }>
+      const area = areas.find((aoi) => aoi.id === target.aoi)!
+      expect(area).toBeTruthy()
+      expect(x).toBeGreaterThanOrEqual(area.x)
+      expect(x).toBeLessThan(area.x + area.w)
+      expect(y).toBeGreaterThanOrEqual(area.y)
+      expect(y).toBeLessThan(area.y + area.h)
+    }
+    expect(state.layouts.length).toBeLessThan(20) // Heartbeat proof must not exhaust the snapshot limit.
+    expect(
+      state.events.some((event) => event.event_type === 'display_guard_continued_unverified'),
+    ).toBe(false)
+    writeFileSync(
+      info.outputPath(`native-${mode}-roundtrip.json`),
+      JSON.stringify(
+        { layouts, samples: rows, expected_aoi: target.aoi, events: state.events },
+        null,
+        2,
+      ),
+    )
+    await page.screenshot({ path: info.outputPath(`native-${mode}-mapping.png`) })
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+    expect(state.responses[0]).toMatchObject({
+      answers: { answer_0: 'Erfasste Antwort mit gemessener Fensterposition' },
+    })
+    expect(state.unexpected).toEqual([])
+  })
+}
+
+test('native viewport remeasures movement and resize automatically without losing a draft', async ({
+  page,
+}, info) => {
+  const native = nativeFixture()
+  await page.setViewportSize({ width: 1152, height: 640 })
+  const state = await setup(page, [questionnaire()], 420_000, native)
+  await page.goto('/session')
+  await resume(page)
+  await page.locator('textarea').fill('Entwurf bei Fensteränderung')
+  await expect.poll(() => state.visits.length).toBe(1)
+  const visit = state.visits[0].visit_id
+  const firstId = native.proof!.id
+  native.x = 240
+  native.y = 135
+  await page.setViewportSize({ width: 1000, height: 700 })
+  await expect.poll(() => native.proof?.id).not.toBe(firstId)
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden({ timeout: 6000 })
+  await expect(page.locator('textarea')).toHaveValue('Entwurf bei Fensteränderung')
+  expect(state.visits).toHaveLength(1)
+  expect(state.visits[0].visit_id).toBe(visit)
+  const now = Date.now()
+  await expect
+    .poll(
+      () =>
+        state.samples.filter(
+          (row) => row.ts > now && row.geometry_ts !== null && row.viewport_id === native.proof!.id,
+        ).length,
+    )
+    .toBeGreaterThan(5)
+  expect(
+    state.events.filter(
+      (event) =>
+        event.event_type === 'display_guard_resumed' &&
+        (event.payload as { profile?: string }).profile === 'native_viewport_v1',
+    ).length,
+  ).toBeGreaterThanOrEqual(2)
+  expect(
+    state.events.some((event) => event.event_type === 'display_guard_continued_unverified'),
+  ).toBe(false)
+  await page.screenshot({ path: info.outputPath('native-resized-draft.png') })
+})
+
+test('native viewport excludes only samples with a stale or different physical geometry proof', async ({
+  page,
+}) => {
+  const native = nativeFixture()
+  await page.setViewportSize({ width: 1152, height: 640 })
+  const state = await setup(page, [questionnaire()], 420_000, native)
+  await page.goto('/session')
+  await resume(page)
+  await expect
+    .poll(() => state.samples.filter((row) => row.geometry_ts !== null).length)
+    .toBeGreaterThan(5)
+  native.sampleId = 'queued-from-previous-window'
+  const mismatchedAt = Date.now()
+  await expect
+    .poll(
+      () =>
+        state.samples.filter((row) => row.ts > mismatchedAt && row.viewport_id === native.sampleId)
+          .length,
+    )
+    .toBeGreaterThan(5)
+  expect(
+    state.samples
+      .filter((row) => row.ts > mismatchedAt && row.viewport_id === native.sampleId)
+      .every((row) => row.geometry_ts === null),
+  ).toBe(true)
+  native.sampleId = undefined
+  native.sampleDelay = 200
+  const staleAt = Date.now()
+  await expect
+    .poll(
+      () =>
+        state.samples.filter((row) => row.ts > staleAt && row.viewport_id === native.proof!.id)
+          .length,
+    )
+    .toBeGreaterThan(5)
+  expect(
+    state.samples.filter((row) => row.ts > staleAt).every((row) => row.geometry_ts === null),
+  ).toBe(true)
+  native.sampleDelay = 0
+  const recoveredAt = Date.now()
+  await expect
+    .poll(
+      () => state.samples.filter((row) => row.ts > recoveredAt && row.geometry_ts !== null).length,
+    )
+    .toBeGreaterThan(5)
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+})
+
+test('native windowed CK deadline and SoSci return retain verified mapping', async ({
+  page,
+  context,
+}) => {
+  const native = nativeFixture()
+  await page.setViewportSize({ width: 1152, height: 640 })
+  const state = await setup(
+    page,
+    [
+      questionnaire(0, true),
+      {
+        kind: 'sosci',
+        index: 1,
+        completed: false,
+        variant: 'pretest',
+        url: 'https://survey.invalid/form',
+        id_param: 'participant',
+        participant_id: PARTICIPANT,
+      },
+      questionnaire(2),
+    ],
+    5000,
+    native,
+  )
+  await context.route('https://survey.invalid/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<h1>Synthetic survey</h1>' }),
+  )
+  await page.goto('/session')
+  await resume(page)
+  await page.locator('textarea').fill('Native CK-Teilantwort')
+  const deadline = state.timing?.deadline_ms
+  await page.setViewportSize({ width: 1100, height: 680 })
+  await expect.poll(() => state.finishes.length, { timeout: 10000 }).toBe(1)
+  expect(state.timing?.deadline_ms).toBe(deadline)
+  expect(state.finishes[0]).toMatchObject({
+    reason: 'timer_expired',
+    answers: { [manifest.ck_tasks[0].question.id]: { explanation: 'Native CK-Teilantwort' } },
+  })
+  const popupPromise = page.waitForEvent('popup')
+  await page.getByRole('link', { name: 'Fragebogen öffnen' }).click()
+  const popup = await popupPromise
+  await expect(popup.getByRole('heading', { name: 'Synthetic survey' })).toBeVisible()
+  await popup.close()
+  await page.bringToFront()
+  await page.getByRole('button', { name: 'Ich habe den Fragebogen abgeschlossen' }).click()
+  await expect(page.getByRole('heading', { name: 'Prüfseite 3', exact: true })).toBeVisible({
+    timeout: 6000,
+  })
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  const now = Date.now()
+  await expect
+    .poll(() => state.samples.filter((row) => row.ts > now && row.geometry_ts !== null).length)
+    .toBeGreaterThan(5)
+  expect(state.finishes).toHaveLength(1)
   expect(state.unexpected).toEqual([])
 })
