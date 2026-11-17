@@ -104,6 +104,7 @@ jobs:
           path: |
             tobii-service/native-viewport-tests.xml
             tobii-service/native-viewport-windows.json
+            tobii-service/native-viewport-permission-windows.json
             tobii-service/native-viewport-*.png
           if-no-files-found: ignore
           retention-days: 30

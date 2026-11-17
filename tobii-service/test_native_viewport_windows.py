@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import ctypes
 import json
 import os
@@ -20,6 +21,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import urlopen
+from urllib.error import HTTPError
 from uuid import uuid4
 
 import pytest
@@ -67,6 +69,61 @@ class CDP:
         )
         assert "exceptionDetails" not in result, result
         return result["result"].get("value")
+
+
+class InterceptingCDP(CDP):
+    """Keep request interception responsive while other CDP calls await replies."""
+
+    def __init__(self, socket, intercept):
+        super().__init__(socket)
+        self.intercept = intercept
+        self.pending = {}
+        self.tasks = set()
+        self.errors = []
+        self.reader = asyncio.create_task(self._read())
+
+    async def _read(self):
+        try:
+            async for raw in self.socket:
+                message = json.loads(raw)
+                future = self.pending.get(message.get("id"))
+                if future is not None and not future.done():
+                    future.set_result(message)
+                elif message.get("method") == "Fetch.requestPaused":
+                    task = asyncio.create_task(self._intercept(message["params"]))
+                    self.tasks.add(task)
+                    task.add_done_callback(self.tasks.discard)
+        finally:
+            for future in self.pending.values():
+                if not future.done():
+                    future.set_exception(ConnectionError("Edge CDP closed"))
+
+    async def _intercept(self, params):
+        try:
+            await self.intercept(self, params)
+        except Exception as error:
+            self.errors.append(f"{type(error).__name__}: {error}")
+
+    async def call(self, method, params=None):
+        self.counter += 1
+        identifier = self.counter
+        future = asyncio.get_running_loop().create_future()
+        self.pending[identifier] = future
+        try:
+            await self.socket.send(
+                json.dumps({"id": identifier, "method": method, "params": params or {}})
+            )
+            message = await asyncio.wait_for(future, 20)
+            assert "error" not in message, message
+            return message.get("result", {})
+        finally:
+            self.pending.pop(identifier, None)
+
+    async def close(self):
+        await self.socket.close()
+        await self.reader
+        if self.tasks:
+            await asyncio.gather(*self.tasks, return_exceptions=True)
 
 
 async def eventually(function, predicate=lambda value: bool(value), timeout=12):
@@ -376,3 +433,294 @@ async def test_real_edge_native_geometry_matches_physical_cursor_and_dom(tmp_pat
         except subprocess.TimeoutExpired:
             process.terminate()
             process.wait(timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_real_edge_public_origin_loopback_permission_recovery(tmp_path):
+    """HTTPS-to-loopback permission, absent from localhost-only geometry tests.
+
+    The study-origin document is fulfilled locally by CDP. Every other page
+    request except the mock bridge is blocked; this test cannot contact study
+    APIs or create participant data. Browser permission is real, not mocked JS.
+    """
+    origin = "https://a04.rdm.lab.lrz.de"
+    fixture_url = origin + "/__bridge_permission_test"
+    bridge_http = "http://127.0.0.1:8766/"
+    bridge_ws = "ws://127.0.0.1:8766"
+    edge = next(
+        (
+            path
+            for path in [
+                Path(os.environ.get("PROGRAMFILES(X86)", "C:/Program Files (x86)"))
+                / "Microsoft/Edge/Application/msedge.exe",
+                Path(os.environ.get("PROGRAMFILES", "C:/Program Files"))
+                / "Microsoft/Edge/Application/msedge.exe",
+            ]
+            if path.exists()
+        ),
+        None,
+    )
+    assert edge is not None, "The Windows acceptance job must have Edge installed"
+    tab = uuid4().hex
+    html = """<!doctype html><meta charset="utf-8">
+<title>A04 permission test [A04:TAB]</title>
+<h1>Browser-to-bridge permission test</h1><button id="retry">Connect bridge</button>
+<script>
+window.permissionTest = {phase:'idle', socketAttempts:0};
+window.permissionState = async () => {
+  try { return (await navigator.permissions.query({name:'loopback-network'})).state }
+  catch (error) { return 'unsupported:' + error.name }
+};
+window.fetchBridge = async () => {
+  try {
+    const response = await fetch('HTTP', {method:'GET', mode:'no-cors', credentials:'omit',
+      redirect:'follow', cache:'no-store', targetAddressSpace:'loopback'});
+    return {resolved:true, type:response.type, status:response.status};
+  } catch (error) { return {resolved:false, error:error.name} }
+};
+window.socketBridge = () => new Promise(resolve => {
+  permissionTest.socketAttempts++;
+  const socket = new WebSocket('WS');
+  let finished = false, status = null;
+  const finish = result => {
+    if (finished) return;
+    finished = true; clearTimeout(timer); socket.close(); resolve(result);
+  };
+  const timer = setTimeout(() => finish({connected:false, error:'timeout'}), 5000);
+  socket.onerror = () => finish({connected:false, error:'socket_error'});
+  socket.onclose = () => finish({connected:false, error:'socket_closed'});
+  socket.onmessage = event => {
+    const message = JSON.parse(event.data);
+    if (message.type === 'status') {
+      status = message;
+      socket.send(JSON.stringify({type:'viewport_probe',request_id:'permission-test',
+        tab_id:'TAB',css:{w:innerWidth,h:innerHeight},dpr:devicePixelRatio}));
+    } else if (message.type === 'viewport_status') {
+      finish({connected:true,status,viewport:message});
+    }
+  };
+});
+document.querySelector('#retry').onclick = () => {
+  window.permissionTest = {phase:'permission_pending',socketAttempts:0,started:performance.now()};
+  void (async () => {
+    permissionTest.fetch = await fetchBridge();
+    permissionTest.fetchElapsed = performance.now() - permissionTest.started;
+    permissionTest.phase = 'connecting';
+    permissionTest.socket = await socketBridge();
+    permissionTest.phase = permissionTest.socket.connected ? 'connected' : 'failed';
+  })();
+};
+</script>""".replace("TAB", tab).replace("HTTP", bridge_http).replace("WS", bridge_ws)
+    evidence = {
+        "hardware_tested": False,
+        "origin": origin,
+        "document_intercepted": True,
+        "real_study_api_requests_allowed": 0,
+        "bridge_mode": "mock",
+        "cases": [],
+        "blocked_requests": [],
+        "allowed_loopback_requests": 0,
+    }
+    browser = None
+    page = None
+    process = None
+    bridge = None
+    permission_delay = None
+    permission_paused = asyncio.Event()
+    bridge_log = (tmp_path / "permission-bridge.log").open("w", encoding="utf-8")
+    try:
+        bridge = subprocess.Popen(
+            [sys.executable, "tobii_bridge.py", "--mock", "--no-screen-recording"],
+            cwd=Path(__file__).parent,
+            stdout=bridge_log,
+            stderr=subprocess.STDOUT,
+        )
+
+        async def bridge_ready():
+            assert bridge.poll() is None, "The test mock bridge exited before startup"
+            try:
+                async with websockets.connect(bridge_ws, origin=origin, open_timeout=1) as ws:
+                    status = json.loads(await asyncio.wait_for(ws.recv(), 2))
+                    return status if status.get("type") == "status" else None
+            except (OSError, TimeoutError):
+                return None
+
+        initial_status = await eventually(bridge_ready)
+        assert initial_status["source_mode"] == "mock"
+        assert initial_status["native_viewport"] is True
+
+        def http_response_code():
+            try:
+                with urlopen(bridge_http, timeout=3) as response:
+                    return response.status
+            except HTTPError as error:
+                return error.code
+
+        evidence["bridge_http_status"] = await asyncio.to_thread(http_response_code)
+        assert evidence["bridge_http_status"] == 426
+        profile = tmp_path / "permission-edge-profile"
+        profile.mkdir()
+        process = subprocess.Popen(
+            [
+                str(edge),
+                f"--user-data-dir={profile}",
+                "--remote-debugging-port=0",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-sync",
+                "--window-position=40,40",
+                "--window-size=900,650",
+                "about:blank",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        active_port = profile / "DevToolsActivePort"
+
+        async def port_ready():
+            return active_port.exists() and len(active_port.read_text().splitlines()) >= 2
+
+        await eventually(port_ready)
+        port, browser_path = active_port.read_text().splitlines()[:2]
+        browser = CDP(await websockets.connect(f"ws://127.0.0.1:{port}{browser_path}"))
+        evidence["browser"] = await browser.call("Browser.getVersion")
+        with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=5) as response:
+            targets = json.load(response)
+        target = next(item for item in targets if item.get("type") == "page")
+
+        async def intercept(client, event):
+            request_id = event["requestId"]
+            url = event["request"]["url"]
+            if url == fixture_url and event["resourceType"] == "Document":
+                policy = (
+                    "default-src 'none'; script-src 'unsafe-inline'; "
+                    f"connect-src {bridge_http} {bridge_ws}; "
+                    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+                )
+                await client.call("Fetch.fulfillRequest", {
+                    "requestId": request_id,
+                    "responseCode": 200,
+                    "responseHeaders": [
+                        {"name": "Content-Type", "value": "text/html; charset=utf-8"},
+                        {"name": "Cache-Control", "value": "no-store"},
+                        {"name": "Content-Security-Policy", "value": policy},
+                    ],
+                    "body": base64.b64encode(html.encode()).decode(),
+                })
+            elif url == bridge_http:
+                evidence["allowed_loopback_requests"] += 1
+                if permission_delay is not None:
+                    permission_paused.set()
+                    await permission_delay.wait()
+                await client.call("Fetch.continueRequest", {"requestId": request_id})
+            else:
+                evidence["blocked_requests"].append(url)
+                await client.call("Fetch.failRequest", {
+                    "requestId": request_id, "errorReason": "BlockedByClient",
+                })
+
+        page = InterceptingCDP(
+            await websockets.connect(target["webSocketDebuggerUrl"]), intercept
+        )
+        await page.call("Page.enable")
+        await page.call("Fetch.enable", {"patterns": [{"urlPattern": "*"}]})
+        await page.call("Page.navigate", {"url": fixture_url})
+        await browser.call("Target.activateTarget", {"targetId": target["id"]})
+        await eventually(lambda: page.evaluate(
+            "typeof permissionState==='function' && document.hasFocus()"
+        ))
+        assert await page.evaluate("isSecureContext && location.origin") == origin
+        initial_permission = await page.evaluate("permissionState()")
+        evidence["initial_permission"] = initial_permission
+        assert initial_permission in ("prompt", "granted", "denied"), (
+            f"Edge lacks granular loopback permission: {initial_permission}; "
+            f"browser={evidence['browser']}"
+        )
+
+        async def permission(setting):
+            await browser.call("Browser.setPermission", {
+                "permission": {"name": "loopback-network"},
+                "setting": setting,
+                "origin": origin,
+            })
+            return await eventually(
+                lambda: page.evaluate("permissionState()"), lambda state: state == setting
+            )
+
+        await permission("denied")
+        denied_fetch = await page.evaluate("fetchBridge()")
+        denied_socket = await page.evaluate("socketBridge()")
+        evidence["cases"].append({
+            "permission": "denied", "fetch": denied_fetch, "socket": denied_socket,
+        })
+        assert denied_fetch["resolved"] is False, "Real HTTPS-to-loopback fetch was not gated"
+        assert denied_socket["connected"] is False, "Real HTTPS-to-loopback WebSocket was not gated"
+
+        await permission("granted")
+        granted_fetch = await page.evaluate("fetchBridge()")
+        granted_socket = await page.evaluate("socketBridge()")
+        evidence["cases"].append({
+            "permission": "granted", "fetch": granted_fetch, "socket": granted_socket,
+        })
+        assert granted_fetch == {"resolved": True, "type": "opaque", "status": 0}
+        assert granted_socket["connected"] is True
+        assert granted_socket["status"]["native_viewport"] is True
+        assert granted_socket["status"]["source_mode"] == "mock"
+        assert granted_socket["viewport"]["ok"] is True, granted_socket
+
+        # A CDP ASK override can complete a permission request immediately. Reset
+        # to the browser's real prompt state instead. Hold its HTTP request at
+        # interception while the permission decision is delayed; this validates
+        # the long wait without claiming to automate Edge's native prompt UI.
+        await browser.call("Browser.resetPermissions")
+        assert await page.evaluate("permissionState()") == "prompt"
+        permission_delay = asyncio.Event()
+        evidence["delayed_grant_method"] = "HTTP request held at interception before permission evaluation"
+        # The same explicit click path used by the app waits for fetch permission
+        # before starting a socket timeout. A human may take longer than 5 s.
+        await page.evaluate("document.querySelector('#retry').click()")
+        await asyncio.wait_for(permission_paused.wait(), timeout=5)
+        await asyncio.sleep(6)
+        pending = await page.evaluate("permissionTest")
+        evidence["pending_after_six_seconds"] = pending
+        assert pending["phase"] == "permission_pending", pending
+        assert pending["socketAttempts"] == 0, pending
+        await permission("granted")
+        permission_delay.set()
+        recovered = await eventually(
+            lambda: page.evaluate("permissionTest"),
+            lambda value: value["phase"] in ("connected", "failed"),
+        )
+        evidence["cases"].append({"permission": "delayed_grant", "result": recovered})
+        assert recovered["phase"] == "connected", recovered
+        assert recovered["fetchElapsed"] >= 5900
+        assert recovered["socketAttempts"] == 1
+        assert recovered["socket"]["viewport"]["ok"] is True
+        assert not page.errors, page.errors
+        evidence["result"] = "passed"
+    finally:
+        if permission_delay is not None:
+            permission_delay.set()
+        Path("native-viewport-permission-windows.json").write_text(
+            json.dumps(evidence, indent=2), encoding="utf-8"
+        )
+        if page:
+            with contextlib.suppress(Exception):
+                await page.close()
+        if browser:
+            with contextlib.suppress(Exception):
+                await browser.call("Browser.close")
+            await browser.socket.close()
+        for child in (process, bridge):
+            if child is None:
+                continue
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                if child is bridge:
+                    child.terminate()
+                child.wait(timeout=5)
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
+        bridge_log.close()
