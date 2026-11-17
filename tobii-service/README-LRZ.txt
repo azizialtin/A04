@@ -9,7 +9,8 @@ LENS uses 8765; the different port prevents connecting to the wrong bridge.
 
 The rebuilt A04Bridge-win64.zip defaults to this origin and port. Extract the
 whole folder and double-click A04Bridge.exe; no shortcut arguments are needed.
-Replace the whole old package to receive stimulus audio capture. Changing a
+Replace the whole old package to receive native windowed/fullscreen viewport
+mapping and stimulus audio capture. Changing a
 shortcut or deploying the website does not update an older executable.
 
 For source use, or to set an explicit origin, run in PowerShell:
@@ -41,3 +42,18 @@ and rewind, then confirm the same soundtrack in replay and the downloaded MP4.
 Only study material should be open on the captured display. If an upload
 fails, preserve unsent-recordings and report the error. No recordings or
 credentials are included in this archive.
+
+Native windowed/fullscreen mapping
+Use one connected physical display paired with the calibrated tracker. The
+foreground study tab must be fully on that display. This bridge measures the
+page's native Windows content bounds; it does not estimate browser toolbar size.
+Browser zoom is included in the measured transformation. Confirm the initial
+display check and verify the study's AOI-mapping status, not just raw gaze status.
+After moving/resizing, mapping resumes when fresh stable geometry is available.
+Do not use "Mit aktueller Anzeige fortfahren" to collect AOI data: that fallback
+explicitly preserves raw samples without verified mapping.
+
+Before piloting, use a test participant: fixate known video/code/instruction/
+answer targets in fullscreen and windowed mode; resize once, repeat, inspect
+AOI CSV and replay. The software geometry test cannot verify physical fixation
+accuracy or the tracker-to-monitor calibration.

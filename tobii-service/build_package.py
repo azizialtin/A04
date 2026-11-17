@@ -59,6 +59,22 @@ What this PC needs
   site is https://a04.rdm.lab.lrz.de.
 - Python, the Tobii SDK, ffmpeg and ffprobe are all inside this folder.
 
+Fullscreen and windowed gaze mapping
+-----------------------------------
+This version measures the browser's actual content area in Windows. Edge and
+Chrome can be fullscreen, maximized or windowed; browser zoom is accounted for.
+Use one connected display, paired with the calibrated Tobii tracker. The study
+tab must be in the foreground and its content fully on that display. A short
+random code in the tab title identifies it to the bridge; it is not a participant ID.
+Confirm the initial display check and check that the study reports verified AOI
+mapping, as well as receiving gaze. Moving or resizing briefly invalidates the
+mapping until the new area is measured. Raw gaze is preserved during that gap.
+Do not choose unverified continuation when gaze/AOI data is required.
+
+Before a pilot, look at known targets in the video, code, instructions and
+answer areas in both fullscreen and windowed mode, then inspect AOI exports
+and replay alignment. Native geometry checks do not replace Tobii calibration.
+
 Matching the study's port
 -------------------------
 The bridge listens on ws://127.0.0.1:8766 by default, matching
@@ -290,10 +306,22 @@ async def _probe_executable(proc, port: int, timeout: float = 15) -> None:
                     status.get("type") != "status"
                     or not status.get("connected")
                     or status.get("stimulus_audio") is not False
+                    or (sys.platform == "win32" and status.get("native_viewport") is not True)
                 ):
                     raise RuntimeError(
                         "the packaged executable sent an unexpected capability handshake"
                     )
+                await ws.send(json.dumps({
+                    "type": "viewport_probe", "request_id": "frozen-probe",
+                    "tab_id": "0" * 32, "css": {"w": 100, "h": 100}, "dpr": 1,
+                }))
+                probe = json.loads(await asyncio.wait_for(ws.recv(), 2))
+                if (
+                    probe.get("type") != "viewport_status"
+                    or probe.get("request_id") != "frozen-probe"
+                    or probe.get("ok") is not False
+                ):
+                    raise RuntimeError("the packaged viewport probe did not reject an unbound tab")
                 await ws.send(json.dumps({"type": "start_gaze"}))
                 gaze = json.loads(await asyncio.wait_for(ws.recv(), 2))
                 if gaze.get("type") != "gaze" or not gaze.get("ts"):

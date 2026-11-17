@@ -52,6 +52,7 @@ import websockets
 
 from gaze_source import TobiiSource
 from connection_logging import install_incomplete_handshake_filter
+from native_viewport import TAB_ID, ViewportRegistry, sample_metadata as native_sample_metadata
 
 from screen_recorder import (
     DEFAULT_CRF,
@@ -106,7 +107,7 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _frame(lx, ly, rx, ry, valid, device_ts, dz=None) -> str:
+def _frame(lx, ly, rx, ry, valid, device_ts, dz=None, sample_metadata=None) -> str:
     return json.dumps(
         {
             "type": "gaze",
@@ -119,6 +120,7 @@ def _frame(lx, ly, rx, ry, valid, device_ts, dz=None) -> str:
             "rv": valid,
             "dz": dz,
             "device_ts": device_ts,
+            **native_sample_metadata(sample_metadata),
         }
     )
 
@@ -134,6 +136,7 @@ class MockSource:
 
     def __init__(self, frequency: int = MOCK_HZ) -> None:
         self.frequency = frequency
+        self.sample_metadata = None
 
     async def calibration_start(self) -> bool:
         return True
@@ -159,10 +162,12 @@ class MockSource:
             x = 0.5 + 0.3 * math.sin(t * 0.7)
             y = 0.5 + 0.3 * math.sin(t * 1.1 + 1.0)
             if blink:
-                await ws.send(_frame(None, None, None, None, False, int(t * 1e6)))
+                await ws.send(_frame(None, None, None, None, False, int(t * 1e6),
+                                     sample_metadata=self.sample_metadata))
             else:
                 await ws.send(
-                    _frame(round(x, 4), round(y, 4), round(x, 4), round(y, 4), True, int(t * 1e6), 620.0)
+                    _frame(round(x, 4), round(y, 4), round(x, 4), round(y, 4), True,
+                           int(t * 1e6), 620.0, self.sample_metadata)
                 )
             i += 1
             await asyncio.sleep(period)
@@ -399,9 +404,28 @@ async def _handle_calibration(ws, source, msg: dict) -> bool:
     return True
 
 
-async def _stream_gaze(source, ws):
+class _ViewportSocket:
+    """A shared SDK stream must not lend one foreground tab's proof to another."""
+
+    def __init__(self, ws, tab_id):
+        self.ws = ws
+        self.tab_id = (
+            tab_id if isinstance(tab_id, str) and TAB_ID.fullmatch(tab_id) else None
+        )
+
+    async def send(self, raw):
+        frame = json.loads(raw)
+        if frame.get("type") == "gaze" and ("viewport_id" in frame or "viewport_tab_id" in frame):
+            observed_tab = frame.pop("viewport_tab_id", None)
+            if self.tab_id is None or observed_tab != self.tab_id:
+                frame["viewport_id"] = None
+            raw = json.dumps(frame)
+        await self.ws.send(raw)
+
+
+async def _stream_gaze(source, ws, tab_id=None):
     try:
-        await source.stream(ws)
+        await source.stream(_ViewportSocket(ws, tab_id))
     except websockets.exceptions.ConnectionClosed:
         return
     except Exception as exc:
@@ -419,6 +443,8 @@ async def _serve(
     # One tracker, shared. A source per connection meant a second tab fighting
     # the first for the subscription and for calibration mode.
     source = build_source(mock)
+    viewports = ViewportRegistry()
+    source.sample_metadata = viewports.sample_metadata
     discovery = asyncio.create_task(source.refresh())
 
     async def handler(ws) -> None:
@@ -452,6 +478,7 @@ async def _serve(
                         # at all, rather than asking and reporting a failure.
                         "screen_recording": screen.available,
                         "stimulus_audio": screen.audio_available,
+                        "native_viewport": viewports.available,
                     }
                 )
             )
@@ -485,13 +512,17 @@ async def _serve(
                     continue
                 if not isinstance(msg, dict):
                     continue
+                if msg.get("type") == "viewport_probe":
+                    response = await asyncio.to_thread(viewports.probe, ws, msg)
+                    await ws.send(json.dumps(response))
+                    continue
                 if await _handle_calibration(ws, source, msg):
                     continue
                 if await _handle_screen(ws, screen, msg):
                     continue
                 kind = msg.get("type")
                 if kind == "start_gaze" and (producer is None or producer.done()):
-                    producer = asyncio.create_task(_stream_gaze(source, ws))
+                    producer = asyncio.create_task(_stream_gaze(source, ws, msg.get("tab_id")))
                 elif kind == "stop_gaze":
                     if producer is not None:
                         producer.cancel()
@@ -507,6 +538,7 @@ async def _serve(
             # Navigation closes after enqueueing stop, before FFmpeg can reply.
             pass
         finally:
+            viewports.unregister(ws)
             # A stalled SDK must not hold the completed screen/audio capture.
             await screen.release(ws)
             if tracker_update is not None:

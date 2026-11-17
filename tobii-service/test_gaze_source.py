@@ -530,3 +530,58 @@ async def test_timed_out_subscription_that_later_succeeds_is_cleaned_before_retr
         gate.set()
         await cancel(task)
     assert not tracker.callbacks
+
+
+@pytest.mark.asyncio
+async def test_native_geometry_is_attached_before_a_queued_sdk_sample_is_delivered():
+    tracker, ws = Tracker(), Socket()
+    proof = {
+        "viewport_id": "bridge:1",
+        "viewport_ts": 1000,
+        "viewport_tab_id": "a" * 32,
+    }
+    callback_threads = []
+
+    def native():
+        callback_threads.append(threading.get_ident())
+        return dict(proof)
+
+    gaze = source(SDK([tracker]), sample_metadata=native)
+    task = asyncio.create_task(gaze.stream(ws))
+    try:
+        await until(lambda: bool(tracker.callbacks))
+        # Join the emitting thread synchronously: the event loop cannot deliver
+        # _receive until the native proof has already changed below.
+        worker = threading.Thread(target=tracker.emit)
+        worker.start()
+        worker.join(1)
+        assert not worker.is_alive()
+        proof.update(viewport_id="bridge:2", viewport_ts=2000)
+        await until(lambda: any(m["type"] == "gaze" for m in ws.messages))
+        frame = next(m for m in ws.messages if m["type"] == "gaze")
+        assert frame["viewport_id"] == "bridge:1" and frame["viewport_ts"] == 1000
+        assert callback_threads == [worker.ident]
+        assert frame["device_ts"] == 1234 and frame["lx"] == 0.25
+    finally:
+        await cancel(task)
+
+
+@pytest.mark.asyncio
+async def test_native_observer_failure_never_discards_the_raw_sdk_sample():
+    tracker, ws = Tracker(), Socket()
+
+    def failed_native_query():
+        raise OSError("native APIs unavailable")
+
+    gaze = source(SDK([tracker]), sample_metadata=failed_native_query)
+    task = asyncio.create_task(gaze.stream(ws))
+    try:
+        await until(lambda: bool(tracker.callbacks))
+        tracker.emit()
+        await until(lambda: any(m["type"] == "gaze" for m in ws.messages))
+        frame = next(m for m in ws.messages if m["type"] == "gaze")
+        assert frame["viewport_id"] is None
+        assert frame["device_ts"] == 1234 and frame["lx"] == 0.25
+        assert gaze.valid_sample_count == 1
+    finally:
+        await cancel(task)

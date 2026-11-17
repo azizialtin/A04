@@ -11,6 +11,8 @@ import math
 import threading
 import time
 
+from native_viewport import sample_metadata as native_sample_metadata
+
 
 def gaze_frame(gaze: dict) -> dict:
     stamp = gaze.get("device_time_stamp")
@@ -70,8 +72,10 @@ class TobiiSource:
         sample_timeout=3.0,
         status_seconds=1.0,
         sdk_timeout=5.0,
+        sample_metadata=None,
     ):
         self._tr = sdk
+        self.sample_metadata = sample_metadata
         self.sdk_version = getattr(sdk, "__version__", None)
         self._tracker = None
         self._calibration = None
@@ -301,6 +305,9 @@ class TobiiSource:
                         if not loop.is_closed():
                             loop.call_soon_threadsafe(self._callback_error, active)
                         return
+                    # Native geometry belongs to the SDK callback instant, not
+                    # the later asyncio delivery of a queued frame.
+                    frame.update(native_sample_metadata(self.sample_metadata))
                     if not loop.is_closed():
                         loop.call_soon_threadsafe(self._receive, frame, active)
 

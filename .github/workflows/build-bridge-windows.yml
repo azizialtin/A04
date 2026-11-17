@@ -52,6 +52,11 @@ jobs:
       - name: Test bridge with real FFmpeg
         run: python -m pytest -q -o asyncio_default_fixture_loop_scope=function --junitxml=bridge-tests.xml
 
+      - name: Verify native viewport against physical cursor in Edge
+        env:
+          A04_NATIVE_VIEWPORT_WINDOWS_TEST: '1'
+        run: python -m pytest test_native_viewport_windows.py -v -o asyncio_default_fixture_loop_scope=function --junitxml=native-viewport-tests.xml
+
       - name: Build and exercise the frozen executable
         run: python build_package.py
 
@@ -66,7 +71,7 @@ jobs:
             ffmpeg_archive_sha256 = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
             study_origin = 'https://a04.rdm.lab.lrz.de'
             websocket = 'ws://127.0.0.1:8766'
-            checks = @('bridge pytest', 'H264/Opus/AAC encoding and probing', 'frozen native Tobii SDK', 'frozen default port and origin', 'frozen mock gaze')
+            checks = @('bridge pytest', 'native Edge viewport against physical cursor: windowed, moved, resized, scrolled, zoomed, maximized, fullscreen', 'H264/Opus/AAC encoding and probing', 'frozen native Tobii SDK', 'frozen default port and origin', 'frozen mock gaze')
             hardware_tested = $false
           }
           $manifest | ConvertTo-Json -Depth 5 | Set-Content dist/build-manifest.json -Encoding utf8
@@ -89,5 +94,16 @@ jobs:
         with:
           name: windows-bridge-test-results
           path: tobii-service/bridge-tests.xml
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-viewport-windows-evidence
+          path: |
+            tobii-service/native-viewport-tests.xml
+            tobii-service/native-viewport-windows.json
+            tobii-service/native-viewport-*.png
           if-no-files-found: ignore
           retention-days: 30
