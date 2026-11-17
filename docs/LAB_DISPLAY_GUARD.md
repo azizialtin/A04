@@ -149,6 +149,43 @@ geometry; the native measurement must recover.
 
 ## Verification on the lab PC
 
+### If the display dialog cannot continue
+
+Open the current study at `https://a04.rdm.lab.lrz.de/session` in Edge and refresh
+with Ctrl+F5. The recovery dialog identifies app version `2026-11-17.2` and later
+under **Technischer Status**. An already open browser tab does not automatically
+replace its JavaScript when a new release is deployed.
+
+The dialog now distinguishes an unreachable bridge, an older bridge and a native
+measurement failure. **Aktuelle Windows-Bridge herunterladen** downloads the
+verified Windows package directly from the study website. Extract the entire ZIP,
+close the old bridge, start the extracted `A04Bridge.exe`, and leave it running.
+Then select **Bridge erneut verbinden**. This starts an explicit loopback
+permission request before opening a fresh bridge connection; it does not reset
+the participant, answers or existing deadlines. The permission stage allows up
+to 90 seconds for the browser prompt. Only the subsequent WebSocket handshake
+and a matching native measurement establish connection and geometry readiness.
+
+If permission is denied, use Edge's permissions for this exact study origin to
+allow **Apps auf dem Gerät** / **Loopback-Netzwerk**. Older Edge versions may show
+a combined **Lokales Netzwerk** permission. The app displays denial guidance
+when the granular Permissions API is available; otherwise it gives generic
+connection instructions. It never changes browser permissions on the user's
+behalf. The CSP permits HTTP permission checks only at the configured localhost
+bridge port, alongside the existing WebSocket connection.
+
+If recovery still fails, expand **Technischer Status** and use **Diagnose
+kopieren**. The text identifies the loaded bundle, connection, permission and
+geometry status without participant IDs, answers, window titles or tab nonces.
+Distinct connection states are also logged, with a per-session limit, before the
+blocked questionnaire mounts. This separates a local connection failure from
+server availability and a native mapping error.
+
+Verified AOI collection still requires **Studienleitung: Fortsetzen** and
+**AOI-Zuordnung aktiv.** Unverified continuation is not a repair for missing gaze.
+
+### Fixation and session checks
+
 1. Close the old bridge and start the new package. Run
    `Check-eye-tracker.cmd` with the normal bridge closed first, then restart the
    bridge. Verify the real Fusion, 120 Hz and valid gaze samples. Calibrate and

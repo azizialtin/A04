@@ -21,6 +21,6 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Defaults suit the local stack. In production set CSP_POLICY with the backend
 # origin in connect-src, and the bucket host in media-src if videos are served
 # from signed GCS urls.
-ENV CSP_POLICY="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: http://localhost:8030; connect-src 'self' http://localhost:8030 ws://localhost:8766 ws://127.0.0.1:8766; frame-src https://www.soscisurvey.de; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+ENV CSP_POLICY="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: http://localhost:8030; connect-src 'self' http://localhost:8030 ws://localhost:8766 ws://127.0.0.1:8766 http://localhost:8766 http://127.0.0.1:8766; frame-src https://www.soscisurvey.de; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 EXPOSE 80

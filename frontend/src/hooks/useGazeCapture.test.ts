@@ -610,6 +610,7 @@ test('native gaze retains per-sample proof and maps only matching contemporaneou
   vi.spyOn(nativeMapping, 'getNativeViewportSnapshot').mockReturnValue({
     owner: 'person',
     capable: true,
+    connection: 'connected',
     tabId: proof.tab_id,
     proof,
     errorCode: null,
@@ -677,6 +678,7 @@ test('a new native generation cannot borrow a previous layout or a future DOM me
   vi.spyOn(nativeMapping, 'getNativeViewportSnapshot').mockImplementation(() => ({
     owner: 'person',
     capable: true,
+    connection: 'connected',
     tabId: proof.tab_id,
     proof,
     errorCode: null,
@@ -721,6 +723,7 @@ test('native resume cannot claim mapping before a verified DOM snapshot exists',
   vi.spyOn(nativeMapping, 'getNativeViewportSnapshot').mockReturnValue({
     owner: 'person',
     capable: true,
+    connection: 'connected',
     tabId: proof.tab_id,
     proof,
     errorCode: null,

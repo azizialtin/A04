@@ -30,6 +30,7 @@ import {
 } from '../hooks/participant'
 import { useOutbox } from '../hooks/useOutbox'
 import { useDisplayGuard } from '../hooks/useDisplayGuard'
+import { useClientDiagnostics } from '../hooks/useClientDiagnostics'
 import { checkDisplayGuard, isDisplayGuardBlocking } from '../lib/displayGuard'
 import { displayGuardScope } from '../lib/displayGuardScope'
 import { enqueue } from '../lib/outbox'
@@ -122,6 +123,7 @@ export default function SessionPage() {
   const stepNow = session.data?.steps[session.data.current_step_index]
   const guardScope = displayGuardScope(stepNow)
   const guard = useDisplayGuard(me.data?.id, guardScope)
+  useClientDiagnostics(me.data?.id)
   const guardBlocked = isDisplayGuardBlocking(guard)
   const stepIdentity = `${me.data?.id ?? ''}:${session.data?.current_step_index ?? ''}`
   const admittedStep = useRef<string | null>(null)

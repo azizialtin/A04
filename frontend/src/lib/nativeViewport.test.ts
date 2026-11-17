@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { DisplayGuardController } from './displayGuard'
 import {
   NativeViewportController,
   browserViewportProblem,
@@ -59,7 +60,9 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
-function setup() {
+function setup(
+  requestPermission = vi.fn<(_: AbortSignal) => Promise<void>>(() => Promise.resolve()),
+) {
   let css = viewport()
   const sockets: Socket[] = []
   const c = new NativeViewportController(
@@ -71,12 +74,15 @@ function setup() {
       sockets.push(s)
       return s as unknown as WebSocket
     },
+    requestPermission,
   )
   controllers.push(c)
   c.configure('participant', true)
   const socket = sockets[0]
-  const status = () => socket.receive({ type: 'status', native_viewport: true })
+  const status = () =>
+    sockets[sockets.length - 1]!.receive({ type: 'status', native_viewport: true })
   const answer = (overrides: Record<string, unknown> = {}) => {
+    const socket = sockets[sockets.length - 1]!
     const request = socket.sent[socket.sent.length - 1]!
     socket.receive({
       type: 'viewport_status',
@@ -94,6 +100,7 @@ function setup() {
     sockets,
     status,
     answer,
+    requestPermission,
     change: (changes: Partial<BrowserViewport>) => {
       css = { ...css, ...changes }
     },
@@ -164,6 +171,8 @@ test('native capability never downgrades to guessed geometry after reconnect', (
   s.sockets[1].receive({ type: 'status' })
   expect(s.c.getSnapshot().capable).toBe(true)
   expect(s.c.getSnapshot().errorCode).toBe('bridge_upgrade_required')
+  expect(s.c.getSnapshot().connection).toBe('upgrade_required')
+  expect(s.sockets[1].sent).toHaveLength(0)
 })
 
 test('SoSci suspension drops the lease and title marker; a new participant gets a new identity', () => {
@@ -223,10 +232,172 @@ test('a silent mapping handshake is bounded and cleanup cancels reconnect work',
   vi.advanceTimersByTime(5000)
   expect(s.socket.closed).toBe(true)
   expect(s.c.getSnapshot().errorCode).toBe('bridge_unreachable')
+  expect(s.c.getSnapshot().connection).toBe('unreachable')
   vi.advanceTimersByTime(2000)
   expect(s.sockets).toHaveLength(2)
   s.c.configure(null, false)
   vi.advanceTimersByTime(10000)
   expect(s.sockets).toHaveLength(2)
   expect(vi.getTimerCount()).toBe(0)
+})
+
+test('an old bridge is actionable immediately and can upgrade after an explicit permission retry', async () => {
+  const s = setup()
+  expect(s.c.getSnapshot().connection).toBe('connecting')
+  s.socket.receive({ type: 'status' })
+  expect(s.c.getSnapshot()).toMatchObject({ capable: false, connection: 'upgrade_required' })
+  expect(s.socket.sent).toHaveLength(0)
+  const tab = s.c.getSnapshot().tabId
+  s.c.retry()
+  expect(s.socket.closed).toBe(true)
+  expect(s.requestPermission).toHaveBeenCalledOnce()
+  expect(s.c.getSnapshot().connection).toBe('permission_pending')
+  await Promise.resolve()
+  expect(s.sockets).toHaveLength(2)
+  expect(s.c.getSnapshot().connection).toBe('connecting')
+  s.status()
+  expect(s.c.getSnapshot()).toMatchObject({ capable: true, connection: 'connected', tabId: tab })
+  expect(s.c.current()).toBeNull()
+  s.answer()
+  expect(s.c.current()).not.toBeNull()
+})
+
+test('permission prompts keep their user-initiated request alive without reconnect loops or proof', async () => {
+  let finish!: () => void
+  const request = vi.fn<(_: AbortSignal) => Promise<void>>(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+  )
+  const s = setup(request)
+  s.status()
+  s.answer()
+  const oldTab = s.c.getSnapshot().tabId
+  s.c.retry()
+  const signal = request.mock.calls[0][0]
+  expect(signal.aborted).toBe(false)
+  expect(s.c.current()).toBeNull()
+  expect(s.c.getSnapshot()).toMatchObject({
+    capable: true,
+    tabId: oldTab,
+    connection: 'permission_pending',
+  })
+  vi.advanceTimersByTime(30_000)
+  expect(s.sockets).toHaveLength(1)
+  expect(signal.aborted).toBe(false)
+  finish()
+  await Promise.resolve()
+  expect(s.sockets).toHaveLength(2)
+  expect(s.c.current()).toBeNull()
+  s.status()
+  s.answer()
+  expect(s.c.current()).not.toBeNull()
+})
+
+test('denied or failed permission attempts still use a fresh handshake, never fetch as health', async () => {
+  const s = setup(
+    vi.fn<(_: AbortSignal) => Promise<void>>(() => Promise.reject(new Error('denied'))),
+  )
+  s.c.retry()
+  await Promise.resolve()
+  expect(s.sockets).toHaveLength(2)
+  expect(s.c.getSnapshot()).toMatchObject({ connection: 'connecting', capable: false, proof: null })
+  s.sockets[1].onerror?.()
+  expect(s.c.getSnapshot().connection).toBe('unreachable')
+  vi.advanceTimersByTime(2000)
+  s.status()
+  s.answer()
+  expect(s.c.getSnapshot().connection).toBe('connected')
+  expect(s.c.current()).not.toBeNull()
+})
+
+test('permission timeout, replacement and participant cleanup cannot revive obsolete connections', async () => {
+  const resolves: (() => void)[] = []
+  const request = vi.fn<(_: AbortSignal) => Promise<void>>(
+    () => new Promise<void>((resolve) => resolves.push(resolve)),
+  )
+  const s = setup(request)
+  s.c.retry()
+  vi.advanceTimersByTime(90_000)
+  expect(request.mock.calls[0][0].aborted).toBe(true)
+  expect(s.sockets).toHaveLength(2)
+  s.c.retry()
+  s.c.retry()
+  expect(request.mock.calls[1][0].aborted).toBe(true)
+  s.c.configure(null, false)
+  expect(request.mock.calls[2][0].aborted).toBe(true)
+  for (const resolve of resolves) resolve()
+  await Promise.resolve()
+  vi.advanceTimersByTime(100_000)
+  expect(s.sockets).toHaveLength(2)
+  expect(s.c.getSnapshot()).toMatchObject({ owner: null, connection: 'idle', capable: false })
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+test('provider error text is reduced to safe codes and a subsequent valid measurement recovers', () => {
+  const s = setup()
+  s.status()
+  s.answer({ ok: false, error_code: 'Title: private participant' })
+  expect(s.c.getSnapshot().errorCode).toBe('invalid_measurement')
+  expect(s.c.current()).toBeNull()
+  vi.advanceTimersByTime(125)
+  s.answer()
+  expect(s.c.getSnapshot().errorCode).toBeNull()
+  expect(s.c.current()).not.toBeNull()
+})
+
+test('retry preserves native researcher confirmation but requires a fresh stable measurement before resuming', async () => {
+  const s = setup()
+  const metrics = {
+    innerWidth: 1600,
+    innerHeight: 900,
+    outerWidth: 1616,
+    outerHeight: 990,
+    screenWidth: 1920,
+    screenHeight: 1080,
+    dpr: 1,
+    x: 80,
+    y: 20,
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+    focused: true,
+    visible: true,
+    extended: false,
+  }
+  const guard = new DisplayGuardController(
+    true,
+    () => metrics,
+    Date.now,
+    Date.now,
+    () => ({ capable: s.c.getSnapshot().capable, proof: s.c.current() }),
+  )
+  guard.configure('participant', 'required')
+  s.c.subscribe(() => guard.check())
+  s.status()
+  s.answer()
+  for (let i = 0; i < 4; i++) {
+    vi.advanceTimersByTime(125)
+    s.answer()
+    guard.check()
+  }
+  expect(guard.getSnapshot().phase).toBe('ready')
+  expect(guard.resume()).toBe(true)
+  s.c.retry()
+  expect(guard.check()).toBe(false)
+  await Promise.resolve()
+  s.status()
+  expect(guard.check()).toBe(false)
+  s.answer()
+  for (let i = 0; i < 3; i++) {
+    vi.advanceTimersByTime(125)
+    s.answer()
+    guard.check()
+  }
+  expect(guard.getSnapshot().phase).toBe('blocked')
+  vi.advanceTimersByTime(125)
+  s.answer()
+  expect(guard.check()).toBe(true)
+  expect(guard.getSnapshot().phase).toBe('verified')
 })

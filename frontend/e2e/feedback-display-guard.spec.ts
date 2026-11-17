@@ -55,6 +55,8 @@ type NativeFixture = {
   sampleId?: string
   sampleDelay?: number
   unavailable?: boolean
+  errorCode?: string
+  transport?: 'offline' | 'legacy' | 'native'
 }
 const nativeFixture = (x = 120, y = 90): NativeFixture => ({
   x,
@@ -107,11 +109,15 @@ async function setup(
     localStorage.setItem('i18nextLng', 'de')
   }, PARTICIPANT)
   await page.routeWebSocket('ws://127.0.0.1:8766', (socket) => {
+    if (native?.transport === 'offline') {
+      socket.close()
+      return
+    }
     socket.send(
       JSON.stringify({
         type: 'status',
         connected: true,
-        ...(native ? { native_viewport: true } : {}),
+        ...(native && native.transport !== 'legacy' ? { native_viewport: true } : {}),
         frequency: 120,
         screen_recording: true,
         stimulus_audio: false,
@@ -132,7 +138,7 @@ async function setup(
               request_id: request.request_id,
               tab_id: request.tab_id,
               ok: false,
-              error_code: 'not_foreground',
+              error_code: native.errorCode ?? 'not_foreground',
               observed_at: Date.now(),
             }),
           )
@@ -1652,3 +1658,190 @@ test('native windowed CK deadline and SoSci return retain verified mapping', asy
   expect(state.finishes).toHaveLength(1)
   expect(state.unexpected).toEqual([])
 })
+
+const RECONNECT = 'Bridge erneut verbinden'
+
+async function mockLoopbackPermission(page: Page, initial: PermissionState) {
+  await page.addInitScript((permission) => {
+    let current = permission
+    const status = new EventTarget()
+    Object.defineProperty(status, 'state', { get: () => current })
+    Object.defineProperty(navigator, 'permissions', {
+      configurable: true,
+      value: { query: async () => status },
+    })
+    ;(
+      window as unknown as { setBridgePermission: (state: PermissionState) => void }
+    ).setBridgePermission = (value) => {
+      current = value
+      status.dispatchEvent(new Event('change'))
+    }
+  }, initial)
+}
+
+test('bridge recovery explains a denied permission and waits for the researcher before connecting', async ({
+  page,
+}) => {
+  const native = nativeFixture()
+  native.transport = 'offline'
+  await mockLoopbackPermission(page, 'denied')
+  await page.setViewportSize({ width: 1152, height: 640 })
+  const state = await setup(page, [questionnaire()], 420_000, native)
+  let releasePrompt!: () => void
+  const permissionPrompt = new Promise<void>((resolve) => {
+    releasePrompt = resolve
+  })
+  let prompted = false
+  await page.route('http://127.0.0.1:8766/', async (route) => {
+    prompted = true
+    await permissionPrompt
+    await route.fulfill({ status: 426, body: 'WebSocket upgrade required' })
+  })
+  await page.goto('/session')
+  await expect(
+    page.getByText('Die Windows-Bridge auf diesem PC ist nicht erreichbar.', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText(/Edge blockiert den Zugriff/).first()).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: 'Aktuelle Windows-Bridge herunterladen' }),
+  ).toHaveAttribute('href', '/downloads/A04Bridge-native-20261117.zip')
+  await expect
+    .poll(() =>
+      state.events.some(
+        (event) =>
+          event.event_type === 'display_connection_status' &&
+          (event.payload as { loopback_permission?: string }).loopback_permission === 'denied',
+      ),
+    )
+    .toBe(true)
+  native.transport = 'native'
+  await page.getByRole('button', { name: RECONNECT, exact: true }).click()
+  await expect.poll(() => prompted).toBe(true)
+  await expect(page.getByRole('button', { name: RECONNECT, exact: true })).toBeDisabled()
+  // A human may need longer than the old five-second handshake timeout.
+  await page.waitForTimeout(6_000)
+  expect(state.visits).toHaveLength(0)
+  expect(state.recordings).toHaveLength(0)
+  expect(state.commands).toHaveLength(0)
+  await page.evaluate(() =>
+    (
+      window as unknown as { setBridgePermission: (state: PermissionState) => void }
+    ).setBridgePermission('granted'),
+  )
+  releasePrompt()
+  await resume(page)
+  await expect(page.locator('textarea')).toBeVisible()
+  await expect
+    .poll(() => state.samples.filter((sample) => sample.geometry_ts !== null).length)
+    .toBeGreaterThan(5)
+  expect(
+    state.events.some((event) => event.event_type === 'display_guard_continued_unverified'),
+  ).toBe(false)
+})
+
+test('bridge recovery upgrades an old bridge without bypassing native gaze verification', async ({
+  page,
+}) => {
+  const native = nativeFixture()
+  native.transport = 'legacy'
+  await page.setViewportSize({ width: 1152, height: 640 })
+  const state = await setup(page, [questionnaire()], 420_000, native)
+  await page.route('http://127.0.0.1:8766/', (route) =>
+    route.fulfill({ status: 426, body: 'Upgrade required' }),
+  )
+  await page.goto('/session')
+  await expect(page.getByLabel('Verbindung zur Windows-Bridge')).toContainText(
+    /noch keine Messung im Fenstermodus/,
+  )
+  await expect(page.getByRole('button', { name: RESUME, exact: true })).toBeDisabled()
+  native.transport = 'native'
+  await page.getByRole('button', { name: RECONNECT, exact: true }).click()
+  await resume(page)
+  await expect
+    .poll(() => state.samples.filter((sample) => sample.geometry_ts !== null).length)
+    .toBeGreaterThan(5)
+  expect(
+    state.events.some((event) => event.event_type === 'display_guard_continued_unverified'),
+  ).toBe(false)
+})
+
+test('bridge recovery shows a native measurement failure and retains the confirmed draft', async ({
+  page,
+}) => {
+  const native = nativeFixture()
+  await page.setViewportSize({ width: 1152, height: 640 })
+  const state = await setup(page, [questionnaire()], 420_000, native)
+  await page.goto('/session')
+  await resume(page)
+  await page.locator('textarea').fill('Diese Antwort muss erhalten bleiben.')
+  native.unavailable = true
+  native.errorCode = 'multiple_displays'
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
+  await expect(page.getByLabel('Verbindung zur Windows-Bridge')).toContainText(/Bildschirm/)
+  await page.getByText('Technischer Status', { exact: false }).click()
+  await expect(page.getByLabel('Technische Diagnose ohne Teilnehmerdaten')).toContainText(
+    'multiple_displays',
+  )
+  await expect(page.getByLabel('Technische Diagnose ohne Teilnehmerdaten')).toContainText(
+    '2026-11-17.2',
+  )
+  native.unavailable = false
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  await expect(page.locator('textarea')).toHaveValue('Diese Antwort muss erhalten bleiben.')
+  expect(state.recordings).toHaveLength(1)
+})
+
+test('bridge reconnect permission wait preserves the CK deadline and its partial answer', async ({
+  page,
+}) => {
+  const native = nativeFixture()
+  await page.setViewportSize({ width: 1152, height: 640 })
+  const state = await setup(page, [questionnaire(0, true), questionnaire(1)], 8_000, native)
+  let releasePrompt!: () => void
+  const prompt = new Promise<void>((resolve) => {
+    releasePrompt = resolve
+  })
+  await page.route('http://127.0.0.1:8766/', async (route) => {
+    await prompt
+    await route.fulfill({ status: 426, body: 'Upgrade required' })
+  })
+  await page.goto('/session')
+  await resume(page)
+  await page.locator('textarea').fill('Antwort vor der erneuten Verbindung')
+  native.unavailable = true
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
+  await page.getByRole('button', { name: RECONNECT, exact: true }).click()
+  await expect.poll(() => state.finishes.length, { timeout: 12_000 }).toBe(1)
+  expect(JSON.stringify(state.finishes[0])).toContain('Antwort vor der erneuten Verbindung')
+  native.unavailable = false
+  releasePrompt()
+  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+  expect(state.finishes).toHaveLength(1)
+})
+
+for (const viewport of [
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
+]) {
+  test(`bridge recovery controls fit at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }, info) => {
+    const native = nativeFixture()
+    native.transport = 'offline'
+    await mockLoopbackPermission(page, 'denied')
+    await page.setViewportSize(viewport)
+    await setup(page, [questionnaire()], 420_000, native)
+    await page.goto('/session')
+    await expect(page.getByText(/Edge blockiert den Zugriff/).first()).toBeVisible()
+    await expect(page.getByRole('button', { name: RECONNECT, exact: true })).toBeInViewport()
+    await expect(
+      page.getByRole('link', { name: 'Aktuelle Windows-Bridge herunterladen' }),
+    ).toBeInViewport()
+    await page.screenshot({ path: info.outputPath(`bridge-recovery-${viewport.width}.png`) })
+    await page.getByText('Technischer Status', { exact: false }).click()
+    await expect(page.getByLabel('Technische Diagnose ohne Teilnehmerdaten')).toContainText(
+      '2026-11-17.2',
+    )
+  })
+}

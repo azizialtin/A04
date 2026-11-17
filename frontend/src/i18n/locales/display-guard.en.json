@@ -27,5 +27,36 @@
   "native_setup": "The Windows bridge measures the study page’s position on the display directly. Fullscreen and windowed mode are supported. Keep the study page in the foreground on the eye tracker’s display.",
   "native_ready": "The study page’s position has been measured. The researcher can confirm gaze mapping. Later window-size changes will be measured automatically.",
   "mapping_ready": "AOI mapping active.",
-  "mapping_waiting": "AOI mapping is waiting for a valid display measurement."
+  "mapping_waiting": "AOI mapping is waiting for a valid display measurement.",
+  "bridge_status": "Windows bridge connection",
+  "connection": {
+    "idle": "The Windows bridge has not been checked yet.",
+    "connecting": "Checking the Windows bridge connection.",
+    "permission_pending": "Please confirm local network access in Edge.",
+    "connected": "Windows bridge connected. Checking the display measurement.",
+    "unreachable": "The Windows bridge on this PC cannot be reached.",
+    "upgrade_required": "The connected Windows bridge does not yet support windowed measurements."
+  },
+  "connection_setup": "Verified gaze data in fullscreen and windowed mode requires the current Windows bridge on this PC. Keep the study page in the foreground on the calibrated display.",
+  "connection_help": "Start the current Windows bridge on this PC and leave it running. Click “Reconnect bridge” and allow access to the local network if Edge asks.",
+  "permission_denied": "Edge is blocking access to the local bridge. Open site permissions using the icon to the left of the address and set “Apps on device” or “Loopback network” to “Allow”. Older Edge versions call this permission “Local network”. Then click “Reconnect bridge”.",
+  "retry_bridge": "Reconnect bridge",
+  "download_bridge": "Download current Windows bridge",
+  "diagnostics": "Technical status · Version {{version}}",
+  "diagnostic_text": "Technical diagnostic without participant data",
+  "copy_diagnostics": "Copy diagnostic",
+  "copied": {
+    "done": "Diagnostic copied.",
+    "failed": "Automatic copying is unavailable. Please select and copy the diagnostic text."
+  },
+  "recovery": {
+    "upgrade": "Download and extract the current Windows bridge. Fully close the old bridge, start the new version, and click “Reconnect bridge”. The previous fullscreen check remains available.",
+    "focus": "Bring this study window to the foreground and close any open browser dialogs. Keep the window unchanged briefly.",
+    "displays": "Use only the eye tracker’s calibrated display. Disconnect or disable additional displays in Windows display settings, then bring the study page back to the foreground.",
+    "geometry": "The browser content area could not be measured unambiguously. Close docked developer tools and browser sidebars, keep the entire study window on the calibrated display, and click “Reconnect bridge”. Fullscreen is not required with the current bridge.",
+    "zoom": "Reset page zoom with Ctrl + 0 and finish any ongoing zoom or pan gesture. Then keep the window unchanged briefly.",
+    "platform": "This display measurement requires Windows, Edge, and the current Windows bridge. Start the current bridge on the study PC and reconnect it.",
+    "tabs": "Another study page is holding the display measurement. Use only one study tab for this session. Close additional study tabs and reconnect the bridge.",
+    "stale": "The display measurement is not current yet. Keep this window unchanged in the foreground briefly. If the message persists, reconnect the bridge."
+  }
 }

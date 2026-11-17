@@ -39,7 +39,7 @@ test('unsupported permission APIs leave actionable guidance without claiming den
       retry={() => {}}
     />,
   )
-  await waitFor(() => expect(query).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(query).toHaveBeenCalledTimes(1))
   expect(screen.getByText(/A04Bridge.exe starten/)).toBeVisible()
   expect(screen.queryByText(/Browser meldet gesperrten/)).toBeNull()
 })
@@ -63,6 +63,7 @@ test('raw tracking and a current viewport alone cannot claim active AOI mapping'
     capable: true,
     tabId: 'a'.repeat(32),
     errorCode: null,
+    connection: 'connected' as const,
     proof: {
       id: 'native-1',
       tab_id: 'a'.repeat(32),

@@ -27,5 +27,36 @@
   "native_setup": "Die Bildschirmposition der Studienseite wird direkt durch die Windows-Bridge gemessen. Vollbild und Fenstermodus werden unterstützt. Bitte lassen Sie die Studienseite auf dem Bildschirm des Eye-Trackers im Vordergrund.",
   "native_ready": "Die Position der Studienseite wurde gemessen. Die Studienleitung kann die Blickdaten-Zuordnung bestätigen. Änderungen der Fenstergröße werden anschließend automatisch neu vermessen.",
   "mapping_ready": "AOI-Zuordnung aktiv.",
-  "mapping_waiting": "AOI-Zuordnung wartet auf eine gültige Bildschirmmessung."
+  "mapping_waiting": "AOI-Zuordnung wartet auf eine gültige Bildschirmmessung.",
+  "bridge_status": "Verbindung zur Windows-Bridge",
+  "connection": {
+    "idle": "Die Windows-Bridge wurde noch nicht geprüft.",
+    "connecting": "Verbindung zur Windows-Bridge wird geprüft.",
+    "permission_pending": "Bitte die lokale Netzwerkfreigabe in Edge bestätigen.",
+    "connected": "Windows-Bridge verbunden. Die Bildschirmmessung wird geprüft.",
+    "unreachable": "Die Windows-Bridge auf diesem PC ist nicht erreichbar.",
+    "upgrade_required": "Die verbundene Windows-Bridge unterstützt noch keine Messung im Fenstermodus."
+  },
+  "connection_setup": "Für verifizierte Blickdaten im Vollbild und im Fenster wird die aktuelle Windows-Bridge auf diesem PC benötigt. Die Studienseite muss auf dem kalibrierten Bildschirm im Vordergrund bleiben.",
+  "connection_help": "Starten Sie die aktuelle Windows-Bridge auf diesem PC und lassen Sie sie geöffnet. Klicken Sie auf „Bridge erneut verbinden“ und erlauben Sie die Verbindung zum lokalen Netzwerk, falls Edge danach fragt.",
+  "permission_denied": "Edge blockiert den Zugriff auf die lokale Bridge. Öffnen Sie die Websiteberechtigungen über das Symbol links neben der Adresse und setzen Sie „Apps auf dem Gerät“ bzw. „Loopback-Netzwerk“ auf „Zulassen“. Ältere Edge-Versionen nennen diese Freigabe „Lokales Netzwerk“. Klicken Sie danach auf „Bridge erneut verbinden“.",
+  "retry_bridge": "Bridge erneut verbinden",
+  "download_bridge": "Aktuelle Windows-Bridge herunterladen",
+  "diagnostics": "Technischer Status · Version {{version}}",
+  "diagnostic_text": "Technische Diagnose ohne Teilnehmerdaten",
+  "copy_diagnostics": "Diagnose kopieren",
+  "copied": {
+    "done": "Diagnose wurde kopiert.",
+    "failed": "Automatisches Kopieren ist nicht verfügbar. Bitte markieren und kopieren Sie den Diagnosetext."
+  },
+  "recovery": {
+    "upgrade": "Laden Sie die aktuelle Windows-Bridge herunter und entpacken Sie sie. Beenden Sie die bisherige Bridge vollständig, starten Sie die neue Version und klicken Sie auf „Bridge erneut verbinden“. Die bisherige Vollbild-Prüfung bleibt verfügbar.",
+    "focus": "Bringen Sie dieses Studienfenster in den Vordergrund und schließen Sie offene Browserdialoge. Lassen Sie das Fenster kurz unverändert.",
+    "displays": "Verwenden Sie nur den kalibrierten Bildschirm des Eye-Trackers. Trennen oder deaktivieren Sie zusätzliche Bildschirme in den Windows-Anzeigeeinstellungen und bringen Sie die Studienseite wieder in den Vordergrund.",
+    "geometry": "Die Browserfläche konnte nicht eindeutig gemessen werden. Schließen Sie angedockte Entwicklertools und Browser-Seitenleisten, lassen Sie das Studienfenster vollständig auf dem kalibrierten Bildschirm und klicken Sie auf „Bridge erneut verbinden“. Vollbild ist mit der aktuellen Bridge nicht erforderlich.",
+    "zoom": "Setzen Sie den Seiten-Zoom mit Strg + 0 zurück und beenden Sie eine laufende Zoom- oder Verschiebegeste. Lassen Sie das Fenster danach kurz unverändert.",
+    "platform": "Für diese Bildschirmmessung werden Windows, Edge und die aktuelle Windows-Bridge benötigt. Starten Sie die aktuelle Bridge auf dem Studien-PC und verbinden Sie sie erneut.",
+    "tabs": "Eine andere Studienseite beansprucht die Bildschirmmessung. Verwenden Sie für diese Sitzung nur einen Studientab. Schließen Sie zusätzliche Studientabs und verbinden Sie die Bridge erneut.",
+    "stale": "Die Bildschirmmessung ist noch nicht aktuell. Lassen Sie dieses Fenster kurz unverändert im Vordergrund. Falls die Meldung bestehen bleibt, verbinden Sie die Bridge erneut."
+  }
 }

@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getNativeViewportSnapshot, subscribeNativeViewport } from '../../lib/nativeViewport'
 import { getDisplayGuardSnapshot, subscribeDisplayGuard } from '../../lib/displayGuard'
+import { observeLoopbackPermission } from '../../lib/bridgePermission'
 import type { GazeHealth } from '../../lib/gazeConnection'
 
 export default function GazeHealthStatus({
@@ -20,30 +21,7 @@ export default function GazeHealthStatus({
   const state = health.issue || health.state
   useEffect(() => {
     if (state !== 'bridge_unreachable') return
-    let active = true
-    let observed: PermissionStatus | null = null
-    const update = () => {
-      if (active && observed) setPermission(observed.state)
-    }
-    void (async () => {
-      // Chrome 147+ separates loopback permission. A legacy 'prompt' result
-      // must not overrule a denied granular permission.
-      for (const name of ['loopback-network', 'local-network-access']) {
-        try {
-          observed = await navigator.permissions.query({ name } as PermissionDescriptor)
-          if (!active) return
-          update()
-          observed.addEventListener('change', update)
-          return
-        } catch {
-          /* Unsupported browsers retain the actionable generic guidance. */
-        }
-      }
-    })()
-    return () => {
-      active = false
-      observed?.removeEventListener('change', update)
-    }
+    return observeLoopbackPermission(setPermission)
   }, [state])
   const mappingActive = native.capable && !preflight
   const mapped =
