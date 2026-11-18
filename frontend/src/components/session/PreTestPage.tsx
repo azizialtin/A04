@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { QuestionnaireVisit, SectionTiming, SessionStep } from '../../api/participant'
 import { useEnterQuestionnaire, useFinishCK } from '../../hooks/participant'
 import { useLocalDraft } from '../../hooks/useLocalDraft'
+import { demographicsLayout } from '../../lib/demographicsLayout'
 import { enqueue } from '../../lib/outbox'
 import type { Answers } from '../../lib/questionnaire'
 import Modal from '../Modal'
@@ -140,6 +141,10 @@ export default function PreTestPage({
     ['participant_group', 'sex', 'age'].every((id) =>
       step.questions.some((question) => question.id === id),
     )
+  const demographicsForm = useMemo(
+    () => (demographics ? demographicsLayout(step.questions) : null),
+    [demographics, step.questions],
+  )
   const pageClasses = [
     'pretest-page',
     pilot && 'pretest-page--pilot',
@@ -342,8 +347,12 @@ export default function PreTestPage({
         title={step.title}
         description={t('pre_test.page', { current: step.page, total: step.page_count })}
         instruction={step.description}
-        questions={step.questions}
-        layout={pilot && step.section_key === 'pck' ? 'columns' : undefined}
+        questions={demographicsForm?.questions ?? step.questions}
+        pages={demographicsForm?.pages.map(({ titleKey, questionIds }) => ({
+          title: t(titleKey),
+          questionIds,
+        }))}
+        layout={demographicsForm || (pilot && step.section_key === 'pck') ? 'columns' : undefined}
         matrixLabels={pilot && step.section_key === 'mesp' ? 'headers' : undefined}
         initialAnswers={initial}
         onAnswersChange={changed}

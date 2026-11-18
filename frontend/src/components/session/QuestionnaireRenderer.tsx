@@ -38,6 +38,8 @@ interface Props {
   layout?: 'columns'
   /** Put the full scale labels directly above their response columns. */
   matrixLabels?: 'headers'
+  /** Local pages of one response; conditions can depend on any of its questions. */
+  pages?: { title: string; questionIds: string[] }[]
 }
 
 export default function QuestionnaireRenderer({
@@ -53,11 +55,33 @@ export default function QuestionnaireRenderer({
   onSkip,
   layout,
   matrixLabels,
+  pages,
 }: Props) {
   const { t } = useTranslation()
   const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {})
+  const [pageIndex, setPageIndex] = useState(0)
+  const pageHeading = useRef<HTMLHeadingElement>(null)
+  const previousPage = useRef(pageIndex)
+  const page = pages?.[pageIndex]
+  const pageQuestions = useMemo(
+    () =>
+      page ? questions.filter((question) => page.questionIds.includes(question.id)) : questions,
+    [page, questions],
+  )
+  const lastPage = !pages || pageIndex === pages.length - 1
   const elapsed = useElapsedSeconds()
-  const missing = useMemo(() => missingRequired(questions, answers), [questions, answers])
+  const allMissing = useMemo(() => missingRequired(questions, answers), [questions, answers])
+  const missing = allMissing.filter((id) => pageQuestions.some((question) => question.id === id))
+  const visible = useMemo(() => visibleQuestionIds(questions, answers), [questions, answers])
+  const questionCount = page
+    ? pageQuestions.filter((question) => visible.has(question.id)).length
+    : questions.length
+  useLayoutEffect(() => {
+    if (previousPage.current === pageIndex) return
+    previousPage.current = pageIndex
+    pageHeading.current?.focus()
+    pageHeading.current?.scrollIntoView?.({ block: 'start' })
+  }, [pageIndex])
   const instructionStart = 1 + studyCodeLineCount(description ?? '')
   const questionsStart = instructionStart + studyCodeLineCount(instruction ?? '')
 
@@ -65,13 +89,24 @@ export default function QuestionnaireRenderer({
     <>
       {/* How many are left, not only that something is: a table of seven rows
           gives no clue why the button will not light up. */}
-      {missing.length > 0 && questions.length > 1 ? (
+      {missing.length > 0 && questionCount > 1 ? (
         <p className="muted small">
-          {t('questionnaire.still_open', { count: missing.length, total: questions.length })}
+          {t('questionnaire.still_open', { count: missing.length, total: questionCount })}
         </p>
       ) : null}
 
       <div className="panel__actions">
+        {page && pageIndex > 0 && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            data-aoi="previous_page"
+            disabled={submitting || disabled}
+            onClick={() => setPageIndex((index) => index - 1)}
+          >
+            {t('questionnaire.back')}
+          </button>
+        )}
         {onSkip && (
           <button
             type="button"
@@ -87,8 +122,13 @@ export default function QuestionnaireRenderer({
           type="button"
           className="btn btn-primary"
           data-aoi="continue"
-          disabled={missing.length > 0 || submitting || disabled}
-          onClick={() => onSubmit(answers, elapsed())}
+          disabled={
+            missing.length > 0 || (lastPage && allMissing.length > 0) || submitting || disabled
+          }
+          onClick={() => {
+            if (!lastPage) setPageIndex((index) => index + 1)
+            else onSubmit(answers, elapsed())
+          }}
         >
           {submitting ? t('common.loading') : t('questionnaire.submit')}
         </button>
@@ -115,11 +155,21 @@ export default function QuestionnaireRenderer({
             />
           </div>
         ) : null}
+        {page && (
+          <h3 className="questionnaire-page-title" ref={pageHeading} tabIndex={-1}>
+            {t('questionnaire.local_page', {
+              current: pageIndex + 1,
+              total: pages!.length,
+              title: page.title,
+            })}
+          </h3>
+        )}
       </header>
 
       <fieldset className="questionnaire-controls" disabled={disabled || submitting}>
         <QuestionnaireFields
-          questions={questions}
+          questions={pageQuestions}
+          visibilityQuestions={questions}
           answers={answers}
           onChange={(next) => {
             setAnswers(next)
@@ -148,6 +198,7 @@ export function QuestionnaireFields({
   startLine = 1,
   layout,
   matrixLabels,
+  visibilityQuestions = questions,
 }: {
   questions: Question[]
   answers: Answers
@@ -155,8 +206,12 @@ export function QuestionnaireFields({
   startLine?: number
   layout?: 'columns'
   matrixLabels?: 'headers'
+  visibilityQuestions?: Question[]
 }) {
-  const visible = useMemo(() => visibleQuestionIds(questions, answers), [questions, answers])
+  const visible = useMemo(
+    () => visibleQuestionIds(visibilityQuestions, answers),
+    [visibilityQuestions, answers],
+  )
   const numbered = useMemo(() => numberCodeQuestions(questions, startLine), [questions, startLine])
   const blocks = useMemo(
     () => groupQuestions(numbered.filter((q) => visible.has(q.id))),
@@ -390,7 +445,7 @@ function Field({
   const required = question.required !== false
   return (
     <fieldset
-      className={`qfield${question.type === 'debugging' ? ' qfield--debugging' : ''}`}
+      className={`qfield${question.type === 'debugging' ? ' qfield--debugging' : ''}${question.show_if ? ' qfield--conditional' : ''}`}
       data-aoi={`question.${question.id}`}
     >
       <legend

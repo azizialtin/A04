@@ -130,6 +130,10 @@
   },
   "questionnaire": {
     "submit": "Weiter",
+    "back": "Zurück",
+    "local_page": "Seite {{current}} von {{total}}: {{title}}",
+    "demographics_personal": "Persönliche Angaben und Ausbildung",
+    "demographics_experience": "Unterricht und Erfahrung",
     "unanswered": "Noch keine Angabe",
     "legend": "Antwortmöglichkeiten",
     "still_open": "Noch {{count}} von {{total}} Fragen offen",

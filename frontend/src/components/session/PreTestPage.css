@@ -23,17 +23,14 @@
 /* Wide lab displays can show existing batteries without changing their pages,
    question order, or saved response keys. Narrow windows retain normal flow. */
 @media (min-width: 1600px) {
-  .shell__main:has(.pretest-page--matrix),
-  .shell__main:has(.pretest-page--demographics) {
+  .shell__main:has(.pretest-page--matrix) {
     padding: 8px 24px;
   }
-  .pretest-page--matrix .panel--form,
-  .pretest-page--demographics .panel--form {
+  .pretest-page--matrix .panel--form {
     max-width: 1800px;
     padding: 12px 32px;
   }
-  .pretest-page--matrix .qlist,
-  .pretest-page--demographics .qlist {
+  .pretest-page--matrix .qlist {
     margin-top: 8px;
   }
   /* Standard matrices keep full-size radio targets; remove space around them
@@ -74,36 +71,107 @@
   .pretest-page--instructions .prose-list {
     margin-block: 10px;
   }
-  .pretest-page--demographics .qlist {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px 24px;
-    align-items: start;
+}
+
+/* Demographics read down two stable groups on each page. Revealing a follow-up
+   never moves unrelated questions to another column. Narrow screens retain
+   that same reading and keyboard order, with a horizontal divider instead. */
+.pretest-page--demographics .panel--form {
+  max-width: 1440px;
+}
+.pretest-page--demographics .questionnaire-page-title {
+  margin: 20px 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--brand);
+  scroll-margin-top: 24px;
+}
+.pretest-page--demographics .qlist--columns {
+  gap: 24px;
+  margin-top: 24px;
+}
+.pretest-page--demographics .question-column {
+  min-width: 0;
+}
+.pretest-page--demographics .question-column + .question-column {
+  border-top: 3px solid var(--brand);
+  padding-top: 20px;
+}
+.pretest-page--demographics .qfield {
+  padding: 14px 0;
+}
+.pretest-page--demographics .question-column > :first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.pretest-page--demographics .qfield__text {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+.pretest-page--demographics .qfield--conditional {
+  margin-left: 16px;
+  padding-top: 6px;
+  border-top: 0;
+}
+.pretest-page--demographics .choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+}
+.pretest-page--demographics .choice__option {
+  min-height: 28px;
+  overflow-wrap: anywhere;
+}
+.pretest-page--demographics .textarea {
+  min-height: 48px;
+  height: 48px;
+  padding: 8px 12px;
+}
+.pretest-page--demographics .input {
+  min-height: 44px;
+  padding: 8px 12px;
+}
+.pretest-page--demographics .questionnaire-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+}
+.pretest-page--demographics .questionnaire-footer > .small {
+  margin: 0;
+}
+.pretest-page--demographics .questionnaire-footer .panel__actions {
+  margin: 0 0 0 auto;
+  gap: 12px;
+}
+
+@media (min-width: 1000px) {
+  .shell__main:has(.pretest-page--demographics) {
+    padding: 24px;
   }
-  .pretest-page--demographics .qfield {
-    padding: 8px 0 0;
+  .pretest-page--demographics .panel--form {
+    padding: 28px 36px;
   }
-  .pretest-page--demographics .qfield__text {
-    font-size: 14px;
-    margin-bottom: 8px;
-  }
-  .pretest-page--demographics .choice {
+  .pretest-page--demographics .qlist--columns {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px 12px;
-    font-size: 14px;
+    align-items: start;
+    gap: 40px;
   }
-  .pretest-page--demographics .choice__option {
-    min-height: 24px;
+  .pretest-page--demographics .question-column + .question-column {
+    align-self: stretch;
+    border-top: 0;
+    border-left: 3px solid var(--brand);
+    padding-top: 0;
+    padding-left: 40px;
   }
-  .pretest-page--demographics .textarea {
-    min-height: 48px;
-    height: 48px;
-    padding: 8px 12px;
-  }
-  .pretest-page--demographics .input {
-    min-height: 40px;
-    padding: 8px 12px;
+}
+
+@media (max-width: 480px) {
+  .pretest-page--demographics .choice {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .section-timer strong {

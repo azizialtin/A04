@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { SectionTiming, SessionStep } from '../../api/participant'
 import i18n from '../../i18n'
+import type { Answers, Question } from '../../lib/questionnaire'
 import PreTestPage from './PreTestPage'
 
 const enterPage = vi.fn()
@@ -323,4 +324,289 @@ test('a normal save rejected at the deadline hands the unchanged current draft t
     expected_step_index: step.index,
     answers: { ck_pre_01: { lines: [3], explanation: 'saved at the boundary' } },
   })
+})
+
+// Keep the production IDs and dependencies while using short labels to focus on
+// navigation, validation and persistence rather than the authored wording.
+const yesNo = (id: string): Question => ({
+  id,
+  text: id,
+  type: 'multiple_choice',
+  options: [
+    { value: 1, label: 'ja' },
+    { value: 0, label: 'nein' },
+  ],
+})
+const demographicQuestions: Question[] = [
+  { id: 'sex', text: 'Geschlecht', type: 'multiple_choice', options: ['weiblich', 'männlich'] },
+  { id: 'age', text: 'Alter', type: 'number', min: 16, max: 99 },
+  {
+    id: 'participant_group',
+    text: 'Rolle',
+    type: 'multiple_choice',
+    options: [
+      { value: 1, label: 'Lehramtsstudierende:r' },
+      { value: 2, label: 'Lehrkraft' },
+      { value: 3, label: 'Sonstiges' },
+    ],
+  },
+  { id: 'st_degree', text: 'Abschluss', type: 'free_text' },
+  yesNo('st_enrollment'),
+  {
+    id: 'st_subject',
+    text: 'Studiengang',
+    type: 'free_text',
+    show_if: { question: 'st_enrollment', equals: 1 },
+  },
+  {
+    id: 'st_semester',
+    text: 'Fachsemester',
+    type: 'number',
+    min: 1,
+    max: 30,
+    show_if: { question: 'st_enrollment', equals: 1 },
+  },
+  {
+    id: 'st_schulform',
+    text: 'Schulform',
+    type: 'multiple_choice',
+    options: [
+      { value: 4, label: 'Gymnasium' },
+      { value: 7, label: 'andere' },
+    ],
+  },
+  {
+    id: 'dupl1_st_schulform',
+    text: 'Welche andere Schulform?',
+    type: 'free_text',
+    show_if: { question: 'st_schulform', equals: 7 },
+  },
+  { id: 'st_fach1', text: 'Unterrichtsfach 1', type: 'free_text' },
+  { id: 'st_fach2', text: 'Unterrichtsfach 2', type: 'free_text', required: false },
+  { id: 'st_fach3', text: 'Unterrichtsfach 3', type: 'free_text', required: false },
+  { id: 'st_schulpraktikum', text: 'Praktikumstage', type: 'number', min: 0, max: 999 },
+  {
+    id: 'st_unterricht',
+    text: 'Selbst gehaltene Unterrichtsstunden',
+    type: 'number',
+    min: 0,
+    max: 9999,
+    show_if: { question: 'participant_group', equals: 1 },
+  },
+  ...(['teach_inf', 'teach_prog', 'java'] as const).flatMap((prefix): Question[] => [
+    yesNo(`${prefix}_ex`),
+    {
+      id: prefix === 'java' ? 'java_years' : `${prefix}_year`,
+      text: `${prefix} Jahre`,
+      type: 'number',
+      min: 0,
+      max: 50,
+      show_if: { question: `${prefix}_ex`, equals: 1 },
+    },
+  ]),
+  { id: 'teach_class', text: 'Jahrgangsstufen', type: 'free_text', required: false },
+]
+const demographicsStep: typeof step = {
+  ...step,
+  questionnaire_id: 21,
+  title: 'Angaben zur Person',
+  description: 'Bitte machen Sie einige Angaben zu sich und zu Ihrer Ausbildung.',
+  section: 'Demographics',
+  section_key: 'demographics',
+  page: 1,
+  questions: demographicQuestions,
+}
+const demographicsDraftKey = 'a04.draft.PILOT:questionnaire:21'
+const firstPageAnswers: Answers = {
+  sex: 'weiblich',
+  age: 24,
+  participant_group: 1,
+  st_degree: 'Bachelor',
+  st_enrollment: 0,
+  st_schulform: 4,
+}
+const secondPageAnswers: Answers = {
+  st_fach1: 'Informatik',
+  st_schulpraktikum: 20,
+  st_unterricht: 4,
+  teach_inf_ex: 0,
+  teach_prog_ex: 0,
+  java_ex: 0,
+}
+const demographicField = (id: string) => {
+  const question = demographicQuestions.find((item) => item.id === id)!
+  return screen.getByRole('group', {
+    name: `${question.text}${question.required === false ? '' : ' *'}`,
+  })
+}
+const enterDemographic = (id: string, value: string | number) => {
+  const question = demographicQuestions.find((item) => item.id === id)!
+  const field = within(demographicField(id))
+  if (question.type === 'multiple_choice') {
+    const option = question.options!.find((item) =>
+      typeof item === 'string' ? item === value : item.value === value,
+    )!
+    fireEvent.click(
+      field.getByRole('radio', { name: typeof option === 'string' ? option : option.label }),
+    )
+  } else {
+    fireEvent.change(field.getByRole(question.type === 'number' ? 'spinbutton' : 'textbox'), {
+      target: { value: String(value) },
+    })
+  }
+}
+const completeDemographics = (answers: Answers) => {
+  for (const [id, answer] of Object.entries(answers))
+    enterDemographic(id, answer as string | number)
+}
+
+test('demographics validates the active page and shows enrollment and school follow-ups in place', async () => {
+  await view(true, demographicsStep)
+  const next = screen.getByRole('button', { name: 'Weiter' })
+  expect(screen.getByText('Seite 1 von 2: Persönliche Angaben und Ausbildung')).toBeInTheDocument()
+  expect(screen.queryByRole('group', { name: 'Unterrichtsfach 1 *' })).toBeNull()
+  expect(screen.queryByRole('group', { name: 'Studiengang *' })).toBeNull()
+  expect(next).toBeDisabled()
+  completeDemographics(firstPageAnswers)
+  expect(next).toBeEnabled()
+
+  enterDemographic('st_enrollment', 1)
+  expect(next).toBeDisabled()
+  enterDemographic('st_subject', 'Lehramt Informatik')
+  enterDemographic('st_semester', 0)
+  expect(next).toBeDisabled()
+  enterDemographic('st_semester', 3)
+  expect(next).toBeEnabled()
+  enterDemographic('st_schulform', 7)
+  expect(next).toBeDisabled()
+  enterDemographic('dupl1_st_schulform', 'Gesamtschule')
+  expect(next).toBeEnabled()
+  fireEvent.click(next)
+
+  expect(screen.getByText('Seite 2 von 2: Unterricht und Erfahrung')).toBeInTheDocument()
+  expect(demographicField('st_unterricht')).toBeInTheDocument()
+  expect(onSubmit).not.toHaveBeenCalled()
+  expect(enterPage).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(localStorage.getItem(demographicsDraftKey)!)).toMatchObject({
+    ...firstPageAnswers,
+    st_enrollment: 1,
+    st_subject: 'Lehramt Informatik',
+    st_semester: 3,
+    st_schulform: 7,
+    dupl1_st_schulform: 'Gesamtschule',
+  })
+})
+
+test('demographics keeps both pages together and validates each experience follow-up before one save', async () => {
+  await view(true, demographicsStep)
+  completeDemographics(firstPageAnswers)
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  completeDemographics(secondPageAnswers)
+  const next = screen.getByRole('button', { name: 'Weiter' })
+  expect(next).toBeEnabled()
+  for (const [trigger, years] of [
+    ['teach_inf_ex', 'teach_inf_year'],
+    ['teach_prog_ex', 'teach_prog_year'],
+    ['java_ex', 'java_years'],
+  ]) {
+    enterDemographic(trigger, 1)
+    expect(next).toBeDisabled()
+    enterDemographic(years, 2)
+    expect(next).toBeEnabled()
+    enterDemographic(trigger, 0)
+    expect(document.querySelector(`[data-aoi="question.${years}"]`)).toBeNull()
+    expect(next).toBeEnabled()
+  }
+
+  fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+  expect(within(demographicField('age')).getByRole('spinbutton')).toHaveValue(24)
+  enterDemographic('participant_group', 2)
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(screen.queryByRole('group', { name: 'Selbst gehaltene Unterrichtsstunden *' })).toBeNull()
+  expect(within(demographicField('st_fach1')).getByRole('textbox')).toHaveValue('Informatik')
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  })
+  expect(onSubmit).toHaveBeenCalledTimes(1)
+  expect(onSubmit).toHaveBeenCalledWith(
+    expect.objectContaining({ ...firstPageAnswers, ...secondPageAnswers, participant_group: 2 }),
+    expect.any(Number),
+    expect.any(String),
+    expect.any(Number),
+  )
+  expect(localStorage.getItem(demographicsDraftKey)).toBeNull()
+  expect(finishPage).not.toHaveBeenCalled()
+})
+
+test('demographics restores answers from both pages after a reload and preserves a rejected save', async () => {
+  const rendered = await view(false, demographicsStep)
+  completeDemographics(firstPageAnswers)
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  enterDemographic('st_fach1', 'Mathematik')
+  enterDemographic('teach_class', '8–10')
+  rendered.unmount()
+  await view(false, demographicsStep)
+  expect(within(demographicField('st_degree')).getByRole('textbox')).toHaveValue('Bachelor')
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(within(demographicField('st_fach1')).getByRole('textbox')).toHaveValue('Mathematik')
+  expect(within(demographicField('teach_class')).getByRole('textbox')).toHaveValue('8–10')
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+  completeDemographics(secondPageAnswers)
+  onSubmit.mockResolvedValueOnce(false)
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  })
+  expect(JSON.parse(localStorage.getItem(demographicsDraftKey)!)).toMatchObject({
+    ...firstPageAnswers,
+    ...secondPageAnswers,
+    teach_class: '8–10',
+  })
+  expect(screen.getByText('Seite 2 von 2: Unterricht und Erfahrung')).toBeInTheDocument()
+})
+
+test('changing the role on page one makes the lesson count required only for student teachers', async () => {
+  await view(true, demographicsStep)
+  completeDemographics({ ...firstPageAnswers, participant_group: 2 })
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  const teacherAnswers = { ...secondPageAnswers }
+  delete teacherAnswers.st_unterricht
+  completeDemographics(teacherAnswers)
+  expect(screen.queryByRole('group', { name: 'Selbst gehaltene Unterrichtsstunden *' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+  enterDemographic('participant_group', 1)
+  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(within(demographicField('st_unterricht')).getByRole('spinbutton')).toHaveValue(null)
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+  enterDemographic('st_unterricht', 0)
+  expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+  expect(onSubmit).not.toHaveBeenCalled()
+})
+
+test('custom demographics retain every question in the ordinary form', async () => {
+  await view(true, {
+    ...demographicsStep,
+    questions: [
+      ...demographicQuestions,
+      { id: 'additional_background', type: 'free_text', text: 'Zusätzliche Angaben' },
+    ],
+  })
+  expect(screen.queryByText('Seite 1 von 2: Persönliche Angaben und Ausbildung')).toBeNull()
+  expect(demographicField('sex')).toBeInTheDocument()
+  expect(demographicField('st_fach1')).toBeInTheDocument()
+  expect(screen.getByRole('group', { name: 'Zusätzliche Angaben *' })).toBeInTheDocument()
+})
+
+test('demographics page labels and local navigation follow the selected interface language', async () => {
+  await i18n.changeLanguage('en')
+  try {
+    await view(true, demographicsStep)
+    expect(screen.getByRole('heading', { name: /Page 1 of 2:/ })).toBeInTheDocument()
+    completeDemographics(firstPageAnswers)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByRole('heading', { name: /Page 2 of 2:/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled()
+  } finally {
+    await i18n.changeLanguage('de')
+  }
 })
