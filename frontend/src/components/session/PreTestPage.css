@@ -25,12 +25,16 @@
 @media (min-width: 1600px) {
   .shell__main:has(.pretest-page--matrix),
   .shell__main:has(.pretest-page--demographics) {
-    padding: 20px 24px;
+    padding: 8px 24px;
   }
   .pretest-page--matrix .panel--form,
   .pretest-page--demographics .panel--form {
     max-width: 1800px;
-    padding: 16px 32px;
+    padding: 12px 32px;
+  }
+  .pretest-page--matrix .qlist,
+  .pretest-page--demographics .qlist {
+    margin-top: 8px;
   }
   .pretest-page--instructions .qhead .lead {
     font-size: 15px;
