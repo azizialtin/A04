@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import { useEffect, useMemo, useState } from 'react'
 
 import { adminApi, EXPORT_KINDS, type ExportKind } from '../../api/admin'
@@ -155,7 +156,7 @@ export default function ExportsSection({ studyId, preselected = null }: Props) {
         </p>
       )}
 
-      <table className="table" style={{ marginTop: 16 }}>
+      <AdminTable className="table" style={{ marginTop: 16 }}>
         <thead>
           <tr>
             <th>Datei</th>
@@ -198,7 +199,7 @@ export default function ExportsSection({ studyId, preselected = null }: Props) {
             )
           })}
         </tbody>
-      </table>
+      </AdminTable>
     </div>
   )
 }

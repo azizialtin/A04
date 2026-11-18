@@ -1,4 +1,12 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
@@ -256,8 +264,24 @@ function Matrix({
         prompt.replace(/\s+/g, ' '),
       )
     })
+  const container = useRef<HTMLDivElement>(null)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    if (!container.current || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      setNarrow(entry.contentRect.width < 320 + block.options.length * 64)
+    })
+    observer.observe(container.current)
+    return () => observer.disconnect()
+  }, [block.options.length])
+  // The wide task layouts place a compact table in a column that is narrow on
+  // purpose and are fitted to the lab screen as authored; they are not stacked.
+  const stacked = narrow && !deduplicateLegend && !labelsInHeaders
   return (
-    <div className={`matrix${labelsInHeaders ? ' matrix--labels-in-headers' : ''}`}>
+    <div
+      ref={container}
+      className={`matrix${labelsInHeaders ? ' matrix--labels-in-headers' : ''}${stacked ? ' matrix--stacked' : ''}`}
+    >
       {prompt && (
         <StudyText text={prompt} className="matrix__prompt" aoiId={`matrix.${block.key}.prompt`} />
       )}
@@ -322,7 +346,7 @@ function Matrix({
                     key={String(option.value)}
                     data-aoi={`question.${q.id}.answer`}
                     data-aoi-priority="1"
-                    data-aoi-clip="after-row-prompt"
+                    data-aoi-clip={stacked ? undefined : 'after-row-prompt'}
                     className={answers[q.id] === option.value ? 'is-chosen' : undefined}
                   >
                     <label className="matrix__cell" title={option.label}>
@@ -335,6 +359,7 @@ function Matrix({
                         // The row and the statement, since the cell shows only a number.
                         aria-label={`${q.text}: ${numbered(option, i)}`}
                       />
+                      <span className="matrix__option-label">{numbered(option, i)}</span>
                     </label>
                   </td>
                 ))}

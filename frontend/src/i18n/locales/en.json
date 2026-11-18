@@ -1,6 +1,7 @@
 {
   "common": {
     "continue": "Continue",
+    "actions": "Actions",
     "loading": "Loading…",
     "logout": "Log out"
   },
@@ -238,6 +239,7 @@
     "permission_denied": "The browser reports blocked access to apps on this device (loopback). In Edge’s permissions for this A04 site, set “Apps on device” to “Allow”; allowing “Local network” alone does not grant this permission. Reload the page, then retry.",
     "tracker_help": "Check the connection, Eye Tracker Manager, and whether the installed SDK supports this tracker model.",
     "retry": "Check eye tracker again",
+    "help": "Connection help",
     "continue_warning": "You may continue. Without confirmed gaze data, gaze points may be missing from replay. Please inform the study team.",
     "previous_empty": "An earlier gaze recording has no saved samples. Please inform the study team.",
     "previous_upload_failed": "An earlier gaze recording could not be fully saved or finalized. Please inform the study team.",

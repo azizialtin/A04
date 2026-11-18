@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import type { AdminVideo, Study, StudyVideoDefaults, VideoUpdate } from '../../api/admin'
@@ -242,7 +243,7 @@ export default function VideosSection({ studyId }: { studyId: number }) {
         </button>
       </form>
 
-      <table className="table">
+      <AdminTable className="table">
         <thead>
           <tr>
             <th>ID</th>
@@ -316,7 +317,7 @@ export default function VideosSection({ studyId }: { studyId: number }) {
             </tr>
           )}
         </tbody>
-      </table>
+      </AdminTable>
       {editing && defaults && (
         <VideoEditor
           key={editing.id}

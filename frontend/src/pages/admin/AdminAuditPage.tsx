@@ -1,3 +1,4 @@
+import AdminTable from '../../components/admin/AdminTable'
 import { useAudit } from '../../hooks/admin'
 
 export default function AdminAuditPage() {
@@ -9,7 +10,7 @@ export default function AdminAuditPage() {
       {audit.isLoading ? (
         <p className="muted">Wird geladen…</p>
       ) : (
-        <table className="table">
+        <AdminTable className="table">
           <thead>
             <tr>
               <th>Zeit</th>
@@ -35,7 +36,7 @@ export default function AdminAuditPage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </AdminTable>
       )}
     </div>
   )

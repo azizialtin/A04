@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 
 import type { SessionStep } from '../api/participant'
 import type { DisplayGuardSnapshot } from '../lib/displayGuard'
@@ -154,6 +155,7 @@ vi.mock('../lib/outbox', () => ({ enqueue: vi.fn() }))
 const logged = vi.mocked(enqueue)
 
 beforeEach(() => {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   currentStepIndex = 0
   sessionRefetchError = false
   me = { id: 'T-1', study_name: 'S', status: 'active' }
@@ -175,6 +177,8 @@ beforeEach(() => {
     unverifiedContinuation: false,
   }
 })
+
+afterEach(() => vi.restoreAllMocks())
 
 const view = () =>
   render(
@@ -683,4 +687,60 @@ test('expected CK deadline takeover does not display a generic connection error'
   expect(respond).toHaveBeenCalledOnce()
   expect(screen.queryByText('Etwas ist schiefgelaufen. Bitte laden Sie die Seite neu.')).toBeNull()
   expect(currentStepIndex).toBe(0)
+})
+
+test.each([0, 4])('keeps tracking notices before the content on step %s', (index) => {
+  currentStepIndex = index
+  const { container } = view()
+  const sessionScreen = container.querySelector('.session-screen')
+  const notices = sessionScreen?.querySelector(':scope > .gaze-health-stack')
+  expect(notices).toBeInTheDocument()
+  expect(notices?.nextElementSibling).not.toBeNull()
+})
+
+test('starts each displayed step at the top, without jumping on same-page updates', () => {
+  me = undefined
+  const content = () => (
+    <MemoryRouter>
+      <AuthProvider>
+        <ToastProvider>
+          <SessionPage />
+        </ToastProvider>
+      </AuthProvider>
+    </MemoryRouter>
+  )
+  const { rerender } = render(content())
+  const refresh = () => rerender(content())
+  expect(window.scrollTo).not.toHaveBeenCalled()
+  me = { id: 'T-1', study_name: 'S', status: 'active' }
+  refresh()
+  expect(window.scrollTo).toHaveBeenCalledTimes(1)
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '34' } })
+  refresh()
+  sessionRefetchError = true
+  refresh()
+  expect(window.scrollTo).toHaveBeenCalledTimes(1)
+
+  // Consecutive questionnaires, other screen types, completion and supervisor back.
+  for (const index of [1, 2, 3, 4, STEPS.length, 0]) {
+    vi.mocked(window.scrollTo).mockClear()
+    currentStepIndex = index
+    refresh()
+    expect(window.scrollTo).toHaveBeenCalledOnce()
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'instant' })
+  }
+})
+
+test('failed answers keep the participant on the same page without resetting scroll', async () => {
+  respond.mockRejectedValueOnce(new Error('Network unavailable'))
+  view()
+  vi.mocked(window.scrollTo).mockClear()
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '34' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+  })
+  expect(respond).toHaveBeenCalledOnce()
+  expect(currentStepIndex).toBe(0)
+  expect(screen.getByRole('spinbutton')).toHaveValue(34)
+  expect(window.scrollTo).not.toHaveBeenCalled()
 })

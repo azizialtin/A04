@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { isCKDeadlineExpired, type SessionStep } from '../api/participant'
@@ -132,6 +132,17 @@ export default function SessionPage() {
   useLayoutEffect(() => {
     if (!guardBlocked) admittedStep.current = stepIdentity
   }, [guardBlocked, stepIdentity])
+  const displayedPage =
+    !me.isLoading && !session.isLoading && !me.isError && me.data && session.data
+      ? `${me.data.id}:${session.data.current_step_index}`
+      : null
+  const lastScrolledPage = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    if (displayedPage === null || displayedPage === lastScrolledPage.current) return
+    lastScrolledPage.current = displayedPage
+    // Steps share one URL; reset after the new screen commits, before it paints.
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+  }, [displayedPage])
 
   // The supervisor's way back. There is no button: the chord opens a
   // confirmation that names both screens, and the server moves the pointer.
@@ -483,10 +494,10 @@ export default function SessionPage() {
   // pre-test pages are adjacent steps of the same kind: without this the second
   // page opens holding the first page's answers and submits them again.
   const screen = pageMounted ? (
-    <Fragment key={current_step_index}>
-      {content}
+    <div className="session-screen" key={current_step_index}>
       <SessionGazeCapture step={step} />
-    </Fragment>
+      {content}
+    </div>
   ) : null
 
   // Sits outside the shell: the case screen has no chrome, and that is exactly

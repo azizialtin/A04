@@ -19,7 +19,7 @@ export default function SessionGazeCapture({ step }: { step: SessionStep }) {
   const warning = useSyncExternalStore(subscribeGazeDelivery, gazeDeliveryWarning)
   return (
     <div className="gaze-health-stack">
-      {context && health ? <GazeHealthStatus health={health} retry={health.retry} /> : null}
+      {context && health ? <GazeHealthStatus health={health} retry={health.retry} compact /> : null}
       {/* The blocking dialog already says all of this when it is enabled. */}
       {context && !DISPLAY_GUARD_BLOCKING ? <DisplayCheckButton /> : null}
       {warning ? (

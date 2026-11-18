@@ -145,3 +145,19 @@ test('with the guard off the badge says nothing about mapping', () => {
   render(<GazeHealthStatus health={tracking} retry={() => {}} />)
   expect(screen.queryByText(/AOI-Zuordnung/)).toBeNull()
 })
+
+test('compact session status keeps retry available and connection help expandable', () => {
+  const retry = vi.fn()
+  render(
+    <GazeHealthStatus
+      health={{ state: 'bridge_unreachable', received: 0, valid: 0 }}
+      retry={retry}
+      compact
+    />,
+  )
+  const help = screen.getByText(/A04Bridge.exe starten/)
+  expect(help.closest('details')).not.toHaveAttribute('open')
+  expect(screen.getByText('Hilfe zur Verbindung')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Eye-Tracker erneut prüfen' }))
+  expect(retry).toHaveBeenCalledOnce()
+})

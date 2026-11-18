@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { AxiosError } from 'axios'
@@ -336,7 +337,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           </p>
         ) : (
           <div className="table-scroll">
-            <table className="table" aria-label="Vortest-Abschnitte">
+            <AdminTable className="table" aria-label="Vortest-Abschnitte">
               <thead>
                 <tr>
                   <th>Instrument / Tabelle</th>
@@ -406,7 +407,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </AdminTable>
           </div>
         )}
         <p className="muted small">
@@ -660,7 +661,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
       </div>
 
       <div className="table-scroll">
-        <table className="table" aria-label="Alle Fragebogenseiten">
+        <AdminTable className="table" aria-label="Alle Fragebogenseiten">
           <thead>
             <tr>
               <th>ID</th>
@@ -713,7 +714,7 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
               </tr>
             )}
           </tbody>
-        </table>
+        </AdminTable>
       </div>
     </div>
   )

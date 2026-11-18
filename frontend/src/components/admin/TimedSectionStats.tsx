@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import type { ParticipantTimedSection } from '../../api/admin'
 import { duration, num } from '../../lib/adminFormat'
 import { Facts, Pill } from './stat'
@@ -76,7 +77,7 @@ export default function TimedSectionStats({ rows }: { rows: ParticipantTimedSect
               Seitenbesuche ({num(section.page_visits?.length ?? 0)})
             </summary>
             <div className="table-scroll">
-              <table className="table" aria-label={`Seitenbesuche ${section.section}`}>
+              <AdminTable className="table" aria-label={`Seitenbesuche ${section.section}`}>
                 <thead>
                   <tr>
                     <th>Seite</th>
@@ -138,7 +139,7 @@ export default function TimedSectionStats({ rows }: { rows: ParticipantTimedSect
                     </tr>
                   )}
                 </tbody>
-              </table>
+              </AdminTable>
             </div>
             <p className="muted small">
               Antwortstände gehören zum jeweiligen Besuch. Nicht besuchte Seiten werden nicht

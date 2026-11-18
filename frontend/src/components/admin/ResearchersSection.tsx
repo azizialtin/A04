@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import type { AxiosError } from 'axios'
 import { useState } from 'react'
 
@@ -60,7 +61,7 @@ export default function ResearchersSection({
           Passwort wird einmal angezeigt – geben Sie es persönlich weiter, nicht per E-Mail.
         </p>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -124,7 +125,7 @@ export default function ResearchersSection({
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
         <CreateAccountForm />
       </div>

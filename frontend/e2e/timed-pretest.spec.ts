@@ -11,24 +11,44 @@ const API = process.env.E2E_API_URL ?? 'http://localhost:8031'
 const EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'e2e@a04.test'
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'e2e-password-1234'
 let researcherToken: string | undefined
-const source = JSON.parse(readFileSync(new URL('../../backend/app/data/pretest_nov2026.json', import.meta.url), 'utf8')) as {
+const source = JSON.parse(
+  readFileSync(new URL('../../backend/app/data/pretest_nov2026.json', import.meta.url), 'utf8'),
+) as {
   ck_tasks: { source_row: number; question: Question }[]
   pck_example: { title: string; description: string; questions: Question[] }
 }
 
-async function api<T>(request: APIRequestContext, path: string, token?: string, method = 'GET', data?: unknown): Promise<T> {
+async function api<T>(
+  request: APIRequestContext,
+  path: string,
+  token?: string,
+  method = 'GET',
+  data?: unknown,
+): Promise<T> {
   const response = await request.fetch(API + path, {
-    method, data, headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    method,
+    data,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   })
-  expect(response.ok(), `${method} ${path}: ${response.status()} ${await response.text()}`).toBeTruthy()
+  expect(
+    response.ok(),
+    `${method} ${path}: ${response.status()} ${await response.text()}`,
+  ).toBeTruthy()
   return response.json() as Promise<T>
 }
 
 async function admin(request: APIRequestContext) {
   if (!researcherToken) {
-    const result = await api<{ access_token: string }>(request, '/auth/admin/login', undefined, 'POST', {
-      email: EMAIL, password: PASSWORD,
-    })
+    const result = await api<{ access_token: string }>(
+      request,
+      '/auth/admin/login',
+      undefined,
+      'POST',
+      {
+        email: EMAIL,
+        password: PASSWORD,
+      },
+    )
     researcherToken = result.access_token
   }
   return researcherToken
@@ -46,30 +66,50 @@ async function login(page: Page, participantId: string) {
 // commas or lines would turn the assertions below into false positives.
 function csvRecords(contents: string): Record<string, string>[] {
   const rows: string[][] = []
-  let row: string[] = [], field = '', quoted = false
+  let row: string[] = [],
+    field = '',
+    quoted = false
   const text = contents.replace(/^\uFEFF/, '')
   for (let index = 0; index < text.length; index++) {
     const char = text[index]
     if (char === '"') {
-      if (quoted && text[index + 1] === '"') { field += '"'; index++ }
-      else quoted = !quoted
+      if (quoted && text[index + 1] === '"') {
+        field += '"'
+        index++
+      } else quoted = !quoted
     } else if (char === ',' && !quoted) {
-      row.push(field); field = ''
+      row.push(field)
+      field = ''
     } else if ((char === '\n' || char === '\r') && !quoted) {
       if (char === '\r' && text[index + 1] === '\n') index++
-      row.push(field); rows.push(row); row = []; field = ''
+      row.push(field)
+      rows.push(row)
+      row = []
+      field = ''
     } else field += char
   }
-  if (field || row.length) { row.push(field); rows.push(row) }
+  if (field || row.length) {
+    row.push(field)
+    rows.push(row)
+  }
   const headers = rows.shift() ?? []
-  return rows.filter((values) => values.some(Boolean)).map((values) =>
-    Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ''])),
-  )
+  return rows
+    .filter((values) => values.some(Boolean))
+    .map((values) =>
+      Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ''])),
+    )
 }
 
-async function exported(request: APIRequestContext, studyId: number, participantId: string, kind: string, token: string) {
+async function exported(
+  request: APIRequestContext,
+  studyId: number,
+  participantId: string,
+  kind: string,
+  token: string,
+) {
   const response = await request.get(`${API}/admin/studies/${studyId}/export/${kind}`, {
-    headers: { Authorization: `Bearer ${token}` }, params: { participant_ids: participantId },
+    headers: { Authorization: `Bearer ${token}` },
+    params: { participant_ids: participantId },
   })
   expect(response.ok(), `${kind} export: ${await response.text()}`).toBeTruthy()
   return csvRecords(await response.text())
@@ -79,28 +119,45 @@ async function viewportReport(page: Page) {
   await page.evaluate(() => window.scrollTo(0, 0))
   return page.evaluate(() => {
     const root = document.querySelector('.pretest-page')!
-    const outside = [...root.querySelectorAll<HTMLElement>('input, textarea, button')].flatMap((control) => {
-      const rect = control.getBoundingClientRect()
-      if (!rect.width || !rect.height) return []
-      return rect.top < -1 || rect.left < -1 || rect.bottom > innerHeight + 1 || rect.right > innerWidth + 1
-        ? [control.getAttribute('aria-label') || control.getAttribute('name') || control.textContent?.trim() || control.tagName]
-        : []
-    })
+    const outside = [...root.querySelectorAll<HTMLElement>('input, textarea, button')].flatMap(
+      (control) => {
+        const rect = control.getBoundingClientRect()
+        if (!rect.width || !rect.height) return []
+        return rect.top < -1 ||
+          rect.left < -1 ||
+          rect.bottom > innerHeight + 1 ||
+          rect.right > innerWidth + 1
+          ? [
+              control.getAttribute('aria-label') ||
+                control.getAttribute('name') ||
+                control.textContent?.trim() ||
+                control.tagName,
+            ]
+          : []
+      },
+    )
     const scrollers = [...root.querySelectorAll<HTMLElement>('*')].flatMap((element) => {
       const style = getComputedStyle(element)
-      const vertical = /auto|scroll/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 1
-      const horizontal = /auto|scroll/.test(style.overflowX) && element.scrollWidth > element.clientWidth + 1
+      const vertical =
+        /auto|scroll/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 1
+      const horizontal =
+        /auto|scroll/.test(style.overflowX) && element.scrollWidth > element.clientWidth + 1
       return vertical || horizontal ? [element.className || element.tagName] : []
     })
     return {
       vertical: Math.max(0, document.documentElement.scrollHeight - innerHeight),
       horizontal: Math.max(0, document.documentElement.scrollWidth - innerWidth),
-      outside, scrollers,
+      outside,
+      scrollers,
     }
   })
 }
 
-test('real CK timing survives reload and supervisor finish exports only visited pages', async ({ page, request, browser }, info) => {
+test('real CK timing survives reload and supervisor finish exports only visited pages', async ({
+  page,
+  request,
+  browser,
+}, info) => {
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1920, height: 1080 })
   const token = await admin(request)
@@ -108,53 +165,99 @@ test('real CK timing survives reload and supervisor finish exports only visited 
   try {
     // Finalise the instrument before participant login snapshots the run's
     // assigned cases. No existing study or participant is rewritten.
-    const defaults = await api<{ id: number; placement: string }[]>(request, `/admin/studies/${studyId}/questionnaires`, token)
+    const defaults = await api<{ id: number; placement: string }[]>(
+      request,
+      `/admin/studies/${studyId}/questionnaires`,
+      token,
+    )
     for (const questionnaire of defaults.filter((item) => item.placement === 'pre_test')) {
       await api(request, `/admin/questionnaires/${questionnaire.id}?force=true`, token, 'DELETE')
     }
-    const makePage = (body: Record<string, unknown>) => api<{ id: number }>(
-      request, `/admin/studies/${studyId}/questionnaires`, token, 'POST', { placement: 'pre_test', ...body },
-    )
+    const makePage = (body: Record<string, unknown>) =>
+      api<{ id: number }>(request, `/admin/studies/${studyId}/questionnaires`, token, 'POST', {
+        placement: 'pre_test',
+        ...body,
+      })
     const debug = (id: string): Question => ({
-      id, type: 'debugging', text: 'Nennen Sie die Fehlerzeile und beschreiben Sie den Fehler.',
-      max_entries: 5, code_blocks: [{ filename: 'Beispiel.java', code: [
-        'int sum = 0;', 'for (int i = 0; i <= 3; i++) {', '    sum = i;', '}', 'System.out.println(sum);',
-      ] }],
+      id,
+      type: 'debugging',
+      text: 'Nennen Sie die Fehlerzeile und beschreiben Sie den Fehler.',
+      max_entries: 5,
+      code_blocks: [
+        {
+          filename: 'Beispiel.java',
+          code: [
+            'int sum = 0;',
+            'for (int i = 0; i <= 3; i++) {',
+            '    sum = i;',
+            '}',
+            'System.out.println(sum);',
+          ],
+        },
+      ],
     })
     const first = await makePage({
-      title: 'CK Integration 1', section: 'CK-Aufgaben', section_key: 'ck_tasks', order_index: 0,
-      intro_title: 'CK-Start Integration', intro_body: 'Für diesen Abschnitt haben Sie **7 Minuten Zeit**.',
+      title: 'CK Integration 1',
+      section: 'CK-Aufgaben',
+      section_key: 'ck_tasks',
+      order_index: 0,
+      intro_title: 'CK-Start Integration',
+      intro_body: 'Für diesen Abschnitt haben Sie **7 Minuten Zeit**.',
       questions: [debug('ck_first')],
     })
     const skipped = await makePage({
-      title: 'CK Integration 2', section: 'CK-Aufgaben', section_key: 'ck_tasks', order_index: 1,
+      title: 'CK Integration 2',
+      section: 'CK-Aufgaben',
+      section_key: 'ck_tasks',
+      order_index: 1,
       questions: [debug('ck_skipped')],
     })
     const pck = await makePage({
-      title: 'PCK Integration', section: 'PCK', section_key: 'pck', order_index: 2,
-      intro_title: 'PCK-Start Integration', intro_body: 'Ordnen Sie die Erklärungen und begründen Sie Ihre Wahl.',
+      title: 'PCK Integration',
+      section: 'PCK',
+      section_key: 'pck',
+      order_index: 2,
+      intro_title: 'PCK-Start Integration',
+      intro_body: 'Ordnen Sie die Erklärungen und begründen Sie Ihre Wahl.',
       questions: [
-        { id: 'pck_rank', type: 'ranking', text: 'Ordnen Sie die Erklärungen.', options: [
-          { value: 'a', label: 'Erklärung A' }, { value: 'b', label: 'Erklärung B' }, { value: 'c', label: 'Erklärung C' },
-        ] },
+        {
+          id: 'pck_rank',
+          type: 'ranking',
+          text: 'Ordnen Sie die Erklärungen.',
+          options: [
+            { value: 'a', label: 'Erklärung A' },
+            { value: 'b', label: 'Erklärung B' },
+            { value: 'c', label: 'Erklärung C' },
+          ],
+        },
         { id: 'pck_reason', type: 'free_text', text: 'Begründen Sie Ihre Wahl.' },
-        { id: 'pck_selected', type: 'multi_select', text: 'Welche Erklärungen treffen zu?', options: [
-          { value: 1, label: 'Erklärung 1 als Zahl' },
-          { value: '1', label: 'Erklärung 1 als Text' },
-          { value: 'other', label: 'Andere Erklärung' },
-        ] },
+        {
+          id: 'pck_selected',
+          type: 'multi_select',
+          text: 'Welche Erklärungen treffen zu?',
+          options: [
+            { value: 1, label: 'Erklärung 1 als Zahl' },
+            { value: '1', label: 'Erklärung 1 als Text' },
+            { value: 'other', label: 'Andere Erklärung' },
+          ],
+        },
       ],
     })
-    await api(request, `/admin/studies/${studyId}`, token, 'PATCH', { texts: {
-      case_intro_title: 'Allgemeine Fall-Einleitung', case_intro_body: 'Für spätere Fälle.',
-      pre_test_case_intro_title: 'Vortest-Video Integration',
-      pre_test_case_intro_body: 'Beobachten Sie das Vortest-Video und machen Sie sich Notizen.',
-    } })
+    await api(request, `/admin/studies/${studyId}`, token, 'PATCH', {
+      texts: {
+        case_intro_title: 'Allgemeine Fall-Einleitung',
+        case_intro_body: 'Für spätere Fälle.',
+        pre_test_case_intro_title: 'Vortest-Video Integration',
+        pre_test_case_intro_body: 'Beobachten Sie das Vortest-Video und machen Sie sich Notizen.',
+      },
+    })
 
     const participantToken = await login(page, participantId)
     const session = () => api<SessionScript>(request, '/participant/session', participantToken)
     await page.getByRole('button', { name: 'Los geht’s' }).click()
-    await expect(page.getByRole('heading', { name: 'CK-Start Integration', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'CK-Start Integration', exact: true }),
+    ).toBeVisible()
     expect((await session()).section_timing).toBeNull()
     await page.screenshot({ path: info.outputPath('real-ck-introduction.png') })
     await page.getByRole('button', { name: 'Weiter', exact: true }).click()
@@ -175,29 +278,48 @@ test('real CK timing survives reload and supervisor finish exports only visited 
     await page.screenshot({ path: info.outputPath('real-ck-partial-after-reload.png') })
 
     await page.keyboard.press('Control+Alt+Shift+N')
-    await expect(page.getByRole('heading', { name: 'CK-Abschnitt beenden', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'CK-Abschnitt beenden', exact: true }),
+    ).toBeVisible()
     await page.getByRole('button', { name: 'Speichern und zu PCK', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'PCK-Start Integration', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'PCK-Start Integration', exact: true }),
+    ).toBeVisible()
     const finished = await session()
     expect(finished.section_timing).toMatchObject({ deadline_ms: deadline, finished: true })
-    expect(finished.steps[finished.current_step_index]).toMatchObject({ kind: 'section_intro', section_key: 'pck' })
+    expect(finished.steps[finished.current_step_index]).toMatchObject({
+      kind: 'section_intro',
+      section_key: 'pck',
+    })
     await page.getByRole('button', { name: 'Weiter', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'PCK Integration', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Erklärung B: Nach oben verschieben', exact: true }).click()
-    await page.locator('[data-aoi="question.pck_reason"] textarea').fill('Erklärung B beschreibt die Fehlvorstellung genauer.')
+    await page
+      .getByRole('button', { name: 'Erklärung B: Nach oben verschieben', exact: true })
+      .click()
+    await page
+      .locator('[data-aoi="question.pck_reason"] textarea')
+      .fill('Erklärung B beschreibt die Fehlvorstellung genauer.')
     await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeDisabled()
     await page.getByRole('checkbox', { name: 'Erklärung 1 als Zahl', exact: true }).check()
     await page.getByRole('checkbox', { name: 'Erklärung 1 als Text', exact: true }).check()
-    await expect(page.getByRole('checkbox', { name: 'Erklärung 1 als Zahl', exact: true })).toBeChecked()
-    await expect(page.getByRole('checkbox', { name: 'Erklärung 1 als Text', exact: true })).toBeChecked()
-    await expect(page.getByRole('checkbox', { name: 'Andere Erklärung', exact: true })).not.toBeChecked()
+    await expect(
+      page.getByRole('checkbox', { name: 'Erklärung 1 als Zahl', exact: true }),
+    ).toBeChecked()
+    await expect(
+      page.getByRole('checkbox', { name: 'Erklärung 1 als Text', exact: true }),
+    ).toBeChecked()
+    await expect(
+      page.getByRole('checkbox', { name: 'Andere Erklärung', exact: true }),
+    ).not.toBeChecked()
     await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
     await page.screenshot({ path: info.outputPath('real-pck-ranking.png') })
     await page.getByRole('button', { name: 'Weiter', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Vorab-Fragebogen', exact: true })).toBeVisible()
 
     const responses = await exported(request, studyId, participantId, 'responses', token)
-    expect(responses.map((row) => Number(row.questionnaire_id)).sort((a, b) => a - b)).toEqual([first.id, pck.id].sort((a, b) => a - b))
+    expect(responses.map((row) => Number(row.questionnaire_id)).sort((a, b) => a - b)).toEqual(
+      [first.id, pck.id].sort((a, b) => a - b),
+    )
     expect(responses.some((row) => Number(row.questionnaire_id) === skipped.id)).toBe(false)
     const ckResponse = responses.find((row) => Number(row.questionnaire_id) === first.id)!
     expect(ckResponse.response_status).toBe('partial')
@@ -205,27 +327,56 @@ test('real CK timing survives reload and supervisor finish exports only visited 
     const pckResponse = responses.find((row) => Number(row.questionnaire_id) === pck.id)!
     expect(pckResponse.response_status).toBe('submitted')
     expect(JSON.parse(pckResponse.answers)).toEqual({
-      pck_rank: ['b', 'a', 'c'], pck_reason: 'Erklärung B beschreibt die Fehlvorstellung genauer.',
+      pck_rank: ['b', 'a', 'c'],
+      pck_reason: 'Erklärung B beschreibt die Fehlvorstellung genauer.',
       pck_selected: [1, '1'],
     })
     const sections = await exported(request, studyId, participantId, 'sections', token)
     const ckSection = sections.find((row) => row.section_key === 'ck_tasks')!
-    expect(ckSection).toMatchObject({ pages_answered: '0', visited_pages: '1', exit_reason: 'supervisor_finish', deadline_ms: String(deadline) })
+    expect(ckSection).toMatchObject({
+      pages_answered: '0',
+      visited_pages: '1',
+      exit_reason: 'supervisor_finish',
+      deadline_ms: String(deadline),
+    })
     expect(Number(ckSection.started_client_ts)).toBe(initial.section_timing!.started_client_ts)
     expect(Number(ckSection.ended_client_ts)).toBeGreaterThan(Number(ckSection.started_client_ts))
-    const visits = JSON.parse(ckSection.page_visits) as Omit<ParticipantQuestionnaireVisit, 'title' | 'elapsed_seconds'>[]
+    const visits = JSON.parse(ckSection.page_visits) as Omit<
+      ParticipantQuestionnaireVisit,
+      'title' | 'elapsed_seconds'
+    >[]
     expect(visits.length).toBeGreaterThanOrEqual(2)
     expect(visits.every((visit) => visit.questionnaire_id === first.id)).toBe(true)
-    expect(visits.some((visit) => visit.exit_reason === 'supervisor_finish' && visit.exited_client_ts! >= visit.entered_client_ts)).toBe(true)
+    expect(
+      visits.some(
+        (visit) =>
+          visit.exit_reason === 'supervisor_finish' &&
+          visit.exited_client_ts! >= visit.entered_client_ts,
+      ),
+    ).toBe(true)
     const pckSection = sections.find((row) => row.section_key === 'pck')!
     expect(pckSection).toMatchObject({ pages_answered: '1', visited_pages: '1' })
-    expect(JSON.parse(pckSection.page_visits)).toEqual([expect.objectContaining({ questionnaire_id: pck.id, exit_reason: 'submitted' })])
-    await info.attach('responses-export.json', { body: JSON.stringify(responses, null, 2), contentType: 'application/json' })
-    await info.attach('sections-export.json', { body: JSON.stringify(sections, null, 2), contentType: 'application/json' })
+    expect(JSON.parse(pckSection.page_visits)).toEqual([
+      expect.objectContaining({ questionnaire_id: pck.id, exit_reason: 'submitted' }),
+    ])
+    await info.attach('responses-export.json', {
+      body: JSON.stringify(responses, null, 2),
+      contentType: 'application/json',
+    })
+    await info.attach('sections-export.json', {
+      body: JSON.stringify(sections, null, 2),
+      contentType: 'application/json',
+    })
 
-    const stats = await api<ParticipantStats>(request, `/admin/participants/${participantId}/stats`, token)
+    const stats = await api<ParticipantStats>(
+      request,
+      `/admin/participants/${participantId}/stats`,
+      token,
+    )
     expect(stats.questionnaires.find((row) => row.id === first.id)).toMatchObject({
-      response_status: 'partial', answered: 1, seconds: Number(ckResponse.time_spent_seconds),
+      response_status: 'partial',
+      answered: 1,
+      seconds: Number(ckResponse.time_spent_seconds),
     })
     expect(stats.questionnaires.some((row) => row.id === skipped.id)).toBe(false)
     expect(stats.timed_sections).toHaveLength(1)
@@ -237,26 +388,39 @@ test('real CK timing survives reload and supervisor finish exports only visited 
       deadline_ms: deadline,
       elapsed_seconds: Number(ckSection.elapsed_seconds),
       deadline_overrun_seconds: Number(ckSection.deadline_overrun_seconds),
-      exit_reason: 'supervisor_finish', visited_pages: 1,
+      exit_reason: 'supervisor_finish',
+      visited_pages: 1,
     })
     expect(timing.ended_client_ts).toBe(finished.section_timing!.ended_client_ts)
-    expect(timing.page_visits).toEqual(visits.map((visit) => ({
-      ...visit,
-      title: 'CK Integration 1',
-      elapsed_seconds: visit.exited_client_ts == null
-        ? null : (visit.exited_client_ts - visit.entered_client_ts) / 1000,
-    })))
-    expect(timing.page_visits.find((visit) => visit.exit_reason === 'supervisor_finish')).toMatchObject({
-      is_review: false, submitted_answers: { ck_first: { lines: [3] } },
+    expect(timing.page_visits).toEqual(
+      visits.map((visit) => ({
+        ...visit,
+        title: 'CK Integration 1',
+        elapsed_seconds:
+          visit.exited_client_ts == null
+            ? null
+            : (visit.exited_client_ts - visit.entered_client_ts) / 1000,
+      })),
+    )
+    expect(
+      timing.page_visits.find((visit) => visit.exit_reason === 'supervisor_finish'),
+    ).toMatchObject({
+      is_review: false,
+      submitted_answers: { ck_first: { lines: [3] } },
     })
     expect(stats.sections.find((section) => section.section === 'CK-Aufgaben')).toMatchObject({
-      pages: 1, seconds: Number(ckSection.time_spent_seconds),
+      pages: 1,
+      seconds: Number(ckSection.time_spent_seconds),
     })
-    await info.attach('participant-statistics.json', { body: JSON.stringify(stats, null, 2), contentType: 'application/json' })
+    await info.attach('participant-statistics.json', {
+      body: JSON.stringify(stats, null, 2),
+      contentType: 'application/json',
+    })
 
     // The researcher reads the same stored sitting in a separate browser session.
     const adminContext = await browser.newContext({
-      baseURL: new URL(page.url()).origin, viewport: { width: 1920, height: 1080 },
+      baseURL: new URL(page.url()).origin,
+      viewport: { width: 1920, height: 1080 },
     })
     try {
       await adminContext.addInitScript((adminToken) => {
@@ -265,31 +429,52 @@ test('real CK timing survives reload and supervisor finish exports only visited 
       }, token)
       const adminPage = await adminContext.newPage()
       await adminPage.goto(`/admin/studies/${studyId}?tab=stats`)
-      await adminPage.getByRole('row').filter({
-        has: adminPage.getByRole('cell', { name: new RegExp(`^${participantId}\\b`) }),
-      }).getByRole('button', { name: 'Details', exact: true }).click()
-      const details = adminPage.getByRole('region', { name: `Details für ${participantId}`, exact: true })
+      await adminPage
+        .getByRole('row')
+        .filter({
+          has: adminPage.getByRole('cell', { name: new RegExp(`^${participantId}\\b`) }),
+        })
+        .getByRole('button', { name: 'Details', exact: true })
+        .click()
+      const details = adminPage.getByRole('region', {
+        name: `Details für ${participantId}`,
+        exact: true,
+      })
       const section = details.getByRole('region', { name: 'Zeitmessung CK-Aufgaben', exact: true })
       await expect(section.getByText('Durch Betreuung beendet')).toBeVisible()
-      const fact = (label: string) => section.getByText(label, { exact: true }).locator('..').locator('dd')
+      const fact = (label: string) =>
+        section.getByText(label, { exact: true }).locator('..').locator('dd')
       await expect(fact('Dauer (Beginn bis Ende)')).toHaveText(duration(timing.elapsed_seconds))
-      await expect(fact('Überziehung (über 7 Minuten)')).toHaveText(duration(timing.deadline_overrun_seconds))
+      await expect(fact('Überziehung (über 7 Minuten)')).toHaveText(
+        duration(timing.deadline_overrun_seconds),
+      )
       await expect(fact('Besuchte Seiten')).toHaveText('1')
       for (const [label, value] of [
-        ['Beginn', timing.started_client_ts], ['Ende', timing.ended_client_ts!], ['Timer-Ende (Serverzeit)', deadline],
+        ['Beginn', timing.started_client_ts],
+        ['Ende', timing.ended_client_ts!],
+        ['Timer-Ende (Serverzeit)', deadline],
       ] as const) {
-        const displayed = await adminPage.evaluate((ts) => new Date(ts).toLocaleString('de-DE'), value)
+        const displayed = await adminPage.evaluate(
+          (ts) => new Date(ts).toLocaleString('de-DE'),
+          value,
+        )
         await expect(fact(label)).toHaveText(displayed)
       }
-      await expect(details.getByRole('row').filter({
-        has: adminPage.getByRole('cell', { name: 'Teilantwort', exact: true }),
-      })).toContainText('CK Integration 1')
+      await expect(
+        details.getByRole('row').filter({
+          has: adminPage.getByRole('cell', { name: 'Teilantwort', exact: true }),
+        }),
+      ).toContainText('CK Integration 1')
       await expect(details.getByText(/Summierte Antwortzeiten:/)).toBeVisible()
-      await section.getByText(`Seitenbesuche (${timing.page_visits.length})`, { exact: true }).click()
+      await section
+        .getByText(`Seitenbesuche (${timing.page_visits.length})`, { exact: true })
+        .click()
       const history = section.getByRole('table', { name: 'Seitenbesuche CK-Aufgaben', exact: true })
       await expect(history.getByRole('row')).toHaveCount(timing.page_visits.length + 1)
       await expect(history.getByText('CK Integration 2', { exact: true })).toHaveCount(0)
-      await expect(history.getByText('Kein Austritt erfasst', { exact: true }).first()).toBeVisible()
+      await expect(
+        history.getByText('Kein Austritt erfasst', { exact: true }).first(),
+      ).toBeVisible()
       const partialVisit = history.getByRole('row').filter({
         has: adminPage.getByRole('cell', { name: 'Teilantwort gespeichert', exact: true }),
       })
@@ -302,16 +487,28 @@ test('real CK timing survives reload and supervisor finish exports only visited 
     } finally {
       await adminContext.close()
     }
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('a04_auth')!).token)).toBe(participantToken)
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('a04_auth')!).token)).toBe(
+      participantToken,
+    )
 
     const after = await session()
-    const videoIntro = after.steps.find((step) => step.kind === 'case_intro' && step.phase_type === 'pre_test')!
+    const videoIntro = after.steps.find(
+      (step) => step.kind === 'case_intro' && step.phase_type === 'pre_test',
+    )!
     await api(request, '/participant/session/progress', participantToken, 'PATCH', {
-      current_step_index: videoIntro.index, expected_step_index: after.current_step_index, client_ts: Date.now(),
+      current_step_index: videoIntro.index,
+      expected_step_index: after.current_step_index,
+      client_ts: Date.now(),
     })
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'Vortest-Video Integration', exact: true })).toBeVisible()
-    await expect(page.getByText('Beobachten Sie das Vortest-Video und machen Sie sich Notizen.', { exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Vortest-Video Integration', exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Beobachten Sie das Vortest-Video und machen Sie sich Notizen.', {
+        exact: true,
+      }),
+    ).toBeVisible()
     await expect(page.getByText('Für spätere Fälle.', { exact: true })).toHaveCount(0)
     await page.screenshot({ path: info.outputPath('real-pretest-video-introduction.png') })
   } finally {
@@ -320,31 +517,47 @@ test('real CK timing survives reload and supervisor finish exports only visited 
   }
 })
 
-test('every default pretest page fits the lab viewport, including conditional demographic fields', async ({ page, request }, info) => {
+test('every default pretest page fits the lab viewport, including conditional demographic fields', async ({
+  page,
+  request,
+}, info) => {
   test.setTimeout(90_000)
   await page.setViewportSize({ width: 1920, height: 1080 })
   const token = await admin(request)
-  const study = await api<{ id: number }>(request, '/admin/studies', token, 'POST', { name: 'E2E legacy pretest viewport ' + Date.now(), flow_version: 'legacy', think_aloud_mode: 'block' })
+  const study = await api<{ id: number }>(request, '/admin/studies', token, 'POST', {
+    name: 'E2E legacy pretest viewport ' + Date.now(),
+    flow_version: 'legacy',
+    think_aloud_mode: 'block',
+  })
   const participantId = 'E2E-VIEW-' + Date.now()
   try {
-    await api(request, `/admin/studies/${study.id}/participants`, token, 'POST', { ids: [participantId] })
+    await api(request, `/admin/studies/${study.id}/participants`, token, 'POST', {
+      ids: [participantId],
+    })
     const participantToken = await login(page, participantId)
     const initial = await api<SessionScript>(request, '/participant/session', participantToken)
-    const pages = initial.steps.filter((step): step is Extract<SessionStep, { kind: 'questionnaire' }> =>
-      step.kind === 'questionnaire' && step.placement === 'pre_test',
+    const pages = initial.steps.filter(
+      (step): step is Extract<SessionStep, { kind: 'questionnaire' }> =>
+        step.kind === 'questionnaire' && step.placement === 'pre_test',
     )
     expect(pages).toHaveLength(24)
-    expect(pages.slice(3, 16).map((step) => step.questions[0].id)).toEqual(source.ck_tasks.map((task) => task.question.id))
+    expect(pages.slice(3, 16).map((step) => step.questions[0].id)).toEqual(
+      source.ck_tasks.map((task) => task.question.id),
+    )
     expect(pages.slice(3, 16).every((step) => step.section_key === 'ck_tasks')).toBe(true)
     expect(pages[16].section_key).toBe('pck')
-    expect(pages[16].questions.map((question) => question.id)).toEqual(source.pck_example.questions.map((question) => question.id))
+    expect(pages[16].questions.map((question) => question.id)).toEqual(
+      source.pck_example.questions.map((question) => question.id),
+    )
     expect(source.ck_tasks.find((task) => task.source_row === 25)?.question.id).toBe('ck_pre_12')
     expect(source.ck_tasks.find((task) => task.source_row === 26)?.question.id).toBe('ck_pre_13')
     const reports = []
     let current = initial.current_step_index
     for (const step of pages) {
       await api(request, '/participant/session/progress', participantToken, 'PATCH', {
-        current_step_index: step.index, expected_step_index: current, client_ts: Date.now(),
+        current_step_index: step.index,
+        expected_step_index: current,
+        client_ts: Date.now(),
       })
       current = step.index
       await page.reload()
@@ -352,11 +565,18 @@ test('every default pretest page fits the lab viewport, including conditional de
       // Choose the branch that exposes each conditional field, using the
       // instrument's own option values rather than translated label guesses.
       for (const [id, value] of Object.entries({
-        participant_group: 1, st_enrollment: 1, st_schulform: 7, teach_inf_ex: 1, teach_prog_ex: 1, java_ex: 1,
+        participant_group: 1,
+        st_enrollment: 1,
+        st_schulform: 7,
+        teach_inf_ex: 1,
+        teach_prog_ex: 1,
+        java_ex: 1,
       })) {
         const question = step.questions.find((item) => item.id === id)
         if (!question) continue
-        const option = question.options?.findIndex((item) => typeof item !== 'string' && item.value === value) ?? -1
+        const option =
+          question.options?.findIndex((item) => typeof item !== 'string' && item.value === value) ??
+          -1
         expect(option, `missing branch ${id}=${value}`).toBeGreaterThanOrEqual(0)
         await page.locator(`[data-aoi="question.${id}"] input[type="radio"]`).nth(option).check()
       }
@@ -370,23 +590,37 @@ test('every default pretest page fits the lab viewport, including conditional de
         await expect(fields.getByRole('spinbutton')).toHaveCount(5)
         await expect(add).toBeDisabled()
         for (const input of await fields.getByRole('spinbutton').all()) await input.fill('1')
-        await fields.getByLabel('Was ist der Fehler?', { exact: true }).fill('Begründung für die Browserprüfung.')
+        await fields
+          .getByLabel('Was ist der Fehler?', { exact: true })
+          .fill('Begründung für die Browserprüfung.')
         await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
       }
       if (step.section_key === 'pck') {
-        for (const textarea of await page.locator('textarea').all()) await textarea.fill('Antwort zur Unterrichtssituation.')
+        for (const textarea of await page.locator('textarea').all())
+          await textarea.fill('Antwort zur Unterrichtssituation.')
         await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeDisabled()
-        await page.getByRole('button', { name: 'Diese Reihenfolge übernehmen', exact: true }).click()
+        await page
+          .getByRole('button', { name: 'Diese Reihenfolge übernehmen', exact: true })
+          .click()
         const ranking = step.questions.find((question) => question.type === 'ranking')!
         const second = ranking.options![1]
         const secondLabel = typeof second === 'string' ? second : second.label
-        await page.getByRole('button', { name: secondLabel + ': Nach oben verschieben', exact: true }).click()
+        await page
+          .getByRole('button', { name: secondLabel + ': Nach oben verschieben', exact: true })
+          .click()
         await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
       }
       await page.evaluate(() => document.fonts.ready)
-      const report = { title: step.title, questionnaire_id: step.questionnaire_id, ...await viewportReport(page) }
+      const report = {
+        title: step.title,
+        questionnaire_id: step.questionnaire_id,
+        ...(await viewportReport(page)),
+      }
       reports.push(report)
-      await page.screenshot({ path: info.outputPath('default-pretest-' + step.page + '.png'), fullPage: true })
+      await page.screenshot({
+        path: info.outputPath('default-pretest-' + step.page + '.png'),
+        fullPage: true,
+      })
       // Measure the intended layout first, then complete any remaining fields.
       // Every questionnaire must be saved through the participant controls;
       // moving the progress pointer cannot bypass an unanswered page.
@@ -394,16 +628,19 @@ test('every default pretest page fits the lab viewport, including conditional de
         const field = page.locator(`[data-aoi="question.${question.id}"]`)
         if (!(await field.isVisible())) continue
         if (question.type === 'multiple_choice' || question.type === 'likert') {
-          if (!(await field.locator('input:checked').count())) await field.getByRole('radio').first().check()
+          if (!(await field.locator('input:checked').count()))
+            await field.getByRole('radio').first().check()
         } else if (question.type === 'number') {
           const input = field.getByRole('spinbutton')
-          if (!(await input.inputValue())) await input.fill(String(Math.max(question.min ?? 0, Math.min(question.max ?? 25, 25))))
+          if (!(await input.inputValue()))
+            await input.fill(String(Math.max(question.min ?? 0, Math.min(question.max ?? 25, 25))))
         } else if (question.type === 'free_text') {
           const input = field.getByRole('textbox')
           if (!(await input.inputValue())) await input.fill('Antwort zur Browserprüfung.')
         } else if (question.type === 'multi_select') {
           if (!(await field.locator('input:checked').count())) {
-            for (let choice = 0; choice < (question.min_selections ?? 1); choice++) await field.getByRole('checkbox').nth(choice).check()
+            for (let choice = 0; choice < (question.min_selections ?? 1); choice++)
+              await field.getByRole('checkbox').nth(choice).check()
           }
         } else if (question.type === 'slider') {
           await field.getByRole('slider').press('ArrowRight')
@@ -413,13 +650,27 @@ test('every default pretest page fits the lab viewport, including conditional de
       }
       await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
       await page.getByRole('button', { name: 'Weiter', exact: true }).click()
-      await expect.poll(async () =>
-        (await api<SessionScript>(request, '/participant/session', participantToken)).current_step_index,
-      ).toBe(step.index + 1)
+      await expect
+        .poll(
+          async () =>
+            (await api<SessionScript>(request, '/participant/session', participantToken))
+              .current_step_index,
+        )
+        .toBe(step.index + 1)
       current = step.index + 1
     }
-    await info.attach('default-pretest-viewport.json', { body: JSON.stringify(reports, null, 2), contentType: 'application/json' })
-    expect(reports.filter((report) => report.vertical > 1 || report.horizontal > 1 || report.outside.length || report.scrollers.length),
+    await info.attach('default-pretest-viewport.json', {
+      body: JSON.stringify(reports, null, 2),
+      contentType: 'application/json',
+    })
+    expect(
+      reports.filter(
+        (report) =>
+          report.vertical > 1 ||
+          report.horizontal > 1 ||
+          report.outside.length ||
+          report.scrollers.length,
+      ),
       'Each default page must show its content and controls without viewport or nested scrolling at 1920×1080. See per-page screenshots and viewport report.',
     ).toEqual([])
   } finally {

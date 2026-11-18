@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CaseStats, RosterRow } from '../../api/admin'
@@ -165,7 +166,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
           also inklusive Lesen, Notieren und geöffneter Dialoge.
         </p>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Fall</th>
@@ -195,14 +196,14 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 
       <div className="card">
         <h3>Fragebögen</h3>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Titel</th>
@@ -241,7 +242,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 
@@ -252,7 +253,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
           über die Personen. Der Abschnitt wird auf dem Tab „Fragebögen“ je Seite vergeben.
         </p>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Abschnitt</th>
@@ -283,7 +284,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 
@@ -295,7 +296,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
         </p>
         {calibration.attempts ? (
           <div className="table-scroll">
-            <table className="table">
+            <AdminTable className="table">
               <thead>
                 <tr>
                   <th>Ergebnis</th>
@@ -328,7 +329,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </AdminTable>
           </div>
         ) : (
           <p className="muted">Noch keine Kalibrierung aufgezeichnet.</p>
@@ -338,7 +339,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
       <div className="card">
         <h3>Teilnehmer</h3>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -373,7 +374,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import type { AdminVideo, Study } from '../src/api/admin'
+import { expectNoHorizontalOverflow } from './layout'
 
 const API = 'http://a04.invalid'
 const participantId = 'TEST-CK-TIMING'
@@ -296,3 +297,34 @@ test('CK statistics distinguish elapsed time, partial answers, reviews and unobs
   await page.screenshot({ path: info.outputPath('ck-timing-visits.png'), fullPage: true })
   expect(state.unexpected).toEqual([])
 })
+
+for (const width of [375, 768, 1366]) {
+  test(`admin video and participant actions fit at ${width}px`, async ({ page }, info) => {
+    const state = await setup(page)
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/admin/studies/8?tab=videos')
+    await expect(
+      page.getByRole('button', { name: 'Video „Bestehender Fall“ bearbeiten' }),
+    ).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await page.getByRole('button', { name: 'Video „Bestehender Fall“ bearbeiten' }).click()
+    await expect(page.getByRole('dialog', { name: 'Video bearbeiten' })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await page.getByRole('button', { name: 'Abbrechen', exact: true }).click()
+    await page.goto('/admin/studies/8?tab=participants')
+    const stats = page.getByRole('table').getByRole('button', { name: 'Statistik', exact: true })
+    await expect(stats).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await page.screenshot({ path: info.outputPath(`admin-roster-${width}.png`), fullPage: true })
+    await stats.click()
+    await expect(page.getByRole('heading', { name: 'Abschnittszeiten', exact: true })).toBeVisible()
+    await page.getByText('Seitenbesuche (3)', { exact: true }).click()
+    await page.getByText('Antwortstand anzeigen', { exact: true }).first().click()
+    await expectNoHorizontalOverflow(page)
+    await page.screenshot({
+      path: info.outputPath(`admin-participant-${width}.png`),
+      fullPage: true,
+    })
+    expect(state.unexpected).toEqual([])
+  })
+}

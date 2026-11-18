@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 
@@ -375,6 +375,58 @@ test('questions that share a matrix key are one table with the statements listed
     { ck_pre_vars: 'A1', ck_pre_loop: 'A0' },
     expect.any(Number),
   )
+})
+
+test('matrix answers and gaze targets survive a narrow container and widening again', () => {
+  let resize: ResizeObserverCallback | undefined
+  const disconnect = vi.fn()
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: ResizeObserverCallback) {
+        resize = callback
+      }
+      observe() {}
+      disconnect = disconnect
+    },
+  )
+  const onSubmit = vi.fn()
+  const rows: Question[] = [
+    {
+      id: 'strategy',
+      type: 'multiple_choice',
+      text: 'Welche Vorgehensweise?',
+      matrix: 'strategies',
+      options: [
+        { value: 'low', label: 'Sehr unwahrscheinlich' },
+        { value: 'high', label: 'Sehr wahrscheinlich' },
+      ],
+    },
+  ]
+  try {
+    const { container, unmount } = render(
+      <QuestionnaireRenderer title="Strategien" questions={rows} onSubmit={onSubmit} />,
+    )
+    fireEvent.click(screen.getByRole('radio', { name: /Welche Vorgehensweise\?: 2/ }))
+    const changeWidth = (width: number) =>
+      act(() => resize?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver))
+    changeWidth(360)
+    expect(container.querySelector('.matrix')).toHaveClass('matrix--stacked')
+    expect(container.querySelector('[data-aoi-clip]')).toBeNull()
+    expect(screen.getByRole('radio', { name: /Welche Vorgehensweise\?: 2/ })).toBeChecked()
+    changeWidth(1000)
+    expect(container.querySelector('.matrix')).not.toHaveClass('matrix--stacked')
+    expect(container.querySelector('[data-aoi-clip]')).toHaveAttribute(
+      'data-aoi-clip',
+      'after-row-prompt',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+    expect(onSubmit).toHaveBeenCalledWith({ strategy: 'high' }, expect.any(Number))
+    unmount()
+    expect(disconnect).toHaveBeenCalledOnce()
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })
 
 test('a question can show code above its answer field, numbered line by line', () => {

@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import type { AdminQuestionnaire, Study, StudyTexts } from '../src/api/admin'
 import type { Question } from '../src/lib/questionnaire'
+import { expectNoHorizontalOverflow } from './layout'
 
 const API = 'http://a04.invalid'
 const question: Question = {
@@ -353,3 +354,28 @@ test('pretest-video wording saves independently of the generic case introduction
   await page.screenshot({ path: info.outputPath('admin-pretest-video-intro.png') })
   expect(state.unexpected).toEqual([])
 })
+
+for (const width of [375, 768, 1366]) {
+  test(`questionnaire editor and preview fit at ${width}px`, async ({ page }, info) => {
+    const state = await setup(page)
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/admin/studies/8?tab=questionnaires')
+    await expect(page.getByRole('table', { name: 'Vortest-Abschnitte' })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click()
+    await expect(page.getByLabel('Titel', { exact: true })).toHaveValue('CK vor Änderung')
+    await expectNoHorizontalOverflow(page)
+    await page.getByRole('button', { name: 'Reihenfolge (PCK)', exact: true }).click()
+    await page
+      .locator('.preview')
+      .getByRole('button', { name: /Nach unten/ })
+      .first()
+      .click()
+    await expectNoHorizontalOverflow(page)
+    await page.screenshot({
+      path: info.outputPath(`questionnaire-editor-${width}.png`),
+      fullPage: true,
+    })
+    expect(state.unexpected).toEqual([])
+  })
+}

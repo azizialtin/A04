@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import { useEffect, useRef } from 'react'
 
 import type { ParticipantCaseStats, ParticipantSectionTime } from '../../api/admin'
@@ -161,7 +162,7 @@ export default function ParticipantStatsPanel({
           <h4 className="section-head">Fragebögen</h4>
           {stats.data.sections.length > 0 && <SectionTotals rows={stats.data.sections} />}
           <div className="table-scroll">
-            <table className="table">
+            <AdminTable className="table">
               <thead>
                 <tr>
                   <th>Titel</th>
@@ -213,13 +214,13 @@ export default function ParticipantStatsPanel({
                   </tr>
                 )}
               </tbody>
-            </table>
+            </AdminTable>
           </div>
 
           <h4 className="section-head">Kalibrierung</h4>
           {stats.data.calibrations.length ? (
             <div className="table-scroll">
-              <table className="table">
+              <AdminTable className="table">
                 <thead>
                   <tr>
                     <th>Ergebnis</th>
@@ -248,7 +249,7 @@ export default function ParticipantStatsPanel({
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </AdminTable>
             </div>
           ) : (
             <p className="muted">Keine Kalibrierung aufgezeichnet.</p>
@@ -256,7 +257,7 @@ export default function ParticipantStatsPanel({
 
           <h4 className="section-head">Ereignisse</h4>
           <div className="table-scroll">
-            <table className="table">
+            <AdminTable className="table">
               <thead>
                 <tr>
                   <th>Ereignis</th>
@@ -284,7 +285,7 @@ export default function ParticipantStatsPanel({
                   </tr>
                 )}
               </tbody>
-            </table>
+            </AdminTable>
           </div>
         </>
       )}

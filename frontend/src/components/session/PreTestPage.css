@@ -4,6 +4,12 @@
 .pretest-page > .panel {
   margin-inline: auto;
 }
+.pretest-page--matrix .panel--form {
+  max-width: 1200px;
+}
+.pretest-page--matrix .matrix {
+  min-width: 0;
+}
 .section-timer {
   display: flex;
   flex-wrap: wrap;
@@ -25,39 +31,6 @@
   .pretest-page--demographics .panel--form {
     max-width: 1800px;
     padding: 24px 32px;
-  }
-  .pretest-page--matrix .matrix {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
-    column-gap: 32px;
-    align-items: start;
-  }
-  .pretest-page--matrix .matrix__legend-title {
-    grid-column: 1;
-  }
-  .pretest-page--matrix .matrix__legend {
-    grid-column: 1;
-  }
-  .pretest-page--matrix .matrix__scroll {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-  .pretest-page--instructions .panel--form {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
-    column-gap: 32px;
-    align-items: start;
-  }
-  .pretest-page--instructions .qhead {
-    grid-row: 1 / span 3;
-  }
-  .pretest-page--instructions .panel--form > :not(.qhead) {
-    grid-column: 2;
-  }
-  .pretest-page--instructions .matrix {
-    display: block;
-    padding-top: 0;
-    border-top: 0;
   }
   .pretest-page--instructions .qhead .lead {
     font-size: 15px;
@@ -450,7 +423,15 @@
   .pretest-page--pilot.pretest-page--pck .matrix__table td {
     padding: 6px 3px;
   }
+  /* These tables are fitted to the lab screen with the statement column sized
+     by its text. The responsive defaults (fixed layout, a 40% statement column)
+     wrap the statements and push the page past the screen. */
+  .pretest-page--pilot.pretest-page--pck .matrix__table {
+    table-layout: auto;
+  }
   .pretest-page--pilot.pretest-page--pck .matrix__table .matrix__item {
+    width: auto;
+    overflow-wrap: normal;
     min-width: 0;
     padding-right: 12px;
     font-weight: 400;
@@ -515,5 +496,21 @@
   .pretest-page--pilot.pretest-page--pck .questionnaire-footer > .small {
     margin: 0;
     font-size: 15px;
+  }
+}
+
+/* The pilot pages are fitted to the lab screen to the pixel. A status line in
+   the page flow would push them past it, so here it floats over the corner as
+   it did when those pages were laid out. */
+@media (min-width: 1200px) {
+  .session-screen:has(> .pretest-page--pilot) > .gaze-health-stack {
+    position: fixed;
+    left: 1rem;
+    top: 1rem;
+    z-index: 100;
+    width: auto;
+    max-width: min(34rem, calc(100vw - 2rem));
+    margin: 0;
+    pointer-events: none;
   }
 }

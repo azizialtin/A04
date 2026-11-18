@@ -26,7 +26,9 @@
   --ok-tint: #e8f1f0;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -49,6 +51,7 @@ body {
   color: var(--fg);
   background: var(--bg);
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 h1,
@@ -91,6 +94,7 @@ h3 {
 }
 
 .panel {
+  min-width: 0;
   width: 100%;
   max-width: 680px;
   background: var(--surface);
@@ -107,7 +111,7 @@ h3 {
 /* Screens made of questions: the items are long German sentences with a scale
    under each, and they need room to breathe more than they need to be compact. */
 .panel--form {
-  max-width: 840px;
+  max-width: 1100px;
   padding: 40px 48px 36px;
 }
 
@@ -178,6 +182,7 @@ h3 {
 }
 
 .shell__main {
+  min-width: 0;
   flex: 1;
   display: flex;
   justify-content: center;
@@ -203,6 +208,9 @@ h3 {
 /* --- controls ----------------------------------------------------------- */
 
 .btn {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
   appearance: none;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -272,6 +280,8 @@ h3 {
 
 .input,
 .textarea {
+  min-width: 0;
+  max-width: 100%;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -409,12 +419,14 @@ h3 {
 }
 
 .likert__scale {
-  display: grid;
-  grid-template-columns: repeat(var(--points, 5), minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .likert__option {
+  flex: 1 0 44px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -519,10 +531,12 @@ h3 {
 }
 
 .matrix__scroll {
-  overflow-x: auto;
+  min-width: 0;
+  overflow: visible;
 }
 
 .matrix__table {
+  table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
 }
@@ -546,13 +560,8 @@ h3 {
   padding-right: 16px;
   font-weight: 600;
   line-height: 1.4;
-  min-width: 12rem;
-  /* Pinned: on a narrow window the table scrolls sideways, and the statement
-     being answered must not slide out of view while reaching the last column. */
-  position: sticky;
-  left: 0;
-  background: var(--surface);
-  z-index: 1;
+  width: 40%;
+  overflow-wrap: anywhere;
 }
 
 .matrix__table tbody tr:hover,
@@ -568,7 +577,7 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  min-height: 44px;
   cursor: pointer;
 }
 
@@ -593,7 +602,7 @@ h3 {
 
 .scale__range {
   flex: 1;
-  min-width: 140px;
+  min-width: 0;
   height: 28px;
   accent-color: var(--brand);
   cursor: pointer;
@@ -868,11 +877,7 @@ h3 {
   font-size: 0.95rem;
 }
 
-/* Code shown to participants: the pupils' Java in the Schüler-Aufgabe, a
-   snippet under a pre-test question. Lines are numbered so an answer can name
-   one, and never wrapped — a long line scrolls, so the numbering stays true.
-   The numbers are drawn here, not written into the text, so a copy of the
-   block is the code alone. */
+/* Wrapped visual lines retain their source-line numbers and copy as code alone. */
 .code {
   margin: 0 0 14px;
   padding: 10px 12px;
@@ -883,8 +888,8 @@ h3 {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 0.9rem;
   line-height: 1.55;
-  white-space: pre;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   tab-size: 4;
 }
 
@@ -993,6 +998,7 @@ h3 {
 }
 
 .modal {
+  min-width: 0;
   background: var(--surface);
   border-radius: var(--radius);
   max-width: 560px;
@@ -1297,7 +1303,7 @@ h3 {
   flex: 1;
   min-width: 0;
   padding: 28px 32px;
-  max-width: 1040px;
+  max-width: 1440px;
 }
 
 .admin__main h1 {
@@ -1305,6 +1311,7 @@ h3 {
 }
 
 .card {
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1347,6 +1354,7 @@ h3 {
 }
 
 .table {
+  table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
 }
@@ -1424,7 +1432,7 @@ h3 {
    with the context that makes it mean something underneath. */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -1614,9 +1622,9 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Wide tables scroll inside their own box rather than pushing the page sideways. */
+/* Tables become labelled records when their columns would be cramped. */
 .table-scroll {
-  overflow-x: auto;
+  min-width: 0;
   margin-bottom: 20px;
 }
 
@@ -1631,7 +1639,7 @@ h3 {
 
 .case-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: 12px;
 }
 
@@ -1749,7 +1757,7 @@ h3 {
    study's participants on the export tab — without taking over the page. */
 .picker {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
   gap: 2px 16px;
   max-height: 220px;
   overflow-y: auto;
@@ -1823,12 +1831,10 @@ h3 {
 }
 
 .gaze-health-stack {
-  position: fixed;
-  left: 1rem;
-  top: 1rem;
-  pointer-events: none;
-  z-index: 100;
-  max-width: min(34rem, calc(100vw - 2rem));
+  position: static;
+  width: calc(100% - 2rem);
+  max-width: 1100px;
+  margin: 0.75rem auto;
   display: grid;
   gap: 0.4rem;
 }
@@ -1873,4 +1879,152 @@ h3 {
 }
 .panel__actions {
   flex-wrap: wrap;
+}
+
+.session-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.session-screen > * {
+  min-width: 0;
+}
+
+.session-screen > :is(.fullpage, .case-screen, .think-aloud) {
+  width: 100%;
+}
+
+.session-screen > .fullpage {
+  min-height: 100vh;
+}
+
+@media (min-width: 821px) {
+  /* The status occupies real space; the case uses the remaining viewport. */
+  .session-screen:has(> .case-screen) {
+    height: 100vh;
+    min-height: 0;
+  }
+
+  .session-screen > .case-screen {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .session-screen .case-screen__rail {
+    min-height: 0;
+    max-height: none;
+  }
+
+  .session-screen .case-screen__video {
+    min-height: 0;
+  }
+
+  .session-screen .case-video {
+    max-height: 100%;
+  }
+
+  .session-screen .case-video__el {
+    min-height: 0;
+    object-fit: contain;
+  }
+
+  .case-video__controls {
+    flex-shrink: 0;
+  }
+}
+
+.gaze-health-stack:empty {
+  display: none;
+}
+
+.gaze-health__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.gaze-health__summary .btn {
+  margin-left: auto;
+}
+
+.gaze-health details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding-block: 8px;
+}
+
+.shell__header,
+.shell__header-right,
+.panel__actions,
+.rail-actions,
+.modal__actions,
+.think-aloud__foot,
+.flex-between,
+.row-gap,
+.seq-item,
+.case-card__head {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.fullpage,
+.code,
+.case-screen__rail,
+.preview,
+.form-row,
+.inline-form > *,
+.row-gap > *,
+.flex-between > *,
+.seq-item > *,
+.case-card__head > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+select,
+input[type='file'] {
+  max-width: 100%;
+  min-width: 0;
+}
+
+fieldset {
+  min-width: 0;
+}
+
+.toast-stack,
+.unsent {
+  max-width: calc(100% - 32px);
+}
+
+.pill {
+  white-space: normal;
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  .fullpage,
+  .shell__main {
+    padding: 24px 12px;
+  }
+
+  .panel,
+  .panel--form,
+  .card {
+    padding: 20px 16px;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal__header,
+  .modal__body,
+  .preview {
+    padding: 16px;
+  }
 }
