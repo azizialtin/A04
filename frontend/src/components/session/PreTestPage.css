@@ -36,6 +36,37 @@
   .pretest-page--demographics .qlist {
     margin-top: 8px;
   }
+  /* Standard matrices keep full-size radio targets; remove space around them
+     so Linux font metrics do not push the final action below the lab screen. */
+  .pretest-page--matrix:not(.pretest-page--mesp):not(.pretest-page--pck) .matrix {
+    padding-top: 12px;
+  }
+  .pretest-page--matrix:not(.pretest-page--mesp):not(.pretest-page--pck) .matrix__legend {
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .pretest-page--matrix:not(.pretest-page--mesp):not(.pretest-page--pck) .matrix__table th,
+  .pretest-page--matrix:not(.pretest-page--mesp):not(.pretest-page--pck) .matrix__table td {
+    padding-block: 2px;
+  }
+  .pretest-page--matrix:not(.pretest-page--mesp):not(.pretest-page--pck) .panel__actions {
+    margin-top: 8px;
+  }
+  /* The legacy first MSK page includes both its long introduction and the
+     scale. Wrap these authored lists without changing their reading order. */
+  .pretest-page--instructions:not(.pretest-page--pilot) .matrix__legend {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 20px;
+  }
+  .pretest-page--instructions:not(.pretest-page--pilot) .prose-list:last-of-type {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 24px;
+  }
+  .pretest-page--instructions:not(.pretest-page--pilot) .prose-list:last-of-type li + li {
+    margin-top: 0;
+  }
   .pretest-page--instructions .qhead .lead {
     font-size: 15px;
     line-height: 1.45;
@@ -315,11 +346,11 @@
    Smaller windows retain that same DOM and keyboard order in normal flow. */
 @media (min-width: 1600px) {
   .shell__main:has(.pretest-page--pilot.pretest-page--pck) {
-    padding: 16px 24px 15px;
+    padding: 8px 24px;
   }
   .pretest-page--pilot.pretest-page--pck .panel--form {
     max-width: 1840px;
-    padding: 20px 24px;
+    padding: 12px 24px;
   }
   .pretest-page--pilot.pretest-page--pck .qhead {
     display: grid;
@@ -424,7 +455,7 @@
   }
   .pretest-page--pilot.pretest-page--pck .matrix:not(.matrix--stacked) .matrix__table th,
   .pretest-page--pilot.pretest-page--pck .matrix:not(.matrix--stacked) .matrix__table td {
-    padding: 6px 3px;
+    padding: 4px 3px;
   }
   /* These tables are fitted to the lab screen with the statement column sized
      by its text. The responsive defaults (fixed layout, a 40% statement column)
