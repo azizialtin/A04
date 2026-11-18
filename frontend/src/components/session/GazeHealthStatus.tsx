@@ -43,7 +43,7 @@ export default function GazeHealthStatus({
       observed?.removeEventListener('change', update)
     }
   }, [state])
-  const healthy = state === 'tracking'
+  const healthy = state === 'tracking' || (preflight && state === 'tracker_ready')
   const help =
     state === 'bridge_unreachable'
       ? t(permission === 'denied' ? 'gaze_health.permission_denied' : 'gaze_health.connection_help')
@@ -63,7 +63,11 @@ export default function GazeHealthStatus({
           {health.mock ? t('gaze_health.mock') + ' ' : ''}
           {t(`gaze_health.${state}`)}
         </strong>
-        <span>{t('gaze_health.counts', { received: health.received, valid: health.valid })}</span>
+        {preflight ? (
+          <span>{t('gaze_health.preflight_status')}</span>
+        ) : (
+          <span>{t('gaze_health.counts', { received: health.received, valid: health.valid })}</span>
+        )}
         {!healthy ? (
           <button type="button" className="btn btn-ghost" onClick={retry}>
             {t('gaze_health.retry')}

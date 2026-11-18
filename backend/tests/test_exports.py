@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 
 import pytest_asyncio
 
@@ -127,6 +128,40 @@ async def test_the_columns_researchers_asked_for_are_there(client, data, admin_h
     )
     assert calibration[0]["status"] == "success"
     assert calibration[0]["mean_offset_degrees"] == "0.61"
+
+
+async def test_popup_events_export_open_duration_and_closing_reason(
+    client, db, data, admin_headers
+):
+    db.add_all(
+        [
+            InteractionLog(
+                participant_id="T-001",
+                video_id=data["video"].id,
+                event_type="task_opened",
+                client_ts=1000,
+            ),
+            InteractionLog(
+                participant_id="T-001",
+                video_id=data["video"].id,
+                event_type="task_closed",
+                client_ts=2250,
+                payload={"durationMs": 1250, "reason": "screen_exit"},
+            ),
+        ]
+    )
+    await db.flush()
+    rows = read(
+        await client.get(f"/admin/studies/{data['study'].id}/export/events", headers=admin_headers)
+    )
+    events = {row["event_type"]: row for row in rows}
+    assert events["task_opened"]["variable_name"] == "click_event_task_button"
+    assert events["task_closed"]["variable_name"] == ""
+    assert json.loads(events["task_closed"]["payload"]) == {
+        "durationMs": 1250,
+        "reason": "screen_exit",
+    }
+    assert events["task_closed"]["client_ts"] == "2250"
 
 
 async def test_the_section_file_adds_up_a_persons_pages(client, db, data, admin_headers):

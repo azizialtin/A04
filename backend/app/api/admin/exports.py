@@ -197,7 +197,7 @@ async def list_exports(
         _only(
             select(func.sum(GazeRecording.sample_count))
             .join(Participant, Participant.id == GazeRecording.participant_id)
-            .where(Participant.study_id == study_id),
+            .where(Participant.study_id == study_id, GazeRecording.step_kind == "case_video"),
             GazeRecording.participant_id,
             chosen,
         )
@@ -243,7 +243,7 @@ async def _raw_gaze_export(
     stmt = _only(
         select(GazeRecording)
         .join(Participant, Participant.id == GazeRecording.participant_id)
-        .where(Participant.study_id == study_id)
+        .where(Participant.study_id == study_id, GazeRecording.step_kind == "case_video")
         .order_by(GazeRecording.participant_id, GazeRecording.started_at, GazeRecording.id),
         GazeRecording.participant_id,
         chosen,
@@ -654,7 +654,7 @@ def _gaze_query(study_id: int, participant_ids: list[str] | None = None):
             GazeRecording.questionnaire_id,
         )
         .join(Participant, Participant.id == GazeRecording.participant_id)
-        .where(Participant.study_id == study_id)
+        .where(Participant.study_id == study_id, GazeRecording.step_kind == "case_video")
         .order_by(GazeRecording.participant_id, GazeRecording.id)
     )
     stmt = _only(stmt, GazeRecording.participant_id, participant_ids)
@@ -820,7 +820,7 @@ _EXPORTS = {
         lambda r: [
             r[0],
             r[1],
-            variable_name(r[1]),
+            variable_name(r[1], r[3]),
             r[2],
             *_case_cells(r),
             timecode(playhead_seconds(r[3])),

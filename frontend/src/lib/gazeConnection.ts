@@ -4,6 +4,7 @@ export type GazeState =
   | 'connecting'
   | 'bridge_unreachable'
   | 'tracker_missing'
+  | 'tracker_ready'
   | 'stream_failed'
   | 'waiting_samples'
   | 'no_samples'
@@ -17,8 +18,9 @@ export interface GazeHealth {
   error_code?: string | null
 }
 
-/** A step owns one reconnecting subscription. Bridge status alone never means gaze arrived. */
+/** Status probes never subscribe; capture health requires this client's own samples. */
 export function openGazeConnection(options: {
+  probeOnly?: boolean
   onHealth: (health: GazeHealth) => void
   onReady: (frequency: unknown, start: () => void) => void
   onSample: (sample: Record<string, unknown>) => void
@@ -44,6 +46,7 @@ export function openGazeConnection(options: {
   }
   const retire = () => {
     window.clearTimeout(handshakeTimer)
+    const wasRequested = requested
     requested = false
     lastSample = lastValid = 0
     const old = socket
@@ -51,7 +54,8 @@ export function openGazeConnection(options: {
     if (!old) return
     old.onmessage = old.onerror = old.onclose = null
     try {
-      if (old.readyState === WebSocket.OPEN) old.send(JSON.stringify({ type: 'stop_gaze' }))
+      if (wasRequested && old.readyState === WebSocket.OPEN)
+        old.send(JSON.stringify({ type: 'stop_gaze' }))
       old.close()
     } catch {
       /* an unsuccessful handshake may already be closed */
@@ -81,7 +85,7 @@ export function openGazeConnection(options: {
     socket = ws
     const current = () => active && socket === ws
     const start = () => {
-      if (!current() || requested) return
+      if (options.probeOnly || !current() || requested) return
       try {
         ws.send(JSON.stringify({ type: 'start_gaze' }))
         requested = true
@@ -92,6 +96,10 @@ export function openGazeConnection(options: {
       }
     }
     const trackerReady = (frequency: unknown) => {
+      if (options.probeOnly) {
+        publish('tracker_ready')
+        return
+      }
       if (!ready) {
         ready = true
         publish('waiting_samples')
@@ -132,6 +140,11 @@ export function openGazeConnection(options: {
           )
         ) {
           publish('tracker_missing', String(msg.error_code))
+        } else if (options.probeOnly) {
+          // Readiness comes from discovery; global streaming telemetry is not
+          // a measurement made by this status-only client.
+          if (msg.connected === false) publish('tracker_missing')
+          return
         } else if (
           ['subscription_failed', 'stream_failed'].includes(String(msg.error_code)) ||
           msg.state === 'error'

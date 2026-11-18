@@ -14,8 +14,9 @@ seven training, one post-test — all mechanically identical; the phases are onl
 separated by a short "phase complete" screen. Each case has four stages:
 
 1. **Intro** — short text, nothing asked.
-2. **Case screen** — the clip on the left; on the right a countdown timer, the
-   task, an **Info** button, a **Student task** button, and a **notes** box.
+2. **Case screen** — the clip on the left; on the right a countdown timer,
+   **Aufgabenstellung**, **Diagnose Definition** and **Student task/code**
+   popup buttons, and a **notes** box.
    Everything done here is logged (see `app/services/log_data.py`).
 3. **Diagnosis** — the participant writes up what was wrong, with their own
    notes shown back to them, and rates their confidence on the same screen. Text
@@ -79,8 +80,11 @@ variable name from that data dictionary.
   `backend/app/core` and is ours to edit.
 - **Think-aloud uses real eye tracking** (Tobii, like the lab's other studies):
   the tracker is calibrated (and the calibration validated) before the first
-  case, gaze is streamed while the clip plays, then replayed as a dot on the
-  think-aloud screen with the notes timeline.
+  case, gaze is streamed only on the video screen (including pauses and its
+  popups), then replayed as a dot on the think-aloud screen with the notes
+  timeline. The intro probes tracker status without requesting coordinates.
+  Video AOIs split the rendered picture exactly in half: students on the left,
+  code on the right. Popup open time and gaze on its text are separate measures.
 - **What it is replayed over is a screen recording**, not the clip: the cursor,
   the notes box, the timer and every dialog the participant opened are part of
   what they are asked to narrate. ffmpeg records the whole display from inside

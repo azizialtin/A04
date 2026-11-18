@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openGazeConnection, type GazeHealth } from '../lib/gazeConnection'
 
-/** Live tracker check only: never creates or uploads a research recording. */
+/** Probe availability without requesting or processing gaze coordinates. */
 export function useGazePreflight() {
   const [health, setHealth] = useState<GazeHealth>({ state: 'connecting', received: 0, valid: 0 })
   const connection = useRef<ReturnType<typeof openGazeConnection> | null>(null)
   const open = useCallback(() => {
     connection.current?.close()
     connection.current = openGazeConnection({
+      probeOnly: true,
       onHealth: setHealth,
-      onReady: (_frequency, start) => start(),
+      onReady: () => {},
       onSample: () => {},
     })
   }, [])

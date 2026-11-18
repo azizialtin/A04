@@ -17,10 +17,10 @@ const DESCRIPTIONS: Record<ExportKind, string> = {
     'eines Abschnitts addiert, dazu der Vortest gesamt.',
   events: 'Der Interaktions-Log des Fallbildschirms: Play, Pause, Seeks, Notizen, Seitenwechsel.',
   gaze:
-    'Jede rohe Blickprobe mit Zeitstempel, Gültigkeit, Bildschirm, Fragebogen und AOI. ' +
+    'Jede rohe Blickprobe vom Videobildschirm mit Zeitstempel, Gültigkeit und AOI. ' +
     'Die Zeilenzahl entspricht den gespeicherten Probenzählern; der Download prüft die Dateien.',
   gaze_recordings:
-    'Je Aufzeichnung: Bildschirm, Fragebogen, Abtastrate und Anzahl der Blickproben.',
+    'Je Aufzeichnung des Videobildschirms: Fall, Abtastrate und Anzahl der Blickproben.',
   calibration: 'Ergebnis der Eye-Tracker-Kalibrierung, sofern sie in der App stattgefunden hat.',
 }
 

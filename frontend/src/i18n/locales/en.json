@@ -88,7 +88,9 @@
     "seek": "Video position",
     "timer_label": "Time",
     "task_label": "Task",
-    "student_task_button": "Student task",
+    "task_button": "Task instructions",
+    "task_instructions": "You are watching a video of a classroom situation. You can take notes during the video, jump forwards and backwards as often as you like, and watch individual sections or the entire video again. Your task is to write a diagnosis of the situation.",
+    "student_task_button": "Student task and provided code",
     "notes_label": "Notes",
     "notes_placeholder": "Notes while watching…",
     "next": "Continue",
@@ -97,7 +99,7 @@
     "exit_cancel": "Stay on this case",
     "exit_confirm": "Continue to diagnosis",
     "exit_error": "We could not continue to the diagnosis. Your case is still open. Please try again.",
-    "info_title": "Information",
+    "info_title": "Diagnosis definition",
     "student_task_title": "The students' task",
     "no_content": "No content provided."
   },
@@ -213,6 +215,8 @@
   },
   "gaze_health": {
     "connecting": "Checking eye tracker…",
+    "tracker_ready": "Eye tracker detected",
+    "preflight_status": "Gaze data is collected only on the video screen.",
     "bridge_unreachable": "Cannot connect to A04Bridge.",
     "tracker_missing": "No available eye tracker reported.",
     "stream_failed": "The gaze stream could not start.",

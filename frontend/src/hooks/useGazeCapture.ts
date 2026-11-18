@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 import { gazeApi, type GazeContext, type GazeSample } from '../api/gaze'
 import { capturePageGeometry, observePageGeometry } from '../lib/aoi'
@@ -11,8 +11,10 @@ const FLUSH_INTERVAL_MS = 2000
 const BATCH_SIZE = 500
 const MAX_PENDING = 15_000
 const MAX_LAYOUTS = 10_000
+// A bounded recovery policy, not a claim about what caused a clock adjustment.
+const CLOCK_STEP_TOLERANCE_MS = 100
 
-/** Each measured screen owns its recording, samples, and timestamped DOM layouts. */
+/** Only the video screen owns a gaze subscription and timestamped DOM layouts. */
 export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120) {
   const [health, setHealth] = useState<GazeHealth>({ state: 'connecting', received: 0, valid: 0 })
   const [issue, setIssue] = useState<'recording_failed' | 'upload_failed' | 'data_lost' | null>(
@@ -22,19 +24,30 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
   const videoId = context?.video_id
   const stepKind = context?.step_kind
   const stepIndex = context?.step_index
-  const questionnaireId = context?.questionnaire_id
 
-  useEffect(() => {
-    if (!stepKind || stepIndex === undefined) return
+  // Stop synchronously at the screen commit, before another screen can be painted.
+  useLayoutEffect(() => {
+    if (
+      stepKind !== 'case_video' ||
+      videoId === undefined ||
+      !Number.isInteger(videoId) ||
+      videoId <= 0 ||
+      stepIndex === undefined ||
+      !Number.isInteger(stepIndex) ||
+      stepIndex < 0
+    )
+      return
     let active = true
+    const enteredAt = Date.now()
     const deliveryGeneration = gazeDeliveryGeneration()
     setIssue(null)
     let currentIssue: typeof issue = null
     let currentHealth: GazeHealth = { state: 'connecting', received: 0, valid: 0 }
     let loggedState = ''
+    let clockUncertain = false
     const logTransition = () => {
       if (!active || deliveryGeneration !== gazeDeliveryGeneration()) return
-      const key = `${currentHealth.state}:${currentIssue}:${!!currentHealth.mock}:${currentHealth.error_code ?? ''}`
+      const key = `${currentHealth.state}:${currentIssue}:${!!currentHealth.mock}:${currentHealth.error_code ?? ''}:${clockUncertain}`
       if (key === loggedState) return
       loggedState = key
       enqueue('event', {
@@ -44,13 +57,13 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
         payload: {
           step_kind: stepKind,
           step_index: stepIndex,
-          questionnaire_id: questionnaireId ?? null,
           state: currentHealth.state,
           issue: currentIssue,
           error_code: currentHealth.error_code ?? null,
           received: currentHealth.received,
           valid: currentHealth.valid,
           source_mode: currentHealth.mock ? 'mock' : 'tobii_or_legacy',
+          clock_uncertain: clockUncertain,
         },
       })
     }
@@ -83,8 +96,13 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     let layoutRetryAt = 0
     let droppedLayouts = 0
     let unavailableFrom: number | null = null
-    let newestMeasurement: number | null = null
-    let clockUncertain = false
+    let newestClockReading = enteredAt
+    let earliestVideoTimestamp = enteredAt
+    let uncertainThrough: number | null = null
+    let clockGuardThrough = enteredAt
+    let needsClockAnchor = false
+    let lastClockReading = enteredAt
+    let clockRollbacks = 0
     const samples: GazeSample[] = []
     let retryBatch: GazeSample[] | null = null
     const layouts: GazeLayout[] = []
@@ -95,12 +113,47 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     let sampleWork: Promise<void> | null = null
     let layoutWork: Promise<void> | null = null
 
+    // Watch both layout measurements and sample receipts. Remember uncertainty by
+    // timestamp: catching up at receipt time cannot make a delayed sample trustworthy.
+    const clockBehind = (now: number) => {
+      // A step back is counted once, by the first reading lower than the one before it.
+      // The readings that follow while the clock catches up are not new steps.
+      if (now < lastClockReading) clockRollbacks++
+      lastClockReading = now
+      if (now >= newestClockReading) {
+        newestClockReading = now
+        return false
+      }
+      needsClockAnchor = true
+      // Browser and bridge clocks can adjust independently. Wait beyond the full
+      // tolerance and take a fresh DOM snapshot before resuming any AOI mapping.
+      clockGuardThrough = Math.max(clockGuardThrough, newestClockReading + CLOCK_STEP_TOLERANCE_MS)
+      uncertainThrough = Math.max(uncertainThrough ?? clockGuardThrough, clockGuardThrough)
+      // Near entry, a repeated timestamp can name either a stale frame or a real
+      // video sample. Preserve that bounded overlap as raw/unmapped data.
+      earliestVideoTimestamp = Math.min(
+        earliestVideoTimestamp,
+        newestClockReading - CLOCK_STEP_TOLERANCE_MS,
+      )
+      if (newestClockReading - now > CLOCK_STEP_TOLERANCE_MS && !clockUncertain) {
+        clockUncertain = true
+        logTransition()
+      }
+      return true
+    }
+
     const measure = () => {
       const next = capturePageGeometry()
-      if (newestMeasurement !== null && next.ts < newestMeasurement) clockUncertain = true
-      newestMeasurement = Math.max(newestMeasurement ?? next.ts, next.ts)
+      // A tolerated step must not order a newer layout before the one it replaced.
+      if (clockBehind(next.ts) && !clockUncertain) next.ts = newestClockReading
       return next
     }
+
+    const canRecoverClockAt = (timestamp: number) =>
+      needsClockAnchor &&
+      !clockUncertain &&
+      uncertainThrough !== null &&
+      timestamp > uncertainThrough
 
     const rememberLayout = (next: GazeLayout) => {
       if (observed.length >= MAX_LAYOUTS) {
@@ -113,11 +166,24 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       observed.push(next.ts)
       if (next.ts < observed[observed.length - 2]) observed.sort((a, b) => a - b)
       timestampCounts.set(next.ts, (timestampCounts.get(next.ts) ?? 0) + 1)
+      if (canRecoverClockAt(next.ts)) {
+        // This applies to the initial snapshot too, when tracker discovery is late.
+        // Guard the new measurement against bridge clock lead, retaining the cutoff
+        // so delayed frames cannot inherit the recovered layout.
+        uncertainThrough = Math.max(uncertainThrough ?? next.ts, next.ts + CLOCK_STEP_TOLERANCE_MS)
+        needsClockAnchor = false
+      }
       return true
     }
 
     const geometryAt = (timestamp: number): number | null => {
-      if (clockUncertain || (unavailableFrom !== null && timestamp >= unavailableFrom)) return null
+      if (
+        clockUncertain ||
+        needsClockAnchor ||
+        (uncertainThrough !== null && timestamp <= uncertainThrough) ||
+        (unavailableFrom !== null && timestamp >= unavailableFrom)
+      )
+        return null
       let low = 0
       let high = observed.length
       while (low < high) {
@@ -158,12 +224,14 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
     }
 
     const syncGeometry = () => {
+      if (!active) return
       const next = measure()
+      const clockRecovered = canRecoverClockAt(next.ts)
       // Two changes in one millisecond cannot be distinguished by their timestamp.
       // A later measurement of the stable layout restores an unambiguous anchor.
       const reanchor =
         latest !== null && (timestampCounts.get(latest.ts) ?? 0) > 1 && next.ts > latest.ts
-      if (sameLayout(latest, next) && !reanchor) return
+      if (sameLayout(latest, next) && !reanchor && !clockRecovered) return
       latest = next
       if (initialLayout !== null && rememberLayout(next)) {
         layouts.push(next)
@@ -231,7 +299,6 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
           payload: {
             step_kind: stepKind,
             step_index: stepIndex,
-            questionnaire_id: questionnaireId ?? null,
             state: 'capture_finished',
             issue: completionFailed
               ? 'completion_failed'
@@ -244,6 +311,9 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
             unsent,
             dropped,
             unsaved_layouts: layouts.length + droppedLayouts,
+            clock_uncertain: clockUncertain,
+            // A tolerated step otherwise shows only as a stretch of unmapped samples.
+            clock_rollbacks: clockRollbacks,
           },
         })
     }
@@ -266,10 +336,9 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       const initial = initialLayout
       try {
         const rec = await gazeApi.startRecording({
-          video_id: videoId ?? null,
+          video_id: videoId,
           step_kind: stepKind,
           step_index: stepIndex,
-          questionnaire_id: questionnaireId ?? null,
           sampling_rate_hz: rate,
           geometry: initial,
         })
@@ -297,6 +366,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
 
     const connection = openGazeConnection({
       onHealth: (value) => {
+        if (!active) return
         currentHealth = value
         setHealth(value)
         logTransition()
@@ -306,8 +376,20 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       },
       onSample: (msg) => {
         if (!active) return
+        const receivedAt = Date.now()
+        clockBehind(receivedAt)
+        const timestamp = msg.ts as number
+        // With a trustworthy clock, reject pre-video frames. A detected rollback
+        // can make entry-overlap frames indistinguishable; keep those raw/unmapped.
+        if (!clockUncertain && timestamp < earliestVideoTimestamp) return
+        if (needsClockAnchor && receivedAt <= clockGuardThrough) {
+          // Include ahead-of-browser frames from the rollback/guard window. Freeze
+          // this after the guard: extending it on every frame could prevent recovery
+          // indefinitely when the bridge clock runs slightly ahead of the browser.
+          uncertainThrough = Math.max(uncertainThrough ?? timestamp, timestamp)
+        }
         samples.push({
-          ts: msg.ts as number,
+          ts: timestamp,
           lx: typeof msg.lx === 'number' ? msg.lx : null,
           ly: typeof msg.ly === 'number' ? msg.ly : null,
           rx: typeof msg.rx === 'number' ? msg.rx : null,
@@ -317,7 +399,7 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
           lpd: typeof msg.lpd === 'number' ? msg.lpd : null,
           rpd: typeof msg.rpd === 'number' ? msg.rpd : null,
           device_ts: typeof msg.device_ts === 'number' ? msg.device_ts : null,
-          geometry_ts: geometryAt(msg.ts as number),
+          geometry_ts: geometryAt(timestamp),
         })
         if (samples.length > MAX_PENDING) {
           samples.shift()
@@ -353,6 +435,6 @@ export function useGazeCapture(context: GazeContext | null, fallbackRateHz = 120
       const id = recordingId
       void finalizeRecording(id)
     }
-  }, [videoId, stepKind, stepIndex, questionnaireId, fallbackRateHz])
+  }, [videoId, stepKind, stepIndex, fallbackRateHz])
   return { ...health, issue, retry: () => retry.current() }
 }

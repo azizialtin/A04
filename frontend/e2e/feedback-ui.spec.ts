@@ -122,6 +122,8 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
     samples: unknown[]
   }[] = []
   const answers: Record<string, unknown>[] = []
+  const events: { event_type: string; client_ts: number; payload: Record<string, unknown> }[] = []
+  const bridgeCommands: string[] = []
   const screenStarts: Record<string, unknown>[] = []
   const screenUploads: Buffer[] = []
   const unexpected: string[] = []
@@ -136,6 +138,7 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
     )
     ws.onMessage((message) => {
       const request = JSON.parse(String(message))
+      bridgeCommands.push(request.type)
       if (request.type === 'start_gaze' && bridge) {
         ws.send(
           JSON.stringify({
@@ -189,12 +192,11 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
       answers.push(req.postDataJSON())
       return json({ status: 'ok' })
     }
-    if (
-      path === '/participant/events' ||
-      path === '/participant/notes' ||
-      path === '/participant/diagnosis'
-    )
+    if (path === '/participant/events') {
+      events.push(req.postDataJSON())
       return json({ id: 1 })
+    }
+    if (path === '/participant/notes' || path === '/participant/diagnosis') return json({ id: 1 })
     if (path.endsWith('/notes')) return json([])
     if (path.endsWith('/replay'))
       return json({
@@ -254,6 +256,8 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
   return {
     recordings,
     answers,
+    events,
+    bridgeCommands,
     screenStarts,
     screenUploads,
     unexpected,
@@ -266,14 +270,30 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
 async function verifyBounds(page: Page, geometry: GazeLayout) {
   const expected = await page.locator('[data-aoi]').evaluateAll((els) =>
     els
-      .map((el) => {
+      .flatMap((el) => {
         const rect = el.getBoundingClientRect()
+        if (el instanceof HTMLVideoElement && el.hasAttribute('data-gaze-video')) {
+          if (!el.videoWidth || !el.videoHeight) return []
+          const scale = Math.min(rect.width / el.videoWidth, rect.height / el.videoHeight)
+          const width = el.videoWidth * scale
+          const height = el.videoHeight * scale
+          const left = rect.left + (rect.width - width) / 2
+          const top = rect.top + (rect.height - height) / 2
+          return ['video_students', 'video_code'].map((id, half) => ({
+            id,
+            x: Math.max(0, left + (half * width) / 2),
+            y: Math.max(0, top),
+            right: Math.min(innerWidth, left + ((half + 1) * width) / 2),
+            bottom: Math.min(innerHeight, top + height),
+          }))
+        }
+        const margin = Math.min(8, Number(el.getAttribute('data-aoi-margin')) || 0)
         return {
           id: el.getAttribute('data-aoi'),
-          x: Math.max(0, rect.left),
-          y: Math.max(0, rect.top),
-          right: Math.min(innerWidth, rect.right),
-          bottom: Math.min(innerHeight, rect.bottom),
+          x: Math.max(0, rect.left - margin),
+          y: Math.max(0, rect.top - margin),
+          right: Math.min(innerWidth, rect.right + margin),
+          bottom: Math.min(innerHeight, rect.bottom + margin),
         }
       })
       .filter((box) => box.right > box.x && box.bottom > box.y),
@@ -372,16 +392,59 @@ for (const viewport of [
         .filter((r) => r.kind === 'case_video' && !r.completed)
         .slice(-1)[0]
         ?.layouts.slice(-1)[0]
-    await expect.poll(() => latest()?.aois?.some((a) => a.id === 'video')).toBe(true)
+    await expect.poll(() => latest()?.aois?.some((a) => a.id === 'video_students')).toBe(true)
+    await expect.poll(() => latest()?.aois?.some((a) => a.id === 'video_code')).toBe(true)
     await expect.poll(() => latest()?.frame?.w).toBe(320)
     await expect(page.locator('.unsent')).toHaveCount(0)
     await expect.poll(() => latest()?.aois?.some((a) => a.id === 'unsent_notice')).toBe(false)
     await redOverlay(page, await settledGeometry(page, latest), info, 'case')
+    const buttons = await page.locator('.rail-actions [data-aoi]').evaluateAll((elements) =>
+      elements.map((el) => {
+        const rect = el.getBoundingClientRect()
+        return { top: rect.top, bottom: rect.bottom }
+      }),
+    )
+    expect(buttons).toHaveLength(3)
+    for (let i = 1; i < buttons.length; i++) {
+      expect(buttons[i].top - buttons[i - 1].bottom).toBeGreaterThanOrEqual(16)
+    }
+    const layout = latest()!
+    const areas = ['task_button', 'info_button', 'student_task_button'].map((id) =>
+      layout.aois!.find((area) => area.id === id)!,
+    )
+    for (let i = 1; i < areas.length; i++) {
+      const previousBottom = areas[i - 1].y + areas[i - 1].h
+      expect(areas[i].y - previousBottom).toBeGreaterThanOrEqual(12)
+      const x = areas[i].x + areas[i].w / 2
+      const y = (previousBottom + areas[i].y) / 2
+      expect(
+        layout.aois!.some(
+          (area) => x >= area.x && x < area.x + area.w && y >= area.y && y < area.y + area.h,
+        ),
+      ).toBe(false)
+    }
+    await page.getByRole('button', { name: 'Aufgabenstellung', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Aufgabenstellung', exact: true })).toContainText(
+      'Sie sehen hier ein Video einer Unterrichtssituation.',
+    )
+    await expect
+      .poll(() => latest()?.aois?.map((a) => a.id))
+      .toEqual(['task_dialog', 'task_dialog_close', 'task_dialog_text'])
+    await redOverlay(page, await settledGeometry(page, latest), info, 'instructions')
+    await page.keyboard.press('Escape')
+    await expect.poll(() => latest()?.active_modal).toBe(null)
+    await expect
+      .poll(() => data.events.some((event) => event.event_type === 'task_closed'))
+      .toBe(true)
+    const closed = data.events.find((event) => event.event_type === 'task_closed')!
+    expect(closed.payload.durationMs).toBeGreaterThan(0)
     await page.locator('[data-aoi="student_task_button"]').click()
     await expect.poll(() => latest()?.active_modal).toBe('student_task_dialog')
     // Successfully delivered background events keep the modal unobstructed.
     await expect(page.locator('.unsent')).toHaveCount(0)
-    await expect.poll(() => latest()?.aois?.map((a) => a.id)).toEqual(['student_task_dialog'])
+    await expect
+      .poll(() => latest()?.aois?.map((a) => a.id))
+      .toEqual(['student_task_dialog', 'student_task_dialog_close', 'student_task_dialog_text'])
     await redOverlay(page, await settledGeometry(page, latest), info, 'student-task')
     expect(
       await page
@@ -405,20 +468,15 @@ for (const viewport of [
   })
 }
 
-test('questionnaire AOIs follow scrolling and repeated fields; all measured steps have contexts', async ({
+test('only the video screen starts gaze capture across the full participant flow', async ({
   page,
-}, info) => {
+}) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   const data = await participant(page)
   await page.goto('/session')
   await expect(page.getByRole('heading', { name: 'Fehler im Code' })).toBeVisible()
-  const latest = () =>
-    data.recordings
-      .filter((r) => r.kind === 'questionnaire' && !r.completed)
-      .slice(-1)[0]
-      ?.layouts.slice(-1)[0]
-  await expect.poll(() => latest()?.aois?.some((a) => a.id === 'instructions')).toBe(true)
-  await redOverlay(page, await settledGeometry(page, latest), info, 'questionnaire')
+  expect(data.recordings).toEqual([])
+  expect(data.bridgeCommands).not.toContain('start_gaze')
   expect(
     await page
       .locator('[data-line]')
@@ -442,16 +500,12 @@ test('questionnaire AOIs follow scrolling and repeated fields; all measured step
     await input.fill(String(((i - 1) % 4) + 1))
   }
   await expect(page.getByRole('spinbutton', { name: /Fehler in Zeilennummer:/ })).toHaveCount(7)
-  await expect.poll(() => latest()?.aois?.some((a) => a.id === 'question.lines.answer')).toBe(true)
-  await redOverlay(page, latest()!, info, 'line-fields')
   await page.locator('[data-aoi="question.extra_7.answer"]').scrollIntoViewIfNeeded()
-  await expect
-    .poll(() => latest()?.aois?.some((a) => a.id === 'question.extra_7.answer'))
-    .toBe(true)
-  expect(latest()!.aois!.some((a) => a.id === 'page_title')).toBe(false)
-  await redOverlay(page, await settledGeometry(page, latest), info, 'questionnaire-scrolled')
+  expect(data.recordings).toEqual([])
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Fall starten' })).toBeVisible()
+  expect(data.recordings).toEqual([])
+  expect(data.bridgeCommands).not.toContain('start_gaze')
   expect(data.answers[0].answers).toMatchObject({ lines: [1, 2, 3, 4, 1, 2, 3] })
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
   await expect(page.locator('video[data-gaze-video]')).toBeVisible()
@@ -462,12 +516,17 @@ test('questionnaire AOIs follow scrolling and repeated fields; all measured step
     .getByRole('button', { name: 'Zur Diagnose' })
     .click()
   await expect(page.locator('[data-aoi="diagnosis_answer"]')).toBeVisible()
-  await expect.poll(() => data.recordings.some((r) => r.kind === 'diagnosis')).toBe(true)
+  await expect.poll(() => data.recordings.every((r) => r.completed)).toBe(true)
+  expect(data.recordings.map((r) => r.kind)).toEqual(['case_video'])
   await page.locator('#diagnosis-text').fill('Der Fehler betrifft die Variable.')
   await page.locator('[data-aoi="continue"]').click()
-  await expect.poll(() => data.recordings.some((r) => r.kind === 'case_outro')).toBe(true)
+  await expect(page.getByRole('heading', { name: 'Fall abgeschlossen' })).toBeVisible()
+  expect(data.recordings.map((r) => r.kind)).toEqual(['case_video'])
   await page.locator('[data-aoi="continue"]').click()
   await expect.poll(() => data.recordings.every((r) => r.completed)).toBe(true)
+  expect(data.recordings.map((r) => r.kind)).toEqual(['case_video'])
+  expect(data.recordings[0].samples.length).toBeGreaterThan(0)
+  expect(data.bridgeCommands.filter((command) => command === 'start_gaze')).toHaveLength(1)
   expect(data.unexpected).toEqual([])
 })
 
@@ -497,7 +556,8 @@ test('confirmed case exit survives a failed session refresh', async ({ page }) =
   await expect.poll(() => failedRefreshes).toBe(2)
   await page.locator('#diagnosis-text').fill('Die bestätigte Navigation bleibt benutzbar.')
   await page.locator('[data-aoi="continue"]').click()
-  await expect.poll(() => data.recordings.some((r) => r.kind === 'case_outro')).toBe(true)
+  await expect(page.getByRole('heading', { name: 'Fall abgeschlossen' })).toBeVisible()
+  expect(data.recordings.every((r) => r.kind === 'case_video')).toBe(true)
   await expect(page.getByRole('dialog', { name: 'Fall abschließen?' })).not.toBeVisible()
   expect(data.unexpected).toEqual([])
 })
@@ -555,9 +615,7 @@ test('questionnaire code numbering continues across questions and survives answe
   expect(data.unexpected).toEqual([])
 })
 
-test('stacked matrix answers remain visible and measured without sideways scrolling', async ({
-  page,
-}, info) => {
+test('stacked matrix answers remain visible without starting gaze capture', async ({ page }) => {
   await page.setViewportSize({ width: 400, height: 720 })
   const data = await participant(page)
   await page.goto('/session')
@@ -568,15 +626,8 @@ test('stacked matrix answers remain visible and measured without sideways scroll
   const answer = page.locator('input[name="matrix_0"]').last()
   await answer.check()
   await expect(answer).toBeChecked()
-  const latest = () =>
-    data.recordings
-      .filter((r) => r.kind === 'questionnaire' && !r.completed)
-      .slice(-1)[0]
-      ?.layouts.slice(-1)[0]
-  await expect
-    .poll(() => latest()?.aois?.some((a) => a.id === 'question.matrix_0.answer'))
-    .toBe(true)
-  await redOverlay(page, await settledGeometry(page, latest), info, 'matrix-stacked')
+  expect(data.recordings).toEqual([])
+  expect(data.bridgeCommands).not.toContain('start_gaze')
   expect(
     await matrix.locator('.matrix__scroll').evaluate((el) => el.scrollWidth - el.clientWidth),
   ).toBeLessThanOrEqual(1)
@@ -677,18 +728,9 @@ for (const width of [320, 768, 1280, 1470, 1920]) {
     await page.goto('/session')
     await expect(page.getByRole('heading', { name: responsiveQuestionnaire.title })).toBeVisible()
     await expectNoHorizontalOverflow(page)
-    // Connection guidance must reserve space, including when expanded. It must
-    // never cover the title or answer choices as the old fixed warning did.
-    const help = page.locator('.gaze-health details')
-    await expect(help).toBeVisible()
-    for (const expanded of [false, true]) {
-      if (expanded) await help.locator('summary').click()
-      const warning = await page.locator('.gaze-health-stack').boundingBox()
-      const form = await page.locator('.panel--form').boundingBox()
-      expect(warning!.y + warning!.height).toBeLessThanOrEqual(form!.y)
-      await expectNoHorizontalOverflow(page)
-    }
-    await help.locator('summary').click()
+    await expect(page.locator('.gaze-health')).toHaveCount(0)
+    expect(data.recordings).toEqual([])
+    expect(data.bridgeCommands).not.toContain('start_gaze')
     for (const scale of await page.locator('.scale').all()) {
       const range = scale.getByRole('slider')
       const min = Number(await range.getAttribute('min'))

@@ -71,8 +71,9 @@ values, and expanding tracker help does not cover the form.
 The fixture `fixtures/stimulus.webm` is a two-second 320×180 test pattern, so the
 video element also has real decoded dimensions.
 
-These checks cover case and questionnaire AOI rectangles at different viewport
-sizes, scroll and popup visibility, seven line-number inputs, continuous code
+These checks cover video-only capture across screen transitions, midpoint-split
+video AOIs at different viewport sizes, button margins and gaps, popup text AOIs
+and open-duration events, seven line-number inputs, continuous code
 line numbers, participant Details below a long roster, and real MediaRecorder
 encoding/upload alongside gaze collection. The display stream is a synthetic
 canvas: this does not test the OS screen-share picker or permissions.

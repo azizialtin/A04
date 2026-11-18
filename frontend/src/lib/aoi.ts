@@ -47,13 +47,13 @@ function visible(el: Element): boolean {
 }
 
 /** Only the part actually on screen counts, including clipping by scrollable parents. */
-export function visibleBox(el: Element): Box | null {
+export function visibleBox(el: Element, margin = 0): Box | null {
   if (!visible(el)) return null
   const rect = el.getBoundingClientRect()
-  let left = Math.max(0, rect.left)
-  let top = Math.max(0, rect.top)
-  let right = Math.min(window.innerWidth, rect.right)
-  let bottom = Math.min(window.innerHeight, rect.bottom)
+  let left = Math.max(0, rect.left - margin)
+  let top = Math.max(0, rect.top - margin)
+  let right = Math.min(window.innerWidth, rect.right + margin)
+  let bottom = Math.min(window.innerHeight, rect.bottom + margin)
   for (let node = el.parentElement; node; node = node.parentElement) {
     const style = getComputedStyle(node)
     const clips = (value: string) => /^(auto|scroll|hidden|clip)$/.test(value)
@@ -81,6 +81,8 @@ export function visibleBox(el: Element): Box | null {
 }
 
 export function capturePageGeometry(): GazeLayout {
+  const video = document.querySelector<HTMLVideoElement>('video[data-gaze-video]')
+  const clip = captureGeometry(video)
   const dialogs = [...document.querySelectorAll<HTMLElement>('[aria-modal="true"]')]
   const shownDialogs = dialogs.filter((el) => visibleBox(el))
   const modal = shownDialogs[shownDialogs.length - 1]
@@ -96,13 +98,34 @@ export function capturePageGeometry(): GazeLayout {
     .sort((a, b) => (paintsAbove(a, b) ? 1 : -1))
   const ordered = [...elements.filter((el) => el.dataset.aoiOverlay !== 'true'), ...overlays]
   const aois: GazeAoi[] = [...new Set(ordered)].flatMap((el) => {
-    const box = visibleBox(el)
+    let box = visibleBox(el)
     const id = el.dataset.aoi
     if (!box || !id) return []
+    const margin = Number(el.dataset.aoiMargin)
+    if (Number.isFinite(margin) && margin > 0) {
+      box = visibleBox(el, Math.min(margin, 8))!
+    }
+    if (el === video) {
+      // Split the rendered picture before clipping; scrolling must not move
+      // the midpoint, and letterbox bars are deliberately outside both AOIs.
+      if (!clip) return []
+      const scale = Math.min(clip.video.w / clip.frame.w, clip.video.h / clip.frame.h)
+      const width = clip.frame.w * scale
+      const height = clip.frame.h * scale
+      const left = clip.video.x + (clip.video.w - width) / 2
+      const top = clip.video.y + (clip.video.h - height) / 2
+      return ['video_students', 'video_code'].flatMap((id, half) => {
+        const x = Math.max(box.x, left + (half * width) / 2)
+        const y = Math.max(box.y, top)
+        const right = Math.min(box.x + box.w, left + ((half + 1) * width) / 2)
+        const bottom = Math.min(box.y + box.h, top + height)
+        return right > x && bottom > y
+          ? [{ id, x, y, w: right - x, h: bottom - y, priority: 0 }]
+          : []
+      })
+    }
     return [{ id, ...box, priority: Number(el.dataset.aoiPriority) || 0 }]
   })
-  const video = document.querySelector<HTMLVideoElement>('video[data-gaze-video]')
-  const clip = captureGeometry(video)
   const viewport = window.visualViewport
   const isExtended = (window.screen as Screen & { isExtended?: boolean }).isExtended
   return {
@@ -175,11 +198,14 @@ export function observePageGeometry(onChange: () => void): () => void {
       'data-aoi-row-prompt',
       'data-aoi-priority',
       'data-aoi-overlay',
+      'data-aoi-margin',
     ],
   })
   observeElements()
   document.addEventListener('scroll', schedule, true)
   document.addEventListener('input', schedule, true)
+  document.addEventListener('loadedmetadata', schedule, true)
+  document.addEventListener('resize', schedule, true)
   document.addEventListener('visibilitychange', onChange)
   window.addEventListener('resize', schedule)
   window.addEventListener('focus', onChange)
@@ -196,6 +222,8 @@ export function observePageGeometry(onChange: () => void): () => void {
     resize?.disconnect()
     document.removeEventListener('scroll', schedule, true)
     document.removeEventListener('input', schedule, true)
+    document.removeEventListener('loadedmetadata', schedule, true)
+    document.removeEventListener('resize', schedule, true)
     document.removeEventListener('visibilitychange', onChange)
     window.removeEventListener('resize', schedule)
     window.removeEventListener('focus', onChange)

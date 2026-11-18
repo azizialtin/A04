@@ -860,7 +860,7 @@ h3 {
   flex: 0 0 340px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 24px;
   background: var(--surface);
   border-radius: var(--radius);
   padding: 18px;
@@ -889,11 +889,6 @@ h3 {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
-}
-
-.rail-task {
-  margin: 0;
-  font-size: 0.95rem;
 }
 
 /* Wrapped visual lines retain their source-line numbers and copy as code alone. */
@@ -946,10 +941,24 @@ h3 {
   color: #1f5fa8;
 }
 
-.rail-actions {
+.case-screen__rail .rail-actions {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  flex: 0 0 auto;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: clamp(24px, 4vh, 48px);
+  padding-block: 8px;
+  align-items: stretch;
+}
+
+.case-screen__rail > .rail-block,
+.case-screen__rail > .btn {
+  flex-shrink: 0;
+}
+
+.case-screen__rail .rail-actions .btn {
+  min-height: 48px;
+  white-space: normal;
 }
 
 .timer {
@@ -1869,6 +1878,24 @@ h3 {
   .session-screen .case-screen__rail {
     min-height: 0;
     max-height: none;
+  }
+
+  .case-screen__rail .rail-actions {
+    flex: 1 0 auto;
+    justify-content: space-evenly;
+  }
+
+  .case-screen__rail .rail-actions .btn {
+    flex-shrink: 0;
+  }
+
+  .case-screen__rail .rail-block--notes {
+    flex: 0 0 auto;
+  }
+
+  .case-screen__rail .rail-block--notes .textarea {
+    flex: none;
+    height: clamp(140px, 16vh, 180px);
   }
 
   .session-screen .case-screen__video {

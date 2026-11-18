@@ -1,6 +1,5 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
 import type { Question } from '../src/lib/questionnaire'
 import type { SectionTiming, SessionStep } from '../src/api/participant'
 import type { GazeContext, GazeSample } from '../src/api/gaze'
@@ -47,16 +46,19 @@ async function session(page: Page, initial = 0, expiresIn = 420_000, connectedGa
     const token = 'e30.' + btoa(JSON.stringify({ sub: 'TEST-CK', role: 'participant', exp: 4_000_000_000 })) + '.test'
     localStorage.setItem('a04_auth', JSON.stringify({ token }))
   })
+  const bridgeCommands: string[] = []
   await page.routeWebSocket('ws://127.0.0.1:8766', (ws) => {
     ws.send(JSON.stringify({ type: 'status', connected: connectedGaze, frequency: 120, screen_recording: false }))
     ws.onMessage((message) => {
-      if (JSON.parse(String(message)).type === 'start_gaze') ws.send(JSON.stringify({
+      const type = JSON.parse(String(message)).type
+      bridgeCommands.push(type)
+      if (type === 'start_gaze') ws.send(JSON.stringify({
         type: 'gaze', ts: Date.now(), lx: 0.5, ly: 0.5, rx: 0.5, ry: 0.5, lv: true, rv: true,
       }))
     })
   })
   const state = {
-    current: initial, steps: script(), timing: null as SectionTiming | null,
+    bridgeCommands, current: initial, steps: script(), timing: null as SectionTiming | null,
     visits: [] as { step_index: number; visit_id: string; client_ts: number }[],
     responses: [] as Record<string, unknown>[], finishes: [] as Record<string, unknown>[],
     failedFinishResponses: 0, failedResponseAcknowledgements: 0,
@@ -125,7 +127,7 @@ async function session(page: Page, initial = 0, expiresIn = 420_000, connectedGa
       const id = state.recordings.length + 1
       state.recordings.push({
         id, video_id: body.video_id, step_kind: body.step_kind, step_index: body.step_index,
-        questionnaire_id: body.questionnaire_id, layouts: [body.geometry], completed: false, samples: [],
+        layouts: [body.geometry], completed: false, samples: [],
       })
       return json({ recording_id: id })
     }
@@ -152,51 +154,6 @@ async function fitsViewport(page: Page) {
   }))
   expect(overflow).toEqual({ vertical: 0, horizontal: 0, code: false })
   await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeInViewport()
-}
-
-async function measuredAreas(page: Page, latest: () => GazeLayout | undefined, ids: string[]) {
-  let matched: GazeLayout | undefined
-  await expect(async () => {
-    const layout = latest()
-    expect(layout).toBeDefined()
-    for (const id of ids) {
-      const dom = await page.locator(`[data-aoi="${id}"]`).boundingBox()
-      expect(dom, `visible DOM box for ${id}`).not.toBeNull()
-      const areas = layout!.aois?.filter((area) => area.id === id) ?? []
-      expect(areas, `one measured rectangle for ${id}`).toHaveLength(1)
-      const area = areas[0]
-      expect(area.x, `${id}: x`).toBeCloseTo(dom!.x, 0)
-      expect(area.y, `${id}: y`).toBeCloseTo(dom!.y, 0)
-      expect(area.w, `${id}: width`).toBeCloseTo(dom!.width, 0)
-      expect(area.h, `${id}: height`).toBeCloseTo(dom!.height, 0)
-    }
-    matched = layout
-  }).toPass({ timeout: 5000 })
-  return matched!
-}
-
-async function geometryScreenshots(page: Page, layout: GazeLayout, info: TestInfo, name: string) {
-  await writeFile(info.outputPath(`${name}-layout.json`), JSON.stringify(layout, null, 2))
-  // Same temporary red overlays as feedback-overlay; none have data-aoi or
-  // survive the screenshot, so they cannot become research geometry.
-  await page.evaluate((areas) => {
-    for (const area of areas ?? []) {
-      const box = document.createElement('div')
-      box.dataset.overlayVerification = ''
-      box.textContent = area.id
-      Object.assign(box.style, {
-        position: 'fixed', left: `${area.x}px`, top: `${area.y}px`,
-        width: `${area.w}px`, height: `${area.h}px`, boxSizing: 'border-box',
-        border: '1px solid red', background: 'rgba(255, 0, 0, .13)', color: '#9d0015',
-        font: '11px monospace', zIndex: '2147483647', pointerEvents: 'none', overflow: 'hidden',
-      })
-      document.body.append(box)
-    }
-  }, layout.aois)
-  await page.screenshot({ path: info.outputPath(`${name}-red.png`) })
-  await page.locator('[data-overlay-verification]').evaluateAll((boxes) => boxes.forEach((box) => box.remove()))
-  await expect(page.locator('[data-overlay-verification]')).toHaveCount(0)
-  await page.screenshot({ path: info.outputPath(`${name}-clean.png`) })
 }
 
 test('all thirteen source CK pages preserve code and fit with five line entries', async ({ page }, info) => {
@@ -307,80 +264,49 @@ test('a lost finish acknowledgement retries the same answer and timestamp withou
   expect(state.current).toBe(14)
 })
 
-test('CK gaze geometry follows both code files, five-line controls, removal, and the supervisor modal', async ({ page }, info) => {
+test('CK pages, answer edits and supervisor popups never collect gaze', async ({ page }, info) => {
   const sourceIndex = source.ck_tasks.findIndex((task) => task.question.code_blocks?.length === 2)
   expect(sourceIndex).toBeGreaterThanOrEqual(0)
-  const task = source.ck_tasks[sourceIndex]
-  const stepIndex = sourceIndex + 1
-  const state = await session(page, stepIndex, 420_000, true)
-  const latest = () => state.recordings.findLast((recording) => !recording.completed)?.layouts.at(-1)
-  const codeId = `question.${task.question.id}.code`
-  const answerId = `question.${task.question.id}.answer`
-  const required = [codeId, answerId, 'section_timer', 'continue']
+  const state = await session(page, sourceIndex + 1, 420_000, true)
   await expect(page.getByRole('timer')).toBeVisible()
   await expect(page.locator('.question-code-file')).toHaveCount(2)
   await page.getByRole('spinbutton').fill('1')
-  const first = await measuredAreas(page, latest, required)
   await expect(page.locator('.unsent')).toHaveCount(0)
-  expect(state.recordings).toHaveLength(1)
-  const recording = state.recordings[0]
-  expect(recording).toMatchObject({
-    video_id: null, step_kind: 'questionnaire', step_index: stepIndex, questionnaire_id: task.source_row,
-  })
-  const initialAnswer = first.aois!.find((area) => area.id === answerId)!
-  const initialCode = first.aois!.find((area) => area.id === codeId)!
-  const historical = structuredClone(first)
-  for (const file of await page.locator('.question-code-file').all()) {
-    const bounds = (await file.boundingBox())!
-    expect(bounds.x).toBeGreaterThanOrEqual(initialCode.x - 1)
-    expect(bounds.y).toBeGreaterThanOrEqual(initialCode.y - 1)
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(initialCode.x + initialCode.w + 1)
-    expect(bounds.y + bounds.height).toBeLessThanOrEqual(initialCode.y + initialCode.h + 1)
-  }
-  await geometryScreenshots(page, first, info, 'ck-two-files-one-line')
 
   for (let count = 1; count < 5; count++) await page.getByRole('button', { name: /Weitere Zeile hinzufügen/ }).click()
   for (const input of await page.getByRole('spinbutton').all()) await input.fill('1')
   await expect(page.getByRole('spinbutton')).toHaveCount(5)
   await expect(page.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeDisabled()
-  const capped = await measuredAreas(page, latest, required)
-  const cappedAnswer = capped.aois!.find((area) => area.id === answerId)!
-  expect(cappedAnswer.h).toBeGreaterThan(initialAnswer.h)
-  expect(capped.aois!.find((area) => area.id === codeId)).toEqual(initialCode)
-  expect(capped.ts).toBeGreaterThan(first.ts)
   await fitsViewport(page)
-  await geometryScreenshots(page, capped, info, 'ck-two-files-five-lines')
+  await page.screenshot({ path: info.outputPath('ck-two-files-five-lines.png') })
+  expect(state.recordings).toHaveLength(0)
+  expect(state.bridgeCommands).not.toContain('start_gaze')
 
   await page.getByRole('button', { name: 'Zeilennummer 5 entfernen', exact: true }).click()
   await expect(page.getByRole('spinbutton')).toHaveCount(4)
   await expect(page.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeEnabled()
-  // The compact controls wrap three entries per row at this width. Removing
-  // the remaining entry on the second row must shrink the measured answer area.
   await page.getByRole('button', { name: 'Zeilennummer 4 entfernen', exact: true }).click()
   await expect(page.getByRole('spinbutton')).toHaveCount(3)
-  const removed = await measuredAreas(page, latest, required)
-  expect(removed.aois!.find((area) => area.id === answerId)!.h).toBeLessThan(cappedAnswer.h)
-  expect(recording.layouts.find((layout) => layout.ts === first.ts)).toEqual(historical)
 
   await page.keyboard.press('Control+Alt+Shift+N')
   await expect(page.getByRole('dialog', { name: 'CK-Abschnitt beenden' })).toBeVisible()
-  await expect.poll(() => latest()?.active_modal).toBe('supervisor_dialog')
-  const modal = await measuredAreas(page, latest, ['supervisor_dialog'])
-  expect(modal.aois?.map((area) => area.id)).toEqual(['supervisor_dialog'])
-  await geometryScreenshots(page, modal, info, 'ck-supervisor-modal')
+  await page.screenshot({ path: info.outputPath('ck-supervisor-modal.png') })
+  expect(state.recordings).toHaveLength(0)
+  expect(state.bridgeCommands).not.toContain('start_gaze')
   await page.getByRole('button', { name: 'Abbrechen', exact: true }).click()
-  await expect.poll(() => latest()?.active_modal).toBeNull()
-  await measuredAreas(page, latest, required)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 
-  // Leaving the measured task completes its recording. The next section's
-  // intro must not manufacture a questionnaire recording or page visit.
+  // Re-enter the answer after closing, so the next supervisor action begins
+  // after the form has resumed instead of racing its pending busy-state effect.
+  await page.getByLabel('Was ist der Fehler?', { exact: true }).fill('Antwort nach dem Schließen.')
   await page.keyboard.press('Control+Alt+Shift+N')
+  await expect(page.getByRole('dialog', { name: 'CK-Abschnitt beenden' })).toBeVisible()
   await page.getByRole('button', { name: 'Speichern und zu PCK', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'PCK-Einleitung' })).toBeVisible()
-  await expect.poll(() => recording.completed).toBe(true)
-  expect(state.recordings).toHaveLength(1)
-  expect(recording.samples.length).toBeGreaterThan(0)
-  expect(recording.samples[0].geometry_ts).not.toBeNull()
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await expect(page.getByRole('heading', { name: source.pck_example.title })).toBeVisible()
+  expect(state.recordings).toHaveLength(0)
+  expect(state.bridgeCommands).not.toContain('start_gaze')
   expect(state.unexpected).toEqual([])
 })
 

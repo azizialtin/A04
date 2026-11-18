@@ -381,7 +381,7 @@ try {
   await expect(page.locator('.gaze-health--ready')).toContainText(
     'Testmodus: synthetische Blickdaten',
   )
-  await expect(page.locator('.gaze-health--ready')).toContainText('Blickdaten werden empfangen.')
+  await expect(page.locator('.gaze-health--ready')).toContainText('Eye-Tracker erkannt')
   await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeVisible()
   await page.screenshot({
     path: path.join(output, 'preflight-mock-live.png'),

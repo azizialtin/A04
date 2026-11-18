@@ -94,7 +94,6 @@ test('a participant works through their cases and reaches the end', async ({ pag
     // No tracker is available in this walkthrough: continuing must acknowledge it.
     await expect(page.getByRole('heading', { name: 'Neuer Fall' })).toBeVisible()
     const gazeHealth = page.locator('.panel > .gaze-health')
-    await expect(gazeHealth).toContainText('0 empfangen · 0 mit gültiger Augenposition')
     await expect(gazeHealth).toContainText(
       'Ohne bestätigte Blickdaten fehlen später möglicherweise die Blickpunkte.',
     )
@@ -104,8 +103,13 @@ test('a participant works through their cases and reaches the end', async ({ pag
     await inspectScreen(`case-${caseNumber}-02-case-intro`)
     await page.getByRole('button', { name: 'Ohne Blickdaten fortfahren', exact: true }).click()
 
-    // The case screen: task on the rail, the two panels, and the notes box.
-    await expect(page.getByText(`Diagnostizieren Sie Fall ${caseNumber}`)).toBeVisible()
+    // Instructions are available in a popup, with the notes visible on the rail.
+    await page.getByRole('button', { name: 'Aufgabenstellung', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Aufgabenstellung' })).toContainText(
+      'Sie sehen hier ein Video einer Unterrichtssituation.',
+    )
+    await inspectScreen(`case-${caseNumber}-03-instructions-modal`)
+    await page.getByRole('button', { name: 'Schließen' }).click()
     await page.getByRole('button', { name: 'Schüler-Aufgabe' }).click()
     await expect(page.getByText('Die Aufgabe der Schüler:innen')).toBeVisible()
     await inspectScreen(`case-${caseNumber}-03-student-task-modal`)
@@ -127,6 +131,7 @@ test('a participant works through their cases and reaches the end', async ({ pag
     // Diagnosis, with their own notes shown back to them and the confidence
     // rating on the same screen: the write-up alone is not the whole answer.
     await expect(page.getByRole('heading', { name: 'Ihre Diagnose' })).toBeVisible()
+    await expect(page.getByText(`Diagnostizieren Sie Fall ${caseNumber}`)).toBeVisible()
     await expect(
       page.getByText(`Die Schleife läuft einmal zu oft (Fall ${caseNumber})`),
     ).toBeVisible()

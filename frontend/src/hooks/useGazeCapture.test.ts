@@ -71,10 +71,20 @@ async function connect(socket = FakeSocket.all[FakeSocket.all.length - 1]) {
   return socket
 }
 
-function samples(socket: FakeSocket, count: number, first = 1) {
+function samples(socket: FakeSocket, count: number, first = 100_001) {
   for (let i = 0; i < count; i++) {
     socket.say({ type: 'gaze', ts: first + i, lx: 0.3, ly: 0.4, lv: true, rv: false })
   }
+}
+
+function storedReferences() {
+  return upload.mock.calls.flatMap(([, batch]) =>
+    batch.map(({ ts, geometry_ts }) => ({ ts, geometry_ts })),
+  )
+}
+
+function statusPayloads() {
+  return vi.mocked(enqueue).mock.calls.map(([, body]) => body.payload as Record<string, unknown>)
 }
 
 beforeEach(() => {
@@ -110,16 +120,11 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 
-test.each<GazeContext>([
-  caseContext,
-  { video_id: null, step_kind: 'questionnaire', step_index: 2, questionnaire_id: 14 },
-  { video_id: 8, step_kind: 'diagnosis', step_index: 13 },
-])('records screen identity and the tracker rate for $step_kind', async (context) => {
-  const { unmount } = renderHook(() => useGazeCapture(context))
+test('records the video identity and tracker rate', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
   const socket = await connect()
   expect(start).toHaveBeenCalledWith({
-    ...context,
-    questionnaire_id: context.questionnaire_id ?? null,
+    ...caseContext,
     sampling_rate_hz: 90,
     geometry: expect.objectContaining({ aois: layout.aois, ts: 100_000 }),
   })
@@ -143,7 +148,7 @@ test('a backlog above the API cap retries in ordered batches of at most 500 samp
   expect(upload.mock.calls.map(([, , offset]) => offset)).toEqual([0, 0, 500, 1000])
   expect(
     upload.mock.calls.slice(1).flatMap(([, batch]) => batch.map((sample) => sample.ts)),
-  ).toEqual(Array.from({ length: 1201 }, (_, i) => i + 1))
+  ).toEqual(Array.from({ length: 1201 }, (_, i) => 100_001 + i))
   unmount()
   await act(async () => {})
   expect(complete).toHaveBeenCalledWith(7, { sample_count: 1201 })
@@ -185,7 +190,7 @@ test('overflow drops only newer queued samples and cannot alter an uncertain ret
   const socket = await connect()
   await act(async () => samples(socket, 500))
   const original = structuredClone(upload.mock.calls[0][1])
-  await act(async () => samples(socket, 16_000, 501))
+  await act(async () => samples(socket, 16_000, 100_501))
   expect(upload).toHaveBeenCalledTimes(1)
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2000)
@@ -195,7 +200,7 @@ test('overflow drops only newer queued samples and cannot alter an uncertain ret
 
   expect(upload.mock.calls[1]).toEqual([7, original, 0])
   expect(upload.mock.calls[2][2]).toBe(500)
-  expect(upload.mock.calls[2][1][0].ts).toBe(1501)
+  expect(upload.mock.calls[2][1][0].ts).toBe(101_501)
   expect(upload.mock.calls.slice(1).reduce((sum, [, batch]) => sum + batch.length, 0)).toBe(15_500)
   expect(upload.mock.calls.every(([, batch]) => batch.length <= 500)).toBe(true)
   expect(complete).toHaveBeenCalledWith(7, { sample_count: 15_500 })
@@ -210,10 +215,10 @@ test('a slow previous screen upload cannot consume or finalize the next screen r
   })
   const oldSocket = await connect()
   await act(async () => samples(oldSocket, 502))
-  rerender({ context: { video_id: 8, step_kind: 'diagnosis', step_index: 13 } })
+  rerender({ context: { video_id: 9, step_kind: 'case_video', step_index: 20 } })
   const newSocket = await connect()
   samples(oldSocket, 1, 9999)
-  samples(newSocket, 3, 2001)
+  samples(newSocket, 3, 120_001)
   expect(oldSocket.closed).toBe(true)
   expect(observers.size).toBe(1)
   expect(complete).not.toHaveBeenCalled()
@@ -226,10 +231,10 @@ test('a slow previous screen upload cannot consume or finalize the next screen r
   expect(complete).toHaveBeenCalledWith(8, { sample_count: 3 })
   expect(
     upload.mock.calls.filter(([id]) => id === 7).flatMap(([, batch]) => batch.map((s) => s.ts)),
-  ).toEqual(Array.from({ length: 502 }, (_, i) => i + 1))
+  ).toEqual(Array.from({ length: 502 }, (_, i) => 100_001 + i))
   expect(
     upload.mock.calls.filter(([id]) => id === 8).flatMap(([, batch]) => batch.map((s) => s.ts)),
-  ).toEqual([2001, 2002, 2003])
+  ).toEqual([120001, 120002, 120003])
 })
 
 test('failed geometry retains its original timestamp and is retried before finalization', async () => {
@@ -278,7 +283,7 @@ test('samples reference a failed layout instead of inheriting the last stored ge
   expect(warning).toHaveBeenCalled()
 })
 
-test('delayed samples use their historical layout and never a snapshot from their future', async () => {
+test('delayed samples use their historical layout and pre-video samples are discarded', async () => {
   const { unmount } = renderHook(() => useGazeCapture(caseContext))
   const socket = await connect()
   vi.setSystemTime(100_250)
@@ -292,7 +297,6 @@ test('delayed samples use their historical layout and never a snapshot from thei
   expect(upload.mock.calls[0][1].map(({ ts, geometry_ts }) => ({ ts, geometry_ts }))).toEqual([
     { ts: 100_300, geometry_ts: 100_250 },
     { ts: 100_100, geometry_ts: 100_000 },
-    { ts: 99_999, geometry_ts: null },
   ])
 })
 
@@ -345,7 +349,377 @@ test('clock rollback makes subsequent references uncertain instead of selecting 
   unmount()
   await act(async () => {})
   expect(upload.mock.calls[0][1].map(({ geometry_ts }) => geometry_ts)).toEqual([null, null])
+  // The event log says from when, and that the finished recording is affected.
+  expect(
+    statusPayloads()
+      .filter((status) => status.clock_uncertain)
+      .map((status) => status.state),
+  ).toEqual(['waiting_samples', 'tracking', 'capture_finished'])
 })
+
+test('a clock rollback before any layout notification preserves raw samples without AOI references', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(99_000)
+  samples(socket, 1, 99_000)
+  vi.setSystemTime(100_100)
+  samples(socket, 1, 100_100)
+  unmount()
+  await act(async () => {})
+  expect(upload.mock.calls[0][1].map(({ ts, geometry_ts }) => ({ ts, geometry_ts }))).toEqual([
+    { ts: 99_000, geometry_ts: null },
+    { ts: 100_100, geometry_ts: null },
+  ])
+})
+
+test('a millisecond clock rollback recovers only after a fresh stable layout measurement', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100_500)
+  // The periodic measurement: the layout is unchanged, but this is the newest clock reading.
+  await act(async () => observers.forEach((notify) => notify()))
+  // A small browser clock adjustment still creates ambiguous sample timestamps.
+  vi.setSystemTime(100_499)
+  samples(socket, 1, 100_499)
+  vi.setSystemTime(100_500)
+  samples(socket, 1, 100_500)
+  vi.setSystemTime(100_700)
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(160_000)
+  samples(socket, 1, 160_000)
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual([
+    { ts: 100_499, geometry_ts: null },
+    { ts: 100_500, geometry_ts: null },
+    { ts: 160_000, geometry_ts: 100_700 },
+  ])
+  expect(statusPayloads().every((status) => status.clock_uncertain === false)).toBe(true)
+  expect(geometry.mock.calls.map(([, snapshot]) => snapshot.ts)).toEqual([100_700])
+})
+
+test.each([
+  [100, 'recoverable with a fresh measurement', 100_900],
+  [101, 'permanently uncertain', null],
+])(
+  'a clock %i ms behind its highest observed reading is %s',
+  async (behind, _outcome, laterReference) => {
+    const { unmount } = renderHook(() => useGazeCapture(caseContext))
+    const socket = await connect()
+    vi.setSystemTime(100_500)
+    await act(async () => observers.forEach((notify) => notify()))
+    vi.setSystemTime(100_500 - behind)
+    samples(socket, 1, 100_500 - behind)
+    vi.setSystemTime(100_900)
+    await act(async () => observers.forEach((notify) => notify()))
+    vi.setSystemTime(101_000)
+    samples(socket, 1, 101_001)
+    unmount()
+    await act(async () => {})
+    expect(storedReferences()).toEqual([
+      { ts: 100_500 - behind, geometry_ts: null },
+      { ts: 101_001, geometry_ts: laterReference },
+    ])
+    expect(enqueue).toHaveBeenLastCalledWith(
+      'event',
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          state: 'capture_finished',
+          clock_uncertain: laterReference === null,
+        }),
+      }),
+    )
+  },
+)
+
+test('a layout change during a tolerated step is never ordered before the layout it replaced', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100_500)
+  layout = { ...layout, active_modal: 'task_dialog' }
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_480)
+  layout = { ...layout, active_modal: null }
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_600)
+  // Both changes share the newest reading: ambiguous, but never the popup that has closed.
+  samples(socket, 1, 100_600)
+  vi.setSystemTime(100_700)
+  await act(async () => observers.forEach((notify) => notify()))
+  samples(socket, 1, 100_801)
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual([
+    { ts: 100_600, geometry_ts: null },
+    { ts: 100_801, geometry_ts: 100_700 },
+  ])
+  expect(geometry.mock.calls.map(([, snapshot]) => [snapshot.ts, snapshot.active_modal])).toEqual([
+    [100_500, 'task_dialog'],
+    [100_500, null],
+    [100_700, null],
+  ])
+})
+
+test('delayed rollback samples never inherit an obsolete layout after popup recovery', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100_500)
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_480)
+  layout = { ...layout, active_modal: 'task_dialog' }
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_600)
+  samples(socket, 1, 100_490)
+  // Recovery requires a new measurement, not just the passage of wall-clock time.
+  samples(socket, 1, 100_600)
+  vi.setSystemTime(100_700)
+  await act(async () => observers.forEach((notify) => notify()))
+  // Includes a sample captured before rollback was first observed, and a bridge
+  // timestamp beyond the browser's old high-water mark (browser-only rollback).
+  for (const ts of [100_470, 100_490, 100_500, 100_501, 100_700, 100_800, 100_801]) {
+    samples(socket, 1, ts)
+  }
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual(
+    [100_490, 100_600, 100_470, 100_490, 100_500, 100_501, 100_700, 100_800, 100_801].map((ts) => ({
+      ts,
+      geometry_ts: ts === 100_801 ? 100_700 : null,
+    })),
+  )
+  expect(geometry.mock.calls.map(([, snapshot]) => [snapshot.ts, snapshot.active_modal])).toEqual([
+    [100_500, 'task_dialog'],
+    [100_700, 'task_dialog'],
+  ])
+})
+
+test.each([1, 100])(
+  'a %i ms rollback at video entry retains immediate and delayed raw samples',
+  async (rollback) => {
+    const { unmount } = renderHook(() => useGazeCapture(caseContext))
+    const socket = await connect()
+    vi.setSystemTime(100_000 - rollback)
+    samples(socket, 1, 100_000 - rollback)
+    vi.setSystemTime(100_200)
+    await act(async () => observers.forEach((notify) => notify()))
+    samples(socket, 1, 100_000 - rollback)
+    samples(socket, 1, 99_899) // Older than the entire bounded entry-overlap window.
+    samples(socket, 1, 100_301)
+    unmount()
+    await act(async () => {})
+    expect(storedReferences()).toEqual([
+      { ts: 100_000 - rollback, geometry_ts: null },
+      { ts: 100_000 - rollback, geometry_ts: null },
+      { ts: 100_301, geometry_ts: 100_200 },
+    ])
+    expect(complete).toHaveBeenCalledWith(7, { sample_count: 3 })
+  },
+)
+
+test('a rollback first observed after recrossing video entry retains ambiguous early samples', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100_010)
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_005)
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_200)
+  await act(async () => observers.forEach((notify) => notify()))
+  samples(socket, 1, 99_995)
+  samples(socket, 1, 99_899)
+  samples(socket, 1, 100_301)
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual([
+    { ts: 99_995, geometry_ts: null },
+    { ts: 100_301, geometry_ts: 100_200 },
+  ])
+})
+
+test('sample receipts detect a rollback between unchanged layout measurements', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100_500)
+  samples(socket, 1, 100_500)
+  vi.setSystemTime(100_480)
+  samples(socket, 1, 100_480)
+  vi.setSystemTime(100_700)
+  await act(async () => observers.forEach((notify) => notify()))
+  samples(socket, 1, 100_490)
+  samples(socket, 1, 100_801)
+  samples(socket, 1, 99_999) // This late rollback did not overlap video entry.
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual([
+    { ts: 100_500, geometry_ts: 100_000 },
+    { ts: 100_480, geometry_ts: null },
+    { ts: 100_490, geometry_ts: null },
+    { ts: 100_801, geometry_ts: 100_700 },
+  ])
+})
+
+test('repeated rollbacks never restore references for older uncertain timestamps', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  for (const ts of [100_500, 100_480, 100_700, 101_000, 100_980, 101_200]) {
+    vi.setSystemTime(ts)
+    await act(async () => observers.forEach((notify) => notify()))
+  }
+  for (const ts of [100_490, 100_701, 100_990, 101_300, 101_301]) samples(socket, 1, ts)
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual([
+    { ts: 100_490, geometry_ts: null },
+    { ts: 100_701, geometry_ts: null },
+    { ts: 100_990, geometry_ts: null },
+    { ts: 101_300, geometry_ts: null },
+    { ts: 101_301, geometry_ts: 101_200 },
+  ])
+})
+
+test('recovery waits beyond the clock guard and bridge timestamps received during rollback', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100_500)
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_480)
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_501)
+  await act(async () => observers.forEach((notify) => notify()))
+  samples(socket, 1, 100_501)
+  vi.setSystemTime(100_502)
+  samples(socket, 1, 100_800)
+  for (const ts of [100_700, 100_800]) {
+    vi.setSystemTime(ts)
+    await act(async () => observers.forEach((notify) => notify()))
+    samples(socket, 1, ts)
+  }
+  vi.setSystemTime(100_900)
+  await act(async () => observers.forEach((notify) => notify()))
+  samples(socket, 1, 101_001)
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual([
+    { ts: 100_501, geometry_ts: null },
+    { ts: 100_800, geometry_ts: null },
+    { ts: 100_700, geometry_ts: null },
+    { ts: 100_800, geometry_ts: null },
+    { ts: 101_001, geometry_ts: 100_900 },
+  ])
+  expect(geometry.mock.calls.map(([, snapshot]) => snapshot.ts)).toEqual([100_900])
+})
+
+test('a slightly faster bridge clock cannot postpone recovery indefinitely', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  const socket = await connect()
+  vi.setSystemTime(100_500)
+  await act(async () => observers.forEach((notify) => notify()))
+  vi.setSystemTime(100_480)
+  samples(socket, 1, 100_500)
+  for (const ts of [100_700, 101_700, 102_700]) {
+    vi.setSystemTime(ts - 1)
+    samples(socket, 1, ts + 20)
+    vi.setSystemTime(ts)
+    await act(async () => observers.forEach((notify) => notify()))
+  }
+  vi.setSystemTime(103_000)
+  samples(socket, 1, 103_020)
+  unmount()
+  await act(async () => {})
+  expect(storedReferences()).toEqual([
+    { ts: 100_500, geometry_ts: null },
+    { ts: 100_720, geometry_ts: null },
+    { ts: 101_720, geometry_ts: 100_700 },
+    { ts: 102_720, geometry_ts: 100_700 },
+    { ts: 103_020, geometry_ts: 100_700 },
+  ])
+  expect(geometry.mock.calls.map(([, snapshot]) => snapshot.ts)).toEqual([100_700])
+})
+
+test('clock recovery before tracker discovery stores one unambiguous initial snapshot', async () => {
+  const { unmount } = renderHook(() => useGazeCapture(caseContext))
+  for (const ts of [100_010, 100_005]) {
+    vi.setSystemTime(ts)
+    await act(async () => observers.forEach((notify) => notify()))
+  }
+  vi.setSystemTime(100_200)
+  const socket = await connect()
+  samples(socket, 1, 99_995)
+  vi.setSystemTime(100_301)
+  samples(socket, 1, 100_301)
+  unmount()
+  await act(async () => {})
+  expect(start.mock.calls[0][0].geometry?.ts).toBe(100_200)
+  expect(geometry).not.toHaveBeenCalled()
+  expect(storedReferences()).toEqual([
+    { ts: 99_995, geometry_ts: null },
+    { ts: 100_301, geometry_ts: 100_200 },
+  ])
+})
+
+test('reconnection preserves clock uncertainty for delayed samples of the same video', async () => {
+  const { result, unmount } = renderHook(() => useGazeCapture(caseContext))
+  const first = await connect()
+  for (const ts of [100_500, 100_480, 100_700]) {
+    vi.setSystemTime(ts)
+    await act(async () => observers.forEach((notify) => notify()))
+  }
+  vi.setSystemTime(101_000)
+  act(() => result.current.retry())
+  const second = await connect()
+  samples(first, 1, 101_001) // A retired socket cannot contribute data.
+  samples(second, 1, 100_490)
+  samples(second, 1, 101_001)
+  unmount()
+  await act(async () => {})
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(storedReferences()).toEqual([
+    { ts: 100_490, geometry_ts: null },
+    { ts: 101_001, geometry_ts: 100_700 },
+  ])
+})
+
+test.each([
+  ['no step back, including an unchanged reading', [100_100, 100_100, 100_300], 0, false],
+  [
+    'one step that takes several readings to catch up',
+    [100_500, 100_480, 100_490, 100_499],
+    1,
+    false,
+  ],
+  ['a second step before the first has caught up', [100_500, 100_480, 100_490, 100_470], 2, false],
+  [
+    'a step after an earlier one was recovered from',
+    [100_500, 100_480, 100_700, 100_900, 100_899],
+    2,
+    false,
+  ],
+  ['a changed clock', [100_500, 100_399, 100_700], 1, true],
+])(
+  'the finished event counts each observed step back of the clock once: %s',
+  async (_case, readings, rollbacks, uncertain) => {
+    const { unmount } = renderHook(() => useGazeCapture(caseContext))
+    const socket = await connect()
+    for (const [index, reading] of readings.entries()) {
+      vi.setSystemTime(reading)
+      // Both kinds of clock reading count: sample receipts and layout measurements.
+      if (index % 2) await act(async () => observers.forEach((notify) => notify()))
+      else samples(socket, 1, reading)
+    }
+    unmount()
+    await act(async () => {})
+    expect(enqueue).toHaveBeenLastCalledWith(
+      'event',
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          state: 'capture_finished',
+          clock_rollbacks: rollbacks,
+          clock_uncertain: uncertain,
+        }),
+      }),
+    )
+  },
+)
 
 test('layout exhaustion stops extending the history and never inherits the last allowed AOI', async () => {
   geometry.mockRejectedValue(new Error('offline'))
@@ -408,6 +782,56 @@ test('unmeasured screens do not connect to the bridge', () => {
   renderHook(() => useGazeCapture(null))
   expect(FakeSocket.all).toHaveLength(0)
   expect(observers.size).toBe(0)
+})
+
+test.each(['questionnaire', 'diagnosis', 'case_outro'])(
+  'rejects a runtime %s context before any collection',
+  async (kind) => {
+    const context = { ...caseContext, step_kind: kind } as GazeContext
+    const { unmount } = renderHook(() => useGazeCapture(context))
+    await act(async () => vi.advanceTimersByTimeAsync(6000))
+    unmount()
+    expect(FakeSocket.all).toHaveLength(0)
+    expect(observers.size).toBe(0)
+    expect(start).not.toHaveBeenCalled()
+    expect(upload).not.toHaveBeenCalled()
+    expect(geometry).not.toHaveBeenCalled()
+    expect(complete).not.toHaveBeenCalled()
+    expect(enqueue).not.toHaveBeenCalled()
+  },
+)
+
+test('leaving a video stops collection immediately and flushes only its pending samples', async () => {
+  const pending = deferred<never>()
+  upload.mockReturnValueOnce(pending.promise)
+  const { rerender } = renderHook(
+    ({ context }: { context: GazeContext | null }) => useGazeCapture(context),
+    {
+      initialProps: { context: caseContext as GazeContext | null },
+    },
+  )
+  const socket = await connect()
+  const staleObserver = [...observers][0]
+  await act(async () => samples(socket, 502))
+  rerender({ context: null })
+  expect(socket.closed).toBe(true)
+  expect(socket.sent).toContainEqual({ type: 'stop_gaze' })
+  expect(observers.size).toBe(0)
+  layout = { ...layout, aois: [{ id: 'diagnosis', x: 1, y: 1, w: 100, h: 100, priority: 0 }] }
+  vi.setSystemTime(102_000)
+  await act(async () => {
+    staleObserver()
+    samples(socket, 10, 102_001)
+    pending.resolve({} as never)
+    await vi.advanceTimersByTimeAsync(6000)
+  })
+  expect(FakeSocket.all).toHaveLength(1)
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(geometry).not.toHaveBeenCalled()
+  expect(upload.mock.calls.flatMap(([, batch]) => batch.map((sample) => sample.ts))).toEqual(
+    Array.from({ length: 502 }, (_, i) => 100_001 + i),
+  )
+  expect(complete).toHaveBeenCalledWith(7, { sample_count: 502 })
 })
 
 test('reconnection resumes the same screen row and preserves sample timestamps and offsets', async () => {
@@ -480,7 +904,6 @@ test('late tracker discovery buffers early samples with the layouts actually obs
       batch.map(({ ts, geometry_ts }) => ({ ts, geometry_ts })),
     ),
   ).toEqual([
-    { ts: 99999, geometry_ts: null },
     { ts: 100010, geometry_ts: 100000 },
     { ts: 100110, geometry_ts: 100100 },
   ])

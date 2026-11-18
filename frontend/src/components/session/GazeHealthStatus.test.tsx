@@ -69,3 +69,19 @@ test('compact session status keeps retry available and connection help expandabl
   fireEvent.click(screen.getByRole('button', { name: 'Eye-Tracker erneut prüfen' }))
   expect(retry).toHaveBeenCalledOnce()
 })
+
+test('preflight distinguishes tracker availability from captured gaze', () => {
+  render(
+    <GazeHealthStatus
+      health={{ state: 'tracker_ready', received: 0, valid: 0 }}
+      retry={() => {}}
+      preflight
+    />,
+  )
+  expect(screen.getByRole('status')).toHaveTextContent('Eye-Tracker erkannt')
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Blickdaten werden erst auf der Videoseite erfasst.',
+  )
+  expect(screen.getByRole('status')).not.toHaveTextContent('empfangen')
+  expect(screen.queryByRole('button')).toBeNull()
+})

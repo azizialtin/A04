@@ -122,26 +122,51 @@ async def test_start_recording_unassigned_video_404(client, seed_participant, pa
     assert r.status_code == 404
 
 
-async def test_diagnosis_capture_infers_its_studys_rating_battery(
-    client, db, assigned_video, seed_study, participant_headers
+@pytest.mark.parametrize("step_kind", ["questionnaire", "diagnosis", "case_outro"])
+async def test_non_video_capture_cannot_create_a_recording(
+    client, db, assigned_video, participant_headers, step_kind
 ):
-    from app.models.questionnaire import Questionnaire
+    from sqlalchemy import select
 
-    ratings = Questionnaire(study_id=seed_study.id, placement="diagnosis", title="Confidence")
-    db.add(ratings)
-    await db.flush()
     response = await client.post(
         "/gaze/recordings",
         headers=participant_headers,
         json={
-            "step_kind": "diagnosis",
+            "step_kind": step_kind,
             "video_id": assigned_video.id,
             "sampling_rate_hz": 120,
+            "geometry": GEOMETRY,
         },
     )
-    assert response.status_code == 201
-    recording = await db.get(GazeRecording, response.json()["recording_id"])
-    assert recording.questionnaire_id == ratings.id
+    assert response.status_code == 422
+    assert await db.scalar(select(GazeRecording.id)) is None
+
+
+@pytest.mark.parametrize("step_kind", ["questionnaire", "diagnosis", "case_outro"])
+async def test_historical_non_video_capture_rejects_new_coordinates_and_geometry(
+    client, db, assigned_video, seed_participant, participant_headers, uploads, step_kind
+):
+    recording = GazeRecording(
+        participant_id=seed_participant.id,
+        video_id=None if step_kind == "questionnaire" else assigned_video.id,
+        step_kind=step_kind,
+        geometry=[GEOMETRY],
+        sample_count=7,
+    )
+    db.add(recording)
+    await db.flush()
+    url = f"/gaze/recordings/{recording.id}"
+    samples = await client.post(
+        f"{url}/samples", headers=participant_headers, json={"offset": 7, "samples": [SAMPLE]}
+    )
+    geometry = await client.post(f"{url}/geometry", headers=participant_headers, json=GEOMETRY)
+    assert samples.status_code == geometry.status_code == 422
+    assert recording.sample_count == 7 and recording.geometry == [GEOMETRY]
+    assert not (uploads / "gaze").exists()
+    # A pending old client may still close its header without persisting coordinates.
+    assert (
+        await client.patch(f"{url}/complete", headers=participant_headers, json={})
+    ).status_code == 200
 
 
 async def test_retrying_a_committed_offset_does_not_append_samples(
@@ -309,7 +334,7 @@ async def test_capture_context_rejects_wrong_questionnaire_placement_or_study(
             "sampling_rate_hz": 120,
         },
     )
-    assert response.status_code == 404
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize("same_payload", [True, False])

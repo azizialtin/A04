@@ -88,7 +88,9 @@
     "seek": "Videoposition",
     "timer_label": "Zeit",
     "task_label": "Aufgabe",
-    "student_task_button": "Schüler-Aufgabe",
+    "task_button": "Aufgabenstellung",
+    "task_instructions": "Sie sehen hier ein Video einer Unterrichtssituation. Sie können sich während des Videos Notizen machen und so oft wie Sie möchten vor und zurück springen oder sich einzelne Abschnitte sowie das ganze Video nochmal ansehen. Ihre Bearbeitungsaufgabe beinhaltet das Schreiben einer Diagnose zur Situation.",
+    "student_task_button": "Schüler-Aufgabe und gegebener Code",
     "notes_label": "Notizen",
     "notes_placeholder": "Notizen während des Videos…",
     "next": "Weiter",
@@ -97,7 +99,7 @@
     "exit_cancel": "Beim Fall bleiben",
     "exit_confirm": "Zur Diagnose",
     "exit_error": "Der Wechsel zur Diagnose ist fehlgeschlagen. Ihr Fall bleibt geöffnet. Bitte versuchen Sie es erneut.",
-    "info_title": "Information",
+    "info_title": "Diagnose Definition",
     "student_task_title": "Aufgabe der Schüler:innen",
     "no_content": "Kein Inhalt hinterlegt."
   },
@@ -213,6 +215,8 @@
   },
   "gaze_health": {
     "connecting": "Eye-Tracker wird geprüft…",
+    "tracker_ready": "Eye-Tracker erkannt",
+    "preflight_status": "Blickdaten werden erst auf der Videoseite erfasst.",
     "bridge_unreachable": "Keine Verbindung zur A04Bridge.",
     "tracker_missing": "Kein verfügbarer Eye-Tracker gemeldet.",
     "stream_failed": "Blickdaten-Stream konnte nicht gestartet werden.",

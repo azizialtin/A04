@@ -7,6 +7,7 @@ from app.services.log_data import (
     playhead_seconds,
     seek_origin_seconds,
     step_label,
+    variable_name,
 )
 from app.services.timecode import timecode
 
@@ -38,6 +39,22 @@ def test_the_playhead_is_found_wherever_an_event_put_it():
     assert playhead_seconds(None) is None
     # JSON "true" is an int in Python and would otherwise read as one second in.
     assert playhead_seconds({"currentTime": True}) is None
+
+
+def test_task_popup_extends_the_main_screen_codebook():
+    assert variable_name("task_opened") == "click_event_task_button"
+    assert variable_name("task_closed") == "click_event_close_task_pop_up"
+    assert variable_name("info_closed") == "click_event_close_info_pop_up"
+    # Popup exposure is not a video playhead time or evidence of reading.
+    assert playhead_seconds({"durationMs": 1200, "reason": "screen_exit"}) is None
+
+
+@pytest.mark.parametrize("event", ["task_closed", "info_closed", "student_task_closed"])
+@pytest.mark.parametrize("reason", ["screen_exit", "completion_failed", "page_exit"])
+def test_automatic_popup_closure_never_exports_a_click(event, reason):
+    assert variable_name(event, {"reason": reason, "durationMs": 1500}) == ""
+    assert variable_name(event, {"reason": "dismissed"}) == variable_name(event)
+    assert variable_name(event, {"durationMs": 1500}) == variable_name(event)
 
 
 def test_a_step_is_named_by_what_it_showed():

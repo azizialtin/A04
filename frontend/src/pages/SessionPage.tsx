@@ -352,7 +352,6 @@ export default function SessionPage() {
       content = (
         <CaseVideoScreen
           videoId={step.video_id}
-          taskDescription={step.task_description}
           infoText={step.info_text}
           studentTaskText={step.student_task_text}
           timeLimitSeconds={step.time_limit_seconds}

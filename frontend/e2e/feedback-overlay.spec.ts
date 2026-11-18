@@ -14,12 +14,13 @@ async function participant(page: Page, kind: 'questionnaire' | 'case_video', fai
   const step: SessionStep =
     kind === 'questionnaire'
       ? {
-          index: 0,
+          index: 1,
           completed: false,
           kind,
           questionnaire_id: 4,
           placement: 'pre_test',
           title: 'Fragen für die Browserprüfung',
+          description: '',
           section: 'Prüfung',
           video_id: null,
           page: 1,
@@ -32,7 +33,7 @@ async function participant(page: Page, kind: 'questionnaire' | 'case_video', fai
           })),
         }
       : {
-          index: 0,
+          index: 1,
           completed: false,
           kind,
           video_id: 7,
@@ -66,8 +67,15 @@ async function participant(page: Page, kind: 'questionnaire' | 'case_video', fai
       })
     if (path === '/participant/me') return json({ id: 'TEST-OVERLAY', status: 'active' })
     if (path === '/participant/session')
-      return json({ status: 'active', current_step_index: 0, total_steps: 1, steps: [step] })
+      return json({
+        status: 'active',
+        current_step_index: 1,
+        total_steps: 2,
+        steps: [{ index: 0, kind: 'welcome', completed: true }, step],
+      })
     if (path === '/participant/events') return json({}, failedEvents ? 503 : 200)
+    if (path === '/participant/session/step-back')
+      return json({ detail: 'Synthetic navigation failure' }, 503)
     if (path.endsWith('/respond')) return json({ detail: 'Synthetic submission failure' }, 503)
     if (path.endsWith('/notes')) return json([])
     if (path.endsWith('/url')) return json({ signed_url: `${API}/stimulus.webm` })
@@ -89,8 +97,8 @@ async function participant(page: Page, kind: 'questionnaire' | 'case_video', fai
     return json({ detail: 'Unexpected test request' }, 400)
   })
   await page.goto('/session')
-  await expect.poll(() => layouts.length).toBeGreaterThan(0)
-  return { latest: () => layouts.at(-1)!, unexpected }
+  if (kind === 'case_video') await expect.poll(() => layouts.length).toBeGreaterThan(0)
+  return { latest: () => layouts.at(-1)!, layouts, unexpected }
 }
 
 function labelAt(layout: GazeLayout, point: { x: number; y: number }) {
@@ -150,37 +158,16 @@ async function screenshot(page: Page, layout: GazeLayout, info: TestInfo, name: 
   await page.screenshot({ path: info.outputPath(`${name}-clean.png`) })
 }
 
-test('a real unsent notice wins over a covered answer but stays behind the supervisor modal', async ({
+test('a video-screen unsent notice is measured and stays behind the supervisor modal', async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 1280, height: 720 })
-  const data = await participant(page, 'questionnaire')
+  const data = await participant(page, 'case_video')
   await expect(page.locator('.unsent')).toBeVisible()
-  await page.locator('[data-aoi="question.answer_4.answer"]').evaluate((el) => {
-    const rect = el.getBoundingClientRect()
-    window.scrollBy(0, rect.top - (innerHeight - 100))
-  })
   const point = await center(page, '.unsent')
-  // Establish that this is a real occlusion, not a banner over empty page space.
-  // Scroll measurements are uploaded after an animation frame. The fixed
-  // banner already matches the old layout, so it cannot signal scroll completion.
-  await expect
-    .poll(() =>
-      data
-        .latest()
-        .aois?.some(
-          (a) =>
-            a.id === 'question.answer_4.answer' &&
-            point.x >= a.x &&
-            point.x < a.x + a.w &&
-            point.y >= a.y &&
-            point.y < a.y + a.h,
-        ),
-    )
-    .toBe(true)
   await expect.poll(() => labelAt(data.latest(), point)).toBe('unsent_notice')
   expect(await visibleId(page, point)).toBe('unsent_notice')
-  await screenshot(page, data.latest(), info, 'unsent-over-answer')
+  await screenshot(page, data.latest(), info, 'unsent-over-video-screen')
 
   await page.keyboard.press('Control+Alt+Shift+KeyB')
   await expect.poll(() => data.latest().active_modal).toBe('supervisor_dialog')
@@ -198,9 +185,12 @@ test('a real unsent notice wins over a covered answer but stays behind the super
 test('the actual failure toast is measured and is excluded behind a modal backdrop', async ({
   page,
 }, info) => {
-  const data = await participant(page, 'questionnaire', false)
-  await page.locator('[data-aoi="continue"]').click()
+  const data = await participant(page, 'case_video', false)
+  await page.keyboard.press('Control+Alt+Shift+KeyB')
+  await page.getByRole('button', { name: 'Zurück', exact: true }).click()
   await expect(page.locator('.toast')).toBeVisible()
+  expect(data.latest().aois?.some((a) => a.id === 'notification')).toBe(false)
+  await page.getByRole('button', { name: 'Abbrechen', exact: true }).click()
   const point = await center(page, '.toast')
   await expect.poll(() => labelAt(data.latest(), point)).toBe('notification')
   expect(await visibleId(page, point)).toBe('notification')
@@ -222,7 +212,24 @@ test('a later same-z unsent notice remains visible above the case modal', async 
   const point = await center(page, '.unsent')
   expect(await visibleId(page, point)).toBe('unsent_notice')
   expect(labelAt(data.latest(), point)).toBe('unsent_notice')
-  expect(data.latest().aois?.map((a) => a.id)).toEqual(['student_task_dialog', 'unsent_notice'])
+  expect(data.latest().aois?.map((a) => a.id)).toEqual([
+    'student_task_dialog',
+    'student_task_dialog_close',
+    'student_task_dialog_text',
+    'unsent_notice',
+  ])
   await screenshot(page, data.latest(), info, 'unsent-above-case-modal')
+  expect(data.unexpected).toEqual([])
+})
+
+test('questionnaire notifications and supervisor dialogs never create gaze layouts', async ({
+  page,
+}) => {
+  const data = await participant(page, 'questionnaire', false)
+  await page.locator('[data-aoi="continue"]').click()
+  await expect(page.locator('.toast')).toBeVisible()
+  await page.keyboard.press('Control+Alt+Shift+KeyB')
+  await expect(page.getByRole('dialog')).toBeVisible()
+  expect(data.layouts).toEqual([])
   expect(data.unexpected).toEqual([])
 })

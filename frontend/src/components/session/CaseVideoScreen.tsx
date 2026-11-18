@@ -11,23 +11,23 @@ import VideoPlayer from './VideoPlayer'
 
 interface Props {
   videoId: number
-  taskDescription: string
   infoText: string
   studentTaskText: string
   timeLimitSeconds: number | null
   onComplete: () => Promise<unknown> | void
 }
 
+type ContentDialog = 'task' | 'info' | 'student_task'
+
 /**
  * The main screen. Everything the participant does here is logged — entering
- * and leaving, playback, the two dialogs, and the notes box — because the
+ * and leaving, playback, the dialogs, and the notes box — because the
  * analysis reads this stream alongside the gaze samples. See
  * `app/services/log_data.py` for how the event names map onto the study's data
  * dictionary.
  */
 export default function CaseVideoScreen({
   videoId,
-  taskDescription,
   infoText,
   studentTaskText,
   timeLimitSeconds,
@@ -37,8 +37,8 @@ export default function CaseVideoScreen({
   // Empty on a first visit; on a resumed case it brings the notes box back.
   const saved = useVideoNotes(videoId)
   const currentTime = useRef(0)
-  const [showInfo, setShowInfo] = useState(false)
-  const [showTask, setShowTask] = useState(false)
+  const [contentDialog, setContentDialog] = useState<ContentDialog | null>(null)
+  const dialogCloseReason = useRef('screen_exit')
   const [showExit, setShowExit] = useState(false)
   const [completionPending, setCompletionPending] = useState(false)
   const [completionFailed, setCompletionFailed] = useState(false)
@@ -62,21 +62,37 @@ export default function CaseVideoScreen({
     return () => log('case_screen_exited')
   }, [log])
 
-  const openInfo = () => {
-    setShowInfo(true)
-    log('info_opened')
-  }
-  const closeInfo = () => {
-    setShowInfo(false)
-    log('info_closed')
-  }
-  const openTask = () => {
-    setShowTask(true)
-    log('student_task_opened')
-  }
-  const closeTask = () => {
-    setShowTask(false)
-    log('student_task_closed')
+  useEffect(() => {
+    if (!contentDialog) return
+    const openedAt = performance.now()
+    let closed = false
+    dialogCloseReason.current = 'screen_exit'
+    log(`${contentDialog}_opened`, { currentTime: currentTime.current })
+    const recordClose = (reason: string) => {
+      if (closed) return
+      closed = true
+      // Exposure is not reading time. Gaze on the text is recorded separately.
+      log(`${contentDialog}_closed`, {
+        currentTime: currentTime.current,
+        durationMs: Math.max(0, Math.round(performance.now() - openedAt)),
+        reason,
+      })
+    }
+    const onPageHide = (event: PageTransitionEvent) => {
+      // A normal reload does not unmount React; the outbox persists this write.
+      // A bfcache page keeps its mounted popup and resumes the same interval.
+      if (!event.persisted) recordClose('page_exit')
+    }
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      recordClose(dialogCloseReason.current)
+    }
+  }, [contentDialog, log])
+
+  const closeContent = (reason = 'dismissed') => {
+    dialogCloseReason.current = reason
+    setContentDialog(null)
   }
   const openExit = () => {
     if (completing.current || showExit) return
@@ -103,8 +119,7 @@ export default function CaseVideoScreen({
       completing.current = false
       setCompletionPending(false)
       setCompletionFailed(true)
-      setShowInfo(false)
-      setShowTask(false)
+      closeContent('completion_failed')
       setShowExit(true)
     }
   }
@@ -123,25 +138,31 @@ export default function CaseVideoScreen({
           </div>
         ) : null}
 
-        <div className="rail-block" data-aoi="task">
-          <span className="rail-label">{t('case.task_label')}</span>
-          <StudyText text={taskDescription} className="rail-task" />
-        </div>
-
         <div className="rail-actions">
           <button
             type="button"
-            className="btn btn-secondary btn-icon"
-            onClick={openInfo}
-            data-aoi="info_button"
+            className="btn btn-secondary"
+            onClick={() => setContentDialog('task')}
+            data-aoi="task_button"
+            data-aoi-margin="6"
           >
-            i
+            {t('case.task_button')}
           </button>
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={openTask}
+            onClick={() => setContentDialog('info')}
+            data-aoi="info_button"
+            data-aoi-margin="6"
+          >
+            {t('case.info_title')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setContentDialog('student_task')}
             data-aoi="student_task_button"
+            data-aoi-margin="6"
           >
             {t('case.student_task_button')}
           </button>
@@ -180,14 +201,30 @@ export default function CaseVideoScreen({
         </button>
       </aside>
 
-      <Modal open={showInfo} title={t('case.info_title')} onClose={closeInfo} aoiId="info_dialog">
+      <Modal
+        open={contentDialog === 'task'}
+        title={t('case.task_button')}
+        onClose={() => closeContent()}
+        aoiId="task_dialog"
+        bodyAoiId="task_dialog_text"
+      >
+        <StudyText text={t('case.task_instructions')} mode="preserve" style={{ margin: 0 }} />
+      </Modal>
+      <Modal
+        open={contentDialog === 'info'}
+        title={t('case.info_title')}
+        onClose={() => closeContent()}
+        aoiId="info_dialog"
+        bodyAoiId="info_dialog_text"
+      >
         <StudyText text={infoText || t('case.no_content')} mode="preserve" style={{ margin: 0 }} />
       </Modal>
       <Modal
-        open={showTask}
+        open={contentDialog === 'student_task'}
         title={t('case.student_task_title')}
-        onClose={closeTask}
+        onClose={() => closeContent()}
         aoiId="student_task_dialog"
+        bodyAoiId="student_task_dialog_text"
       >
         <StudyText
           text={studentTaskText || t('case.no_content')}

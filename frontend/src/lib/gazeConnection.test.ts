@@ -171,3 +171,55 @@ test('SDK failures retain their diagnostic code without exposing free-text bridg
   )
   expect(health.mock.lastCall![0]).not.toHaveProperty('error')
 })
+
+function probe() {
+  connection.close()
+  health.mockClear()
+  connection = openGazeConnection({
+    probeOnly: true,
+    onHealth: health,
+    onSample: sample,
+    // Even a caller requesting a start must not turn a probe into capture.
+    onReady: (_rate, start) => start(),
+  })
+  return Socket.all[Socket.all.length - 1]
+}
+
+test('preflight reports tracker discovery without ever requesting or counting gaze', async () => {
+  const socket = probe()
+  status()
+  socket.say({ type: 'gaze_status', connected: true, state: 'streaming', sample_count: 100 })
+  gaze()
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(health).toHaveBeenLastCalledWith(
+    expect.objectContaining({ state: 'tracker_ready', received: 0, valid: 0 }),
+  )
+  expect(sample).not.toHaveBeenCalled()
+  expect(socket.sent).toEqual([])
+  connection.close()
+  expect(socket.sent).toEqual([])
+})
+
+test('missing preflight tracker never starts streaming to request rediscovery', () => {
+  const socket = probe()
+  socket.say({ type: 'status', connected: false })
+  expect(health).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'tracker_missing' }))
+  expect(socket.sent).toEqual([])
+  socket.say({ type: 'gaze_status', connected: true, state: 'ready' })
+  expect(health).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'tracker_ready' }))
+  socket.say({ type: 'gaze_status', connected: false, state: 'discovering' })
+  expect(health).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'tracker_missing' }))
+  expect(socket.sent).toEqual([])
+  expect(sample).not.toHaveBeenCalled()
+})
+
+test('a preflight retry remains a status-only connection', () => {
+  const socket = probe()
+  socket.onerror!()
+  connection.retry()
+  status()
+  gaze()
+  expect(Socket.all.every((ws) => ws.sent.length === 0)).toBe(true)
+  expect(sample).not.toHaveBeenCalled()
+  expect(health).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'tracker_ready' }))
+})
