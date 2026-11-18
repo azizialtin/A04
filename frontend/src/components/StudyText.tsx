@@ -19,7 +19,8 @@ function emphasis(text: string) {
 /**
  * Researcher-written text as the participant sees it. Prose becomes
  * paragraphs, a paragraph of "- " lines a bulleted list; anything between a
- * line of ``` and the next is a numbered code window. `mode` says how the
+ * line of ``` and the next, or a marked legacy JSON code array, is a numbered
+ * code window. `mode` says how the
  * prose is laid out: split on blank lines into paragraphs, or kept as written
  * — the latter for the popups on the case screen, which have always shown
  * their text with its line breaks.
@@ -48,7 +49,13 @@ export default function StudyText({
     <>
       {numbered.map(({ segment, firstLine }, i) =>
         segment.kind === 'code' ? (
-          <CodeBlock key={i} code={segment.lines} lang={segment.lang} startLine={firstLine} />
+          <CodeBlock
+            key={i}
+            code={segment.lines}
+            lang={segment.lang}
+            startLine={firstLine}
+            preserveBlankLines
+          />
         ) : mode === 'preserve' ? (
           <p key={i} className={className} style={{ whiteSpace: 'pre-wrap', ...style }}>
             {emphasis(segment.text.replace(/^\n+|\n+$/g, ''))}

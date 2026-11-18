@@ -4,7 +4,7 @@
 }
 
 .questionnaire-sections .table th[scope='row'] {
-  min-width: 180px;
+  min-width: 0;
   text-transform: none;
   letter-spacing: normal;
   font-size: 0.92rem;
@@ -16,5 +16,10 @@
 }
 
 .questionnaire-sections .table td:last-child {
-  white-space: nowrap;
+  white-space: normal;
+}
+
+/* WebKit otherwise counts the clipped selected text in the page's scroll width. */
+.questionnaire-editor select {
+  overflow: hidden;
 }

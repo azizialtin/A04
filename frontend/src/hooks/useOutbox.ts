@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 
-import { drain, pending, start, stop, subscribe } from '../lib/outbox'
+import { drain, pending, retrying, start, stop, subscribe } from '../lib/outbox'
 
 /**
  * Runs the outbox for the length of a participant's session and reports how
- * many writes are still waiting, so the study manager can see a problem while
- * there is still time to do something about it.
+ * many writes are waiting and which have failed. Ordinary background saves
+ * should not display the connection warning reserved for failed requests.
  */
-export function useOutbox(participantId: string | undefined): number {
-  const [count, setCount] = useState(() => pending())
+export function useOutbox(participantId: string | undefined) {
+  const [status, setStatus] = useState(() => ({ pending: pending(), retrying: retrying() }))
 
   // Claimed while rendering rather than in the effect below: React runs child
   // effects before the parent's, so a session resumed straight onto a case
@@ -32,7 +32,7 @@ export function useOutbox(participantId: string | undefined): number {
     }
   }, [participantId])
 
-  useEffect(() => subscribe(setCount), [])
+  useEffect(() => subscribe((pending, retrying) => setStatus({ pending, retrying })), [])
 
-  return count
+  return status
 }

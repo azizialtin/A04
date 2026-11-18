@@ -392,6 +392,10 @@ try {
     })
     await page.screenshot({ path: path.join(output, `case-${index + 1}.png`), fullPage: true })
     await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: 'Fall abschließen?' })
+      .getByRole('button', { name: 'Zur Diagnose', exact: true })
+      .click()
     await page.getByLabel('Was war das Problem?').fill('Audio QA diagnosis')
     await page.getByRole('slider').click()
     await page.getByRole('button', { name: 'Weiter', exact: true }).click()

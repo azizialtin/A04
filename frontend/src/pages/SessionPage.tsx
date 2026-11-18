@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { SessionStep } from '../api/participant'
@@ -113,7 +113,18 @@ export default function SessionPage() {
   const updateProgress = useUpdateProgress()
   const respond = useRespondQuestionnaire()
   const stepBack = useStepBack()
-  const unsent = useOutbox(me.data?.id)
+  const outbox = useOutbox(me.data?.id)
+  const displayedPage =
+    !me.isLoading && !session.isLoading && !me.isError && me.data && session.data
+      ? `${me.data.id}:${session.data.current_step_index}`
+      : null
+  const lastScrolledPage = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    if (displayedPage === null || displayedPage === lastScrolledPage.current) return
+    lastScrolledPage.current = displayedPage
+    // Steps share one URL; reset after the new screen commits, before it paints.
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+  }, [displayedPage])
 
   // The supervisor's way back. There is no button: the chord opens a
   // confirmation that names both screens, and the server moves the pointer.
@@ -204,7 +215,7 @@ export default function SessionPage() {
   if (!step || current_step_index >= total_steps) {
     return (
       <>
-        <ThanksScreen pendingWrites={unsent} />
+        <ThanksScreen pendingWrites={outbox.pending} />
         {backDialog}
       </>
     )
@@ -419,7 +430,7 @@ export default function SessionPage() {
     case 'thanks':
       // The hand-over screen: it offers the way back to the id prompt, and
       // needs to know whether this run still has writes in flight.
-      content = <ThanksScreen pendingWrites={unsent} />
+      content = <ThanksScreen pendingWrites={outbox.pending} />
       break
     default:
       content = <div className="fullpage is-danger">{t('session.error')}</div>
@@ -429,16 +440,16 @@ export default function SessionPage() {
   // pre-test pages are adjacent steps of the same kind: without this the second
   // page opens holding the first page's answers and submits them again.
   const screen = (
-    <Fragment key={current_step_index}>
-      {content}
+    <div className="session-screen" key={current_step_index}>
       <SessionGazeCapture step={step} />
-    </Fragment>
+      {content}
+    </div>
   )
 
   // Sits outside the shell: the case screen has no chrome, and that is exactly
   // where notes are written.
   const unsentBanner =
-    unsent > 0 ? (
+    outbox.retrying > 0 ? (
       <div
         className="unsent"
         role="status"
@@ -446,7 +457,7 @@ export default function SessionPage() {
         data-aoi-overlay="true"
         data-aoi-priority="100"
       >
-        {t('session.unsent', { count: unsent })}
+        {t('session.unsent', { count: outbox.retrying })}
       </div>
     ) : null
 

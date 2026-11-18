@@ -1,0 +1,125 @@
+.admin-table-container {
+  container: admin-table / inline-size;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-table {
+  overflow-wrap: anywhere;
+}
+
+.admin-table :is(th, td) {
+  white-space: normal;
+}
+
+.admin-table .btn {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin-block: 2px;
+}
+
+/* Use the table's actual available width, including nested cards and previews. */
+@container admin-table (max-width: 70rem) {
+  .admin-table[data-columns='wide'] {
+    display: block;
+  }
+
+  .admin-table[data-columns='wide'] > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .admin-table[data-columns='wide'] > tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .admin-table[data-columns='wide'] > tbody > tr {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+  }
+
+  .admin-table[data-columns='wide'] > tbody > tr > :is(th, td) {
+    display: block;
+    min-width: 0 !important;
+    text-align: left;
+    border: 0;
+  }
+
+  .admin-table[data-columns='wide'] > tbody > tr > :is(th, td)::before {
+    content: attr(data-label) / '';
+    display: block;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .admin-table[data-columns='wide'] > tbody > tr > :is(:first-child, [colspan], [data-actions]) {
+    grid-column: 1 / -1;
+  }
+
+  .admin-table[data-columns='wide'] > tbody > tr > [colspan]::before {
+    content: none;
+  }
+}
+
+@container admin-table (max-width: 48rem) {
+  .admin-table[data-columns='regular'] {
+    display: block;
+  }
+
+  .admin-table[data-columns='regular'] > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .admin-table[data-columns='regular'] > tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .admin-table[data-columns='regular'] > tbody > tr {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+  }
+
+  .admin-table[data-columns='regular'] > tbody > tr > :is(th, td) {
+    display: block;
+    min-width: 0 !important;
+    text-align: left;
+    border: 0;
+  }
+
+  .admin-table[data-columns='regular'] > tbody > tr > :is(th, td)::before {
+    content: attr(data-label) / '';
+    display: block;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .admin-table[data-columns='regular'] > tbody > tr > :is(:first-child, [colspan], [data-actions]) {
+    grid-column: 1 / -1;
+  }
+
+  .admin-table[data-columns='regular'] > tbody > tr > [colspan]::before {
+    content: none;
+  }
+}

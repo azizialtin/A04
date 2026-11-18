@@ -1,8 +1,11 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { readFile, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 
 import type { SessionStep } from '../src/api/participant'
 import type { GazeLayout } from '../src/lib/gazeGeometry'
+import { expectNoHorizontalOverflow } from './layout'
 
 const API = 'http://a04.invalid'
 const code =
@@ -93,6 +96,22 @@ async function identity(page: Page, role = 'participant') {
 
 async function participant(page: Page, initial = 0, bridge = true, sessionSteps = steps) {
   await identity(page)
+  // Synthetic tracker samples use a display matching the test viewport. Real
+  // fullscreen/zoom enforcement is covered by DisplayGuard's own tests.
+  await page.addInitScript(() => {
+    Object.defineProperty(screen, 'width', { get: () => innerWidth })
+    Object.defineProperty(screen, 'height', { get: () => innerHeight })
+    // Ordinary UI checks decline display capture. The dedicated capture test
+    // installs its own stream; never leave an OS picker waiting in Firefox.
+    if (!Object.hasOwn(navigator.mediaDevices, 'getDisplayMedia')) {
+      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+        configurable: true,
+        value: async () => {
+          throw new DOMException('Display capture declined by test fixture', 'NotAllowedError')
+        },
+      })
+    }
+  })
   let current = initial
   let nextRecording = 0
   const recordings: {
@@ -117,7 +136,7 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
     )
     ws.onMessage((message) => {
       const request = JSON.parse(String(message))
-      if (request.type === 'start_gaze') {
+      if (request.type === 'start_gaze' && bridge) {
         ws.send(
           JSON.stringify({
             type: 'gaze',
@@ -177,6 +196,21 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
     )
       return json({ id: 1 })
     if (path.endsWith('/notes')) return json([])
+    if (path.endsWith('/replay'))
+      return json({
+        video_url: `${API}/test-video.mp4`,
+        source: 'clip',
+        sampling_rate_hz: 0,
+        plotted_points: 0,
+        invalid_samples: 0,
+        unmapped_samples: 0,
+        offscreen_samples: 0,
+        has_geometry: false,
+        points: [],
+        epoch_ms: null,
+        duration_ms: null,
+        recorder: null,
+      })
     if (path.endsWith('/url')) return json({ signed_url: `${API}/test-video.mp4` })
     if (path === '/test-video.mp4')
       return route.fulfill({
@@ -217,21 +251,32 @@ async function participant(page: Page, initial = 0, bridge = true, sessionSteps 
     unexpected.push(`${method} ${path}`)
     return json({ detail: 'Unexpected test request' }, 400)
   })
-  return { recordings, answers, screenStarts, screenUploads, unexpected }
+  return {
+    recordings,
+    answers,
+    screenStarts,
+    screenUploads,
+    unexpected,
+    setStep: (index: number) => {
+      current = index
+    },
+  }
 }
 
 async function verifyBounds(page: Page, geometry: GazeLayout) {
   const expected = await page.locator('[data-aoi]').evaluateAll((els) =>
-    els.map((el) => {
-      const rect = el.getBoundingClientRect()
-      return {
-        id: el.getAttribute('data-aoi'),
-        x: Math.max(0, rect.left),
-        y: Math.max(0, rect.top),
-        right: Math.min(innerWidth, rect.right),
-        bottom: Math.min(innerHeight, rect.bottom),
-      }
-    }),
+    els
+      .map((el) => {
+        const rect = el.getBoundingClientRect()
+        return {
+          id: el.getAttribute('data-aoi'),
+          x: Math.max(0, rect.left),
+          y: Math.max(0, rect.top),
+          right: Math.min(innerWidth, rect.right),
+          bottom: Math.min(innerHeight, rect.bottom),
+        }
+      })
+      .filter((box) => box.right > box.x && box.bottom > box.y),
   )
   for (const aoi of geometry.aois ?? []) {
     const box = expected.find(
@@ -296,9 +341,27 @@ for (const viewport of [
 ]) {
   test(`case AOIs follow DOM and modal visibility at ${viewport.width}`, async ({ page }, info) => {
     await page.setViewportSize(viewport)
-    const data = await participant(page, 2)
+    const sessionSteps = structuredClone(steps)
+    const caseStep = sessionSteps[2]
+    // Existing study content also stores code as labelled JSON string arrays.
+    // Exercise that representation as well as ordinary Markdown fences.
+    if (viewport.width === 1920 && caseStep.kind === 'case_video') {
+      caseStep.student_task_text = [
+        'Lies den gegebenen Code.',
+        'Gegebener Code (JSON-Format):',
+        '',
+        'Codeblock 1:',
+        JSON.stringify(['int a = 1;', 'int b = 2;'], null, 2),
+        '',
+        'Codeblock 2:',
+        JSON.stringify(['int c = a + b;', 'System.out.println(c);'], null, 2),
+      ].join('\n')
+    }
+    const data = await participant(page, 2, true, sessionSteps)
     await page.goto('/session')
     await expect(page.locator('video[data-gaze-video]')).toBeVisible()
+    await expect(page.locator('[data-aoi="continue"]')).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('[data-aoi="video_controls"]')).toBeInViewport({ ratio: 1 })
     await expect
       .poll(() =>
         page.locator('video[data-gaze-video]').evaluate((el: HTMLVideoElement) => el.videoWidth),
@@ -316,8 +379,7 @@ for (const viewport of [
     await redOverlay(page, await settledGeometry(page, latest), info, 'case')
     await page.locator('[data-aoi="student_task_button"]').click()
     await expect.poll(() => latest()?.active_modal).toBe('student_task_dialog')
-    // Opening the modal logs an event. Its successfully delivered outbox job
-    // briefly renders a real notice above the modal until acknowledgement.
+    // Successfully delivered background events keep the modal unobstructed.
     await expect(page.locator('.unsent')).toHaveCount(0)
     await expect.poll(() => latest()?.aois?.map((a) => a.id)).toEqual(['student_task_dialog'])
     await redOverlay(page, await settledGeometry(page, latest), info, 'student-task')
@@ -326,6 +388,12 @@ for (const viewport of [
         .locator('.modal [data-line]')
         .evaluateAll((els) => els.map((el) => Number(el.getAttribute('data-line')))),
     ).toEqual([1, 2, 3, 4])
+    await expect(page.locator('.modal .code')).toHaveCount(2)
+    await expect(page.locator('.modal .tok--kw').first()).toHaveText('int')
+    expect(await page.locator('.modal .code').allTextContents()).toEqual([
+      'int a = 1;\nint b = 2;\n',
+      'int c = a + b;\nSystem.out.println(c);\n',
+    ])
     await page.getByRole('button', { name: 'Schließen' }).click()
     await expect.poll(() => latest()?.active_modal).toBe(null)
     await page.setViewportSize({ width: 1280, height: 720 })
@@ -362,7 +430,7 @@ test('questionnaire AOIs follow scrolling and repeated fields; all measured step
   for (let i = 2; i <= 7; i++) {
     await page
       .getByRole('button', {
-        name: '+ Fehler bezieht sich noch auf eine weitere Zeile',
+        name: 'Weitere Zeile hinzufügen',
         exact: true,
       })
       .click()
@@ -487,46 +555,271 @@ test('questionnaire code numbering continues across questions and survives answe
   expect(data.unexpected).toEqual([])
 })
 
-test('matrix AOIs exclude answers covered by the sticky question column', async ({
+test('stacked matrix answers remain visible and measured without sideways scrolling', async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 400, height: 720 })
   const data = await participant(page)
   await page.goto('/session')
-  const scroll = page.locator('.matrix__scroll')
-  await scroll.scrollIntoViewIfNeeded()
+  const matrix = page.locator('.matrix')
+  await matrix.scrollIntoViewIfNeeded()
+  await expect(matrix).toHaveClass(/matrix--stacked/)
+  await expectNoHorizontalOverflow(page)
+  const answer = page.locator('input[name="matrix_0"]').last()
+  await answer.check()
+  await expect(answer).toBeChecked()
   const latest = () =>
     data.recordings
       .filter((r) => r.kind === 'questionnaire' && !r.completed)
       .slice(-1)[0]
       ?.layouts.slice(-1)[0]
   await expect
-    .poll(() => latest()?.aois?.some((a) => a.id === 'question.matrix_0.prompt'))
+    .poll(() => latest()?.aois?.some((a) => a.id === 'question.matrix_0.answer'))
     .toBe(true)
-  const before = latest()!.aois!.find((a) => a.id === 'question.matrix_0.prompt')!
-  await scroll.evaluate((el) => {
-    el.scrollLeft = el.scrollWidth - el.clientWidth
-  })
-  await expect.poll(() => scroll.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
-  const prompt = await page.locator('[data-aoi="question.matrix_0.prompt"]').boundingBox()
-  await expect
-    .poll(() =>
-      latest()
-        ?.aois?.filter((a) => a.id === 'question.matrix_0.answer')
-        .every((a) => a.x >= prompt!.x + prompt!.width - 0.5),
-    )
-    .toBe(true)
-  const layout = latest()!
-  expect(layout.aois!.find((a) => a.id === 'question.matrix_0.prompt')!.x).toBeCloseTo(before.x, 0)
-  expect(layout.aois!.filter((a) => a.id === 'question.matrix_0.answer').length).toBeGreaterThan(0)
-  await redOverlay(page, layout, info, 'matrix-scrolled')
+  await redOverlay(page, await settledGeometry(page, latest), info, 'matrix-stacked')
+  expect(
+    await matrix.locator('.matrix__scroll').evaluate((el) => el.scrollWidth - el.clientWidth),
+  ).toBeLessThanOrEqual(1)
   expect(data.unexpected).toEqual([])
 })
+
+const responsiveQuestionnaire: SessionStep = {
+  index: 0,
+  completed: false,
+  kind: 'questionnaire',
+  questionnaire_id: 55,
+  placement: 'pre_test',
+  title: 'Lernen beim Programmieren',
+  section: 'MSK',
+  description:
+    'Stellen Sie sich vor, Sie arbeiten an einer Programmieraufgabe und stoßen auf ein Problem. Wie beurteilen Sie die folgenden Vorgehensweisen?',
+  video_id: null,
+  page: 1,
+  page_count: 1,
+  questions: [
+    ...[
+      'Sie durchsuchen die wichtigen Internetseiten, um einen Überblick zu gewinnen, welche für die Aufgabe hilfreich sind.',
+      'Sie sammeln möglichst viele Informationen von den verschiedenen Seiten und überfliegen diese dann, um nichts Wichtiges zu übersehen.',
+    ].map((text, index) => ({
+      id: `situation_${index}`,
+      type: 'multiple_choice' as const,
+      matrix: 'situation',
+      text,
+      options: [
+        'sehr geeignete',
+        'geeignete',
+        'eher geeignete',
+        'eher ungeeignete',
+        'ungeeignete',
+        'sehr ungeeignete',
+      ].map((label, index) => ({
+        value: index + 1,
+        label: `${label} Handlungsmöglichkeit für diese Situation`,
+      })),
+    })),
+    {
+      id: 'many_options',
+      type: 'multiple_choice',
+      matrix: 'many',
+      text: 'Welche Beschreibung trifft am besten auf Ihr Vorgehen zu?',
+      options: Array.from({ length: 10 }, (_, i) => ({
+        value: i + 1,
+        label: `Ausführliche Beschreibung der Handlungsmöglichkeit ${i + 1}`,
+      })),
+    },
+    { id: 'confidence', type: 'likert', text: 'Wie sicher sind Sie?', scale_min: 1, scale_max: 10 },
+    {
+      id: 'estimate',
+      type: 'slider',
+      text: 'Wie hoch ist der Aufwand?',
+      min: 0,
+      max: 100,
+      required: false,
+    },
+    {
+      id: 'diagnosis_confidence',
+      type: 'slider',
+      text: 'Wie sicher sind Sie sich bei Ihrer Diagnose?',
+      min: 1,
+      max: 5,
+      labels: { min: 'unsicher', max: 'sicher' },
+      required: false,
+    },
+    {
+      id: 'effort',
+      type: 'slider',
+      text: 'Wie viel Anstrengung haben Sie investiert?',
+      min: 0,
+      max: 9,
+      required: false,
+    },
+    {
+      id: 'ranking',
+      type: 'ranking',
+      text: 'Bringen Sie die Vorgehensweisen in eine Reihenfolge.',
+      options: [
+        'Informationen und Zusammenhänge gründlich analysieren',
+        'Lösungsmöglichkeiten kritisch überprüfen',
+        'Die Lösung selbstständig implementieren',
+      ],
+      required: false,
+    },
+  ],
+}
+
+for (const width of [320, 768, 1280, 1470, 1920]) {
+  test(`all questionnaire choices stay reachable at ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 900 })
+    const data = await participant(page, 0, false, [
+      responsiveQuestionnaire,
+      { index: 1, completed: false, kind: 'thanks' },
+    ])
+    await page.goto('/session')
+    await expect(page.getByRole('heading', { name: responsiveQuestionnaire.title })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    // Connection guidance must reserve space, including when expanded. It must
+    // never cover the title or answer choices as the old fixed warning did.
+    const help = page.locator('.gaze-health details')
+    await expect(help).toBeVisible()
+    for (const expanded of [false, true]) {
+      if (expanded) await help.locator('summary').click()
+      const warning = await page.locator('.gaze-health-stack').boundingBox()
+      const form = await page.locator('.panel--form').boundingBox()
+      expect(warning!.y + warning!.height).toBeLessThanOrEqual(form!.y)
+      await expectNoHorizontalOverflow(page)
+    }
+    await help.locator('summary').click()
+    for (const scale of await page.locator('.scale').all()) {
+      const range = scale.getByRole('slider')
+      const min = Number(await range.getAttribute('min'))
+      const max = Number(await range.getAttribute('max'))
+      const ticks = scale.locator('.scale__ticks span')
+      if (max - min <= 10) {
+        expect(await ticks.allTextContents()).toEqual(
+          Array.from({ length: max - min + 1 }, (_, index) => String(min + index)),
+        )
+      }
+      const track = (await range.boundingBox())!
+      let previousRight = -Infinity
+      for (const tick of await ticks.all()) {
+        const bounds = (await tick.boundingBox())!
+        const value = Number(await tick.textContent())
+        const expectedCenter = track.x + 8 + ((value - min) / (max - min)) * (track.width - 16)
+        expect(Math.abs(bounds.x + bounds.width / 2 - expectedCenter)).toBeLessThan(1)
+        expect(bounds.y).toBeGreaterThanOrEqual(track.y + track.height)
+        expect(bounds.x).toBeGreaterThan(previousRight)
+        previousRight = bounds.x + bounds.width
+      }
+    }
+    for (const [name, count] of [
+      ['situation_0', 6],
+      ['situation_1', 6],
+      ['many_options', 10],
+      ['confidence', 10],
+    ] as const) {
+      const choices = page.locator(`input[name="${name}"]`)
+      await expect(choices).toHaveCount(count)
+      for (const choice of await choices.all()) {
+        await choice.check()
+        await expect(choice).toBeChecked()
+        const box = await choice.boundingBox()
+        expect(box!.x).toBeGreaterThanOrEqual(0)
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width)
+      }
+    }
+    await expectNoHorizontalOverflow(page)
+    await page.screenshot({ path: info.outputPath(`questionnaire-${width}.png`), fullPage: true })
+    await page.locator('[data-aoi="continue"]').click()
+    await expect.poll(() => data.answers.length).toBe(1)
+    expect(data.answers[0].answers).toMatchObject({
+      situation_0: 6,
+      situation_1: 6,
+      many_options: 10,
+      confidence: 10,
+    })
+    expect(data.unexpected).toEqual([])
+  })
+}
+
+for (const width of [375, 768, 1470]) {
+  test(`participant screens fit the window at ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 900 })
+    const sessionSteps: SessionStep[] = [
+      { index: 0, completed: false, kind: 'welcome' },
+      {
+        index: 1,
+        completed: false,
+        kind: 'sosci',
+        variant: 'pretest',
+        url: 'https://example.invalid/survey',
+        id_param: 'id',
+        participant_id: 'TEST-UI',
+      },
+      { index: 2, completed: false, kind: 'calibration' },
+      {
+        index: 3,
+        completed: false,
+        kind: 'phase_transition',
+        phase_type: 'training',
+        phase_number: 2,
+      },
+      {
+        index: 4,
+        completed: false,
+        kind: 'section_intro',
+        section_key: 'pck',
+        title: 'Pädagogische Entscheidungen',
+        body: 'Lesen Sie die folgende Unterrichtssituation und bearbeiten Sie die Aufgaben.',
+        time_limit_seconds: null,
+      },
+      ...steps.filter((step) => step.kind !== 'questionnaire' && step.kind !== 'thanks'),
+      {
+        index: 9,
+        completed: false,
+        kind: 'think_aloud',
+        video_id: 7,
+        title: 'Rückblick',
+        phase_type: 'training',
+        case_number: 1,
+        case_total: 3,
+        batch_position: 1,
+        batch_size: 1,
+      },
+      { index: 10, completed: false, kind: 'thanks' },
+    ].map((step, index) => ({ ...step, index }))
+    const data = await participant(page, 0, false, sessionSteps)
+    for (const step of sessionSteps) {
+      data.setStep(step.index)
+      await page.goto('/session')
+      await expect(page.locator('.panel, .case-screen, .think-aloud').first()).toBeVisible()
+      for (const fullpage of await page.locator('.fullpage').all()) {
+        expect(
+          await fullpage.evaluate((element) => element.getBoundingClientRect().height),
+        ).toBeGreaterThanOrEqual(900)
+      }
+      await expectNoHorizontalOverflow(page)
+      if (step.kind === 'case_video' && width >= 1000) {
+        await expect(page.locator('[data-aoi="continue"]')).toBeInViewport({ ratio: 1 })
+        await expect(page.locator('[data-aoi="video_controls"]')).toBeInViewport({ ratio: 1 })
+      }
+      await page.screenshot({ path: info.outputPath(`${step.kind}-${width}.png`), fullPage: true })
+    }
+    expect(data.unexpected).toEqual([])
+  })
+  test(`login pages fit the window at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    for (const path of ['/login', '/admin/login']) {
+      await page.goto(path)
+      await expect(page.locator('form')).toBeVisible()
+      await expectNoHorizontalOverflow(page)
+    }
+  })
+}
 
 test('laptop fallback encodes and uploads a screen stream while gaze continues', async ({
   page,
 }, info) => {
-  // Substitute only the consented display stream. Chromium's real MediaRecorder
+  // Substitute only the consented display stream. The browser's real MediaRecorder
   // encodes the frames; the OS picker/permissions still require a manual check.
   await page.addInitScript(() => {
     let frames = 0
@@ -549,58 +842,187 @@ test('laptop fallback encodes and uploads a screen stream while gaze continues',
     })
   })
   const data = await participant(page, 1)
+  // WebKit's intercepted postDataBuffer omits multipart file contents. Receive
+  // the actual HTTP body so every engine must deliver its real encoded bytes.
+  const receiver = createServer((request, response) => {
+    response.setHeader('Access-Control-Allow-Origin', '*')
+    response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    if (request.method === 'OPTIONS') {
+      response.writeHead(204).end()
+      return
+    }
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => chunks.push(chunk))
+    request.on('end', () => {
+      data.screenUploads.push(Buffer.concat(chunks))
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ status: 'ok' }))
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    receiver.once('error', reject)
+    receiver.listen(0, '127.0.0.1', resolve)
+  })
+  const uploadUrl = `http://127.0.0.1:${(receiver.address() as AddressInfo).port}/upload`
+  let declaredSize = 0
+  try {
+    await page.route(`${API}/screen/recordings/99/upload-url`, (route) => {
+      declaredSize = route.request().postDataJSON().size_bytes
+      return route.fallback()
+    })
+    await page.route(`${API}/screen/recordings/99/upload`, (route) =>
+      route.continue({ url: uploadUrl }),
+    )
+    await page.goto('/session')
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await expect.poll(() => data.screenStarts.some((s) => s.recorder === 'browser')).toBe(true)
+    await expect.poll(() => data.recordings.some((r) => r.kind === 'case_video')).toBe(true)
+    await expect
+      .poll(() =>
+        page.locator('video[data-gaze-video]').evaluate((el: HTMLVideoElement) => el.videoWidth),
+      )
+      .toBe(320)
+    await page.locator('[data-aoi="notes"] textarea').fill('Notiz während der Aufnahme')
+    await page.locator('[data-aoi="student_task_button"]').click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await page.getByRole('button', { name: 'Schließen' }).click()
+    await page.locator('[data-aoi="continue"]').click()
+    const exitDialog = page.getByRole('dialog', { name: 'Fall abschließen?' })
+    await expect(exitDialog).toBeVisible()
+    // Asking to leave must not stop or upload the case recording. Cancelling
+    // preserves the same gaze record and participant notes.
+    expect(data.screenUploads).toHaveLength(0)
+    expect(data.recordings.filter((r) => r.kind === 'case_video').every((r) => !r.completed)).toBe(
+      true,
+    )
+    await expect
+      .poll(() =>
+        data.recordings
+          .filter((r) => r.kind === 'case_video')
+          .some((r) => r.layouts.at(-1)?.aois?.some((a) => a.id === 'case_exit_dialog')),
+      )
+      .toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(exitDialog).not.toBeVisible()
+    await expect(page.locator('[data-aoi="notes"] textarea')).toHaveValue(
+      'Notiz während der Aufnahme',
+    )
+    expect(data.screenUploads).toHaveLength(0)
+    await page.locator('[data-aoi="continue"]').click()
+    await exitDialog.getByRole('button', { name: 'Zur Diagnose' }).click()
+    await expect.poll(() => data.screenUploads.length).toBe(1)
+    await expect
+      .poll(() =>
+        data.recordings
+          .filter((r) => r.kind === 'case_video')
+          .some((r) => r.completed && r.samples.length > 0),
+      )
+      .toBe(true)
+    const multipart = data.screenUploads[0]
+    const fileHeader = multipart.indexOf(Buffer.from('name="file"'))
+    expect(fileHeader).toBeGreaterThan(0)
+    const fileStart = multipart.indexOf(Buffer.from('\r\n\r\n'), fileHeader) + 4
+    const fileEnd = multipart.indexOf(Buffer.from('\r\n------'), fileStart)
+    expect(fileEnd - fileStart).toBeGreaterThan(500)
+    const recording = multipart.subarray(fileStart, fileEnd)
+    expect(recording.length).toBe(declaredSize)
+    const mp4 = recording.subarray(4, 8).toString() === 'ftyp'
+    // Browsers may encode WebM or MP4 depending on codec support.
+    expect(mp4 || recording.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))).toBe(true)
+    await writeFile(info.outputPath(`screen-capture.${mp4 ? 'mp4' : 'webm'}`), recording)
+    expect(multipart.toString('latin1')).toContain('name="epoch_ms"')
+    expect(multipart.toString('latin1')).toContain('name="duration_ms"')
+    expect(data.unexpected).toEqual([])
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      receiver.close((error) => (error ? reject(error) : resolve()))
+    })
+  }
+})
+
+const longPageText = Array.from(
+  { length: 18 },
+  (_, index) =>
+    `Abschnitt ${index + 1}: Lesen Sie die ausführlichen Informationen aufmerksam durch und berücksichtigen Sie alle Hinweise bei Ihrer Antwort.`,
+).join('\n\n')
+
+function scrollQuestionnaire(index: number): SessionStep {
+  return {
+    index,
+    completed: false,
+    kind: 'questionnaire',
+    questionnaire_id: 810 + index,
+    placement: 'pre_test',
+    title: `Fragebogenseite ${index + 1}`,
+    description: longPageText,
+    section: 'Navigation',
+    video_id: null,
+    page: index + 1,
+    page_count: 4,
+    questions: [{ id: `note_${index}`, type: 'free_text', text: 'Ihre Notiz', required: false }],
+  }
+}
+
+test('Weiter starts every committed session page at the top', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const sessionSteps: SessionStep[] = [
+    scrollQuestionnaire(0),
+    scrollQuestionnaire(1),
+    {
+      index: 2,
+      completed: false,
+      kind: 'section_intro',
+      section_key: 'pck',
+      title: 'Einleitung zum nächsten Abschnitt',
+      body: longPageText,
+      time_limit_seconds: null,
+    },
+    scrollQuestionnaire(3),
+  ]
+  const data = await participant(page, 0, false, sessionSteps)
   await page.goto('/session')
-  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
-  await expect.poll(() => data.screenStarts.some((s) => s.recorder === 'browser')).toBe(true)
-  await expect.poll(() => data.recordings.some((r) => r.kind === 'case_video')).toBe(true)
-  await expect
-    .poll(() =>
-      page.locator('video[data-gaze-video]').evaluate((el: HTMLVideoElement) => el.videoWidth),
-    )
-    .toBe(320)
-  await page.locator('[data-aoi="notes"] textarea').fill('Notiz während der Aufnahme')
-  await page.locator('[data-aoi="student_task_button"]').click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page.getByRole('button', { name: 'Schließen' }).click()
-  await page.locator('[data-aoi="continue"]').click()
-  const exitDialog = page.getByRole('dialog', { name: 'Fall abschließen?' })
-  await expect(exitDialog).toBeVisible()
-  // Asking to leave must not stop or upload the case recording. Cancelling
-  // preserves the same gaze record and participant notes.
-  expect(data.screenUploads).toHaveLength(0)
-  expect(data.recordings.filter((r) => r.kind === 'case_video').every((r) => !r.completed)).toBe(
-    true,
-  )
-  await expect
-    .poll(() =>
-      data.recordings
-        .filter((r) => r.kind === 'case_video')
-        .some((r) => r.layouts.at(-1)?.aois?.some((a) => a.id === 'case_exit_dialog')),
-    )
-    .toBe(true)
-  await page.keyboard.press('Escape')
-  await expect(exitDialog).not.toBeVisible()
-  await expect(page.locator('[data-aoi="notes"] textarea')).toHaveValue(
-    'Notiz während der Aufnahme',
-  )
-  expect(data.screenUploads).toHaveLength(0)
-  await page.locator('[data-aoi="continue"]').click()
-  await exitDialog.getByRole('button', { name: 'Zur Diagnose' }).click()
-  await expect.poll(() => data.screenUploads.length).toBe(1)
-  await expect
-    .poll(() =>
-      data.recordings
-        .filter((r) => r.kind === 'case_video')
-        .some((r) => r.completed && r.samples.length > 0),
-    )
-    .toBe(true)
-  const multipart = data.screenUploads[0]
-  const fileStart = multipart.indexOf(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
-  expect(fileStart).toBeGreaterThan(0)
-  const fileEnd = multipart.indexOf(Buffer.from('\r\n------'), fileStart)
-  expect(fileEnd - fileStart).toBeGreaterThan(500)
-  await writeFile(info.outputPath('screen-capture.webm'), multipart.subarray(fileStart, fileEnd))
-  expect(multipart.toString('latin1')).toContain('name="epoch_ms"')
-  expect(multipart.toString('latin1')).toContain('name="duration_ms"')
+  for (let index = 0; index < sessionSteps.length - 1; index++) {
+    const current = sessionSteps[index]
+    const next = sessionSteps[index + 1]
+    if (!('title' in current) || !('title' in next)) throw new Error('Expected titled test pages')
+    await expect(page.getByRole('heading', { name: current.title, exact: true })).toBeVisible()
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300)
+    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await expect(page.getByRole('heading', { name: next.title, exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+  }
+  expect(data.answers).toHaveLength(2)
+  expect(data.unexpected).toEqual([])
+})
+
+test('failed questionnaire submission keeps the reading position and answer', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const data = await participant(page, 0, false, [scrollQuestionnaire(0), scrollQuestionnaire(1)])
+  let failures = 0
+  await page.route(`${API}/participant/questionnaires/810/respond`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    failures++
+    return route.fulfill({
+      status: 500,
+      json: { detail: 'Synthetic save failure' },
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    })
+  })
+  await page.goto('/session')
+  const answer = page.locator('[data-aoi="question.note_0.answer"] textarea')
+  await answer.fill('Diese Antwort bleibt bei einem Fehler erhalten.')
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  const before = await page.evaluate(() => window.scrollY)
+  expect(before).toBeGreaterThan(300)
+  const next = page.getByRole('button', { name: 'Weiter', exact: true })
+  await next.click()
+  await expect.poll(() => failures).toBe(3)
+  await expect(next).toBeEnabled()
+  await expect(answer).toHaveValue('Diese Antwort bleibt bei einem Fehler erhalten.')
+  await expect(page.getByRole('heading', { name: 'Fragebogenseite 2', exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(before, 0)
+  expect(data.answers).toHaveLength(0)
   expect(data.unexpected).toEqual([])
 })

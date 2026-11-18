@@ -1,4 +1,12 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
@@ -153,7 +161,7 @@ export function QuestionnaireFields({
 
 /**
  * Several questions that share one set of statements, as a table: the
- * statements once, numbered, above it; a row per question with a radio under
+ * statements above their numbered columns; a row per question with a radio under
  * each number. The variable names and the stored values are the rows' own —
  * this is presentation only.
  */
@@ -168,27 +176,36 @@ function Matrix({
 }) {
   const { t } = useTranslation()
   const numbered = (option: QuestionOption, i: number) => `${i + 1} – ${option.label}`
+  const longLabels = block.options.some((option) => option.label.length > 120)
+  const container = useRef<HTMLDivElement>(null)
+  const [stacked, setStacked] = useState(false)
+  useEffect(() => {
+    if (!container.current || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      // Answer columns occupy 60% of the table. Leave each caption enough room
+      // to read; narrower containers show the full label beside each radio.
+      setStacked(entry.contentRect.width < Math.max(640, (block.options.length * 96) / 0.6))
+    })
+    observer.observe(container.current)
+    return () => observer.disconnect()
+  }, [block.options.length])
   return (
-    <div className="matrix">
+    <div
+      ref={container}
+      className={`matrix${longLabels ? ' matrix--long-labels' : ''}${stacked ? ' matrix--stacked' : ''}`}
+    >
       <p className="matrix__legend-title">{t('questionnaire.legend')}</p>
-      <ol className="matrix__legend" data-aoi={`matrix.${block.key}.legend`}>
-        {block.options.map((option, i) => (
-          <li key={String(option.value)}>
-            <span className="matrix__num" aria-hidden="true">
-              {i + 1}
-            </span>
-            <span>{option.label}</span>
-          </li>
-        ))}
-      </ol>
       <div className="matrix__scroll">
         <table className="matrix__table">
-          <thead>
+          <thead data-aoi={`matrix.${block.key}.legend`}>
             <tr>
               <th scope="col" className="matrix__item" />
               {block.options.map((option, i) => (
                 <th key={String(option.value)} scope="col" title={option.label}>
-                  <span className="matrix__num">{i + 1}</span>
+                  <div className="matrix__heading">
+                    <span className="matrix__heading-label">{option.label}</span>
+                    <span className="matrix__num">{i + 1}</span>
+                  </div>
                 </th>
               ))}
             </tr>
@@ -211,7 +228,7 @@ function Matrix({
                     key={String(option.value)}
                     data-aoi={`question.${q.id}.answer`}
                     data-aoi-priority="1"
-                    data-aoi-clip="after-row-prompt"
+                    data-aoi-clip={stacked ? undefined : 'after-row-prompt'}
                     className={answers[q.id] === option.value ? 'is-chosen' : undefined}
                   >
                     <label className="matrix__cell" title={option.label}>
@@ -221,9 +238,10 @@ function Matrix({
                         required={q.required !== false}
                         checked={answers[q.id] === option.value}
                         onChange={() => onAnswer(q.id, option.value)}
-                        // The row and the statement, since the cell shows only a number.
+                        // Include the row and complete scale description for each choice.
                         aria-label={`${q.text}: ${numbered(option, i)}`}
                       />
+                      <span className="matrix__option-label">{numbered(option, i)}</span>
                     </label>
                   </td>
                 ))}
@@ -457,66 +475,67 @@ function LineNumbers({
 
   return (
     <div className="line-numbers" ref={root}>
-      {rows.map((row, index) => (
-        <div className="line-numbers__row" key={row.id}>
-          <div className="line-numbers__field">
-            <label htmlFor={`${id}-${row.id}`}>
-              {t('questionnaire.line_number', { index: index + 1 })}
-            </label>
-            <input
-              id={`${id}-${row.id}`}
-              className="input"
-              type="number"
-              min={min}
-              max={question.max}
-              step={1}
-              value={row.value === undefined || row.value === null ? '' : String(row.value)}
-              aria-label={`${question.text}: ${t('questionnaire.line_number', { index: index + 1 })}`}
-              aria-invalid={invalid || undefined}
-              aria-describedby={invalid ? errorId : undefined}
-              onChange={(e) =>
-                update(
-                  rows.map((current) =>
-                    current.id === row.id
-                      ? {
-                          ...current,
-                          value: e.target.value === '' ? undefined : Number(e.target.value),
-                        }
-                      : current,
-                  ),
-                )
-              }
-            />
+      <div className="line-numbers__entries">
+        {rows.map((row, index) => (
+          <div className="line-numbers__row" key={row.id}>
+            <div className="line-numbers__field">
+              <label htmlFor={`${id}-${row.id}`}>
+                {t('questionnaire.line_number', { index: index + 1 })}
+              </label>
+              <input
+                id={`${id}-${row.id}`}
+                className="input"
+                type="number"
+                min={min}
+                max={question.max}
+                step={1}
+                value={row.value === undefined || row.value === null ? '' : String(row.value)}
+                aria-label={`${question.text}: ${t('questionnaire.line_number', { index: index + 1 })}`}
+                aria-invalid={invalid || undefined}
+                aria-describedby={invalid ? errorId : undefined}
+                onChange={(e) =>
+                  update(
+                    rows.map((current) =>
+                      current.id === row.id
+                        ? {
+                            ...current,
+                            value: e.target.value === '' ? undefined : Number(e.target.value),
+                          }
+                        : current,
+                    ),
+                  )
+                }
+              />
+            </div>
+            {rows.length > 1 && (
+              <button
+                type="button"
+                className="btn btn-ghost line-numbers__remove"
+                aria-label={t('questionnaire.remove_line', { index: index + 1 })}
+                onClick={() => {
+                  focusNext.current = Math.min(index, rows.length - 2)
+                  update(rows.filter((current) => current.id !== row.id))
+                }}
+              >
+                <span aria-hidden="true">−</span>
+              </button>
+            )}
           </div>
-          {rows.length > 1 && (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              aria-label={t('questionnaire.remove_line', { index: index + 1 })}
-              onClick={() => {
-                focusNext.current = Math.min(index, rows.length - 2)
-                update(rows.filter((current) => current.id !== row.id))
-              }}
-            >
-              {t('questionnaire.remove_line', { index: index + 1 })}
-            </button>
-          )}
-          {index === rows.length - 1 && (
-            <button
-              type="button"
-              className="btn btn-secondary line-numbers__add"
-              disabled={maxEntries !== undefined && rows.length >= maxEntries}
-              onClick={() => {
-                if (maxEntries !== undefined && rows.length >= maxEntries) return
-                focusNext.current = rows.length
-                update([...rows, { id: nextId.current++, value: undefined }])
-              }}
-            >
-              {t('questionnaire.add_line')}
-            </button>
-          )}
-        </div>
-      ))}
+        ))}
+      </div>
+      <button
+        type="button"
+        className="btn line-numbers__add"
+        disabled={maxEntries !== undefined && rows.length >= maxEntries}
+        onClick={() => {
+          if (maxEntries !== undefined && rows.length >= maxEntries) return
+          focusNext.current = rows.length
+          update([...rows, { id: nextId.current++, value: undefined }])
+        }}
+      >
+        <span aria-hidden="true">+</span>
+        {t('questionnaire.add_line')}
+      </button>
       {maxEntries !== undefined ? (
         <p className="muted small">
           {t('questionnaire.line_entries_limit', { count: maxEntries })}
@@ -662,6 +681,13 @@ function Slider({
   const { t } = useTranslation()
   const min = question.min ?? 0
   const max = question.max ?? 9
+  // Show every point on the study's 1–5 and 0–9 scales. Larger custom ranges
+  // keep readable intermediate labels without crowding the track.
+  const tickStep = max - min <= 10 ? 1 : Math.ceil((max - min) / 5)
+  const ticks = Array.from(
+    { length: Math.max(1, Math.ceil((max - min) / tickStep) + 1) },
+    (_, index) => Math.min(min + index * tickStep, max),
+  )
   const answered = typeof value === 'number'
   // Also on pointer release: clicking the handle where it already rests fires no
   // change event, and that must still count as an answer. Deliberately not on
@@ -672,8 +698,8 @@ function Slider({
 
   return (
     <div className="scale">
-      <Anchors labels={question.labels} />
       <div className="scale__row">
+        <Anchors labels={question.labels} />
         <input
           type="range"
           className={answered ? 'scale__range' : 'scale__range is-unset'}
@@ -690,10 +716,16 @@ function Slider({
         <output className={answered ? 'scale__value' : 'scale__value is-unset'}>
           {answered ? value : '—'}
         </output>
-      </div>
-      <div className="scale__ticks" aria-hidden="true">
-        <span>{min}</span>
-        <span>{max}</span>
+        <div className="scale__ticks" aria-hidden="true">
+          {ticks.map((tick) => (
+            <span
+              key={tick}
+              style={{ left: `${max === min ? 0 : ((tick - min) / (max - min)) * 100}%` }}
+            >
+              {tick}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )

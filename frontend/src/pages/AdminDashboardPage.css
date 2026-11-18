@@ -1,0 +1,103 @@
+.admin .admin__main {
+  max-width: 1640px;
+  overflow-wrap: anywhere;
+}
+
+.admin :is(.card, .form, .form-row, .preview, .stat, .case-card, .seq-item > *, .flex-between > *) {
+  min-width: 0;
+}
+
+.admin :is(.flex-between, .case-card__head, .seq-item) {
+  flex-wrap: wrap;
+}
+
+.admin :is(.input, .textarea, .btn, select, input[type='file']) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin :is(.btn, .pill) {
+  white-space: normal;
+}
+
+.admin .stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+}
+
+.admin .case-cards {
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+}
+
+.admin .bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
+  height: auto;
+  gap: 12px 3px;
+  overflow: visible;
+}
+
+.admin .bars__col {
+  min-width: 0;
+  height: 130px;
+}
+
+.admin .picker {
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+}
+
+.admin .picker label {
+  min-width: 0;
+}
+
+.admin .picker input {
+  flex: none;
+}
+
+.admin .questionnaire-sections .table td:last-child {
+  white-space: normal;
+}
+
+.admin .table-scroll {
+  overflow: visible;
+}
+
+@media (max-width: 900px) {
+  .admin {
+    flex-direction: column;
+  }
+
+  .admin .admin__nav {
+    flex-basis: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+  }
+
+  .admin .admin__brand {
+    width: 100%;
+    margin: 0 0 4px;
+  }
+
+  .admin .admin__logout {
+    margin: 0;
+    align-self: center;
+  }
+
+  .admin .admin__main {
+    width: 100%;
+    padding: 24px 16px;
+  }
+}
+
+@media (max-width: 540px) {
+  .admin .card {
+    padding: 16px;
+  }
+
+  .admin .tabs button {
+    padding-inline: 10px;
+  }
+}

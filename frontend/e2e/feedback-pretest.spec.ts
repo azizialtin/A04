@@ -225,9 +225,9 @@ test('all thirteen source CK pages preserve code and fit with five line entries'
       await expect(lines.nth(lineIndex)).toHaveAttribute('data-line', String(expectedLines[lineIndex].number))
       expect((await lines.nth(lineIndex).textContent())?.replace(/\n$/, '')).toBe(expectedLines[lineIndex].line)
     }
-    for (let added = 1; added < 5; added++) await page.getByRole('button', { name: /Fehler bezieht sich/ }).click()
+    for (let added = 1; added < 5; added++) await page.getByRole('button', { name: /Weitere Zeile hinzufügen/ }).click()
     await expect(page.getByRole('spinbutton')).toHaveCount(5)
-    await expect(page.getByRole('button', { name: /Fehler bezieht sich/ })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeDisabled()
     for (const input of await page.getByRole('spinbutton').all()) await input.fill('1')
     await page.getByLabel('Was ist der Fehler?', { exact: true }).fill('Beispielantwort für die Browserprüfung.')
     await fitsViewport(page)
@@ -339,10 +339,10 @@ test('CK gaze geometry follows both code files, five-line controls, removal, and
   }
   await geometryScreenshots(page, first, info, 'ck-two-files-one-line')
 
-  for (let count = 1; count < 5; count++) await page.getByRole('button', { name: /Fehler bezieht sich/ }).click()
+  for (let count = 1; count < 5; count++) await page.getByRole('button', { name: /Weitere Zeile hinzufügen/ }).click()
   for (const input of await page.getByRole('spinbutton').all()) await input.fill('1')
   await expect(page.getByRole('spinbutton')).toHaveCount(5)
-  await expect(page.getByRole('button', { name: /Fehler bezieht sich/ })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeDisabled()
   const capped = await measuredAreas(page, latest, required)
   const cappedAnswer = capped.aois!.find((area) => area.id === answerId)!
   expect(cappedAnswer.h).toBeGreaterThan(initialAnswer.h)
@@ -353,7 +353,11 @@ test('CK gaze geometry follows both code files, five-line controls, removal, and
 
   await page.getByRole('button', { name: 'Zeilennummer 5 entfernen', exact: true }).click()
   await expect(page.getByRole('spinbutton')).toHaveCount(4)
-  await expect(page.getByRole('button', { name: /Fehler bezieht sich/ })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeEnabled()
+  // The compact controls wrap three entries per row at this width. Removing
+  // the remaining entry on the second row must shrink the measured answer area.
+  await page.getByRole('button', { name: 'Zeilennummer 4 entfernen', exact: true }).click()
+  await expect(page.getByRole('spinbutton')).toHaveCount(3)
   const removed = await measuredAreas(page, latest, required)
   expect(removed.aois!.find((area) => area.id === answerId)!.h).toBeLessThan(cappedAnswer.h)
   expect(recording.layouts.find((layout) => layout.ts === first.ts)).toEqual(historical)

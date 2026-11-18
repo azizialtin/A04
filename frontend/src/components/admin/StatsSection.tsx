@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import AdminTable from './AdminTable'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
 import type { CaseStats, RosterRow } from '../../api/admin'
 import { useStudyStats } from '../../hooks/admin'
@@ -41,8 +42,14 @@ export default function StatsSection({ studyId }: { studyId: number }) {
   const stats = useStudyStats(studyId, days)
   const revealPanel = useCallback(() => revealDetails(details.current), [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (selected) revealPanel()
+    else if (trigger.current) {
+      // Restore the row after removing the details panel; Safari can otherwise
+      // retain the old scroll position even though the button has focus.
+      trigger.current.scrollIntoView({ behavior: 'instant', block: 'center' })
+      trigger.current.focus({ preventScroll: true })
+    }
   }, [selected, revealPanel])
 
   const openDetails = (id: string, button: HTMLButtonElement) => {
@@ -53,7 +60,6 @@ export default function StatsSection({ studyId }: { studyId: number }) {
 
   const closeDetails = () => {
     setSelected(null)
-    trigger.current?.focus()
   }
 
   if (stats.isLoading) return <p className="muted">Wird geladen…</p>
@@ -165,7 +171,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
           also inklusive Lesen, Notieren und geöffneter Dialoge.
         </p>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Fall</th>
@@ -195,14 +201,14 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 
       <div className="card">
         <h3>Fragebögen</h3>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Titel</th>
@@ -241,7 +247,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 
@@ -252,7 +258,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
           über die Personen. Der Abschnitt wird auf dem Tab „Fragebögen“ je Seite vergeben.
         </p>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Abschnitt</th>
@@ -283,7 +289,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 
@@ -295,7 +301,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
         </p>
         {calibration.attempts ? (
           <div className="table-scroll">
-            <table className="table">
+            <AdminTable className="table">
               <thead>
                 <tr>
                   <th>Ergebnis</th>
@@ -328,7 +334,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </AdminTable>
           </div>
         ) : (
           <p className="muted">Noch keine Kalibrierung aufgezeichnet.</p>
@@ -338,7 +344,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
       <div className="card">
         <h3>Teilnehmer</h3>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -373,7 +379,7 @@ export default function StatsSection({ studyId }: { studyId: number }) {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 

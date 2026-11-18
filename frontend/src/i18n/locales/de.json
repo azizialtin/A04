@@ -1,6 +1,7 @@
 {
   "common": {
     "continue": "Weiter",
+    "actions": "Aktionen",
     "loading": "Wird geladen…",
     "logout": "Abmelden"
   },
@@ -132,7 +133,7 @@
     "still_open": "Noch {{count}} von {{total}} Fragen offen",
     "unsupported": "Fragetyp „{{type}}“ wird nicht unterstützt – bitte die Studienleitung ansprechen.",
     "line_number": "Zeilennummer {{index}}",
-    "add_line": "+ Fehler bezieht sich noch auf eine weitere Zeile",
+    "add_line": "Weitere Zeile hinzufügen",
     "remove_line": "Zeilennummer {{index}} entfernen",
     "line_numbers_invalid": "Bitte geben Sie für jede Zeile eine ganze Zahl ab {{min}} ein.",
     "line_numbers_range": "Bitte geben Sie für jede Zeile eine ganze Zahl zwischen {{min}} und {{max}} ein.",
@@ -227,6 +228,7 @@
     "permission_denied": "Der Browser meldet gesperrten Zugriff auf Apps auf diesem Gerät (Loopback). In Edge für diese A04-Website „Apps auf dem Gerät“ auf „Zulassen“ setzen; „Lokales Netzwerk“ allein reicht nicht. Danach die Seite neu laden und erneut prüfen.",
     "tracker_help": "Verbindung, Eye Tracker Manager und Unterstützung des Tracker-Modells durch das installierte SDK prüfen.",
     "retry": "Eye-Tracker erneut prüfen",
+    "help": "Hilfe zur Verbindung",
     "continue_warning": "Weiter bleibt möglich. Ohne bestätigte Blickdaten fehlen später möglicherweise die Blickpunkte. Bitte das Studienteam informieren.",
     "previous_empty": "Eine frühere Blickaufzeichnung enthält keine gespeicherten Proben. Bitte das Studienteam informieren.",
     "previous_upload_failed": "Eine frühere Blickaufzeichnung konnte nicht vollständig gespeichert oder abgeschlossen werden. Bitte das Studienteam informieren.",

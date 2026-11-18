@@ -1,9 +1,43 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 
 const API = 'http://a04.invalid'
 const fixture = fileURLToPath(new URL('./fixtures/stimulus.webm', import.meta.url))
+let attachments: Server
+let attachmentOrigin: string
+
+test.beforeAll(async () => {
+  const bytes = await readFile(fixture)
+  // WebKit does not emit native download events for route.fulfill attachments.
+  // A real HTTP response exercises the browser's download path on every engine.
+  attachments = createServer((request, response) => {
+    const id = /^\/attachments\/(\d+)$/.exec(request.url ?? '')?.[1]
+    if (!id) {
+      response.writeHead(404).end()
+      return
+    }
+    response.writeHead(200, {
+      'Content-Type': 'video/webm',
+      'Content-Disposition': `attachment; filename="capture-${id}.webm"`,
+    })
+    response.end(bytes)
+  })
+  await new Promise<void>((resolve, reject) => {
+    attachments.once('error', reject)
+    attachments.listen(0, '127.0.0.1', resolve)
+  })
+  attachmentOrigin = `http://127.0.0.1:${(attachments.address() as AddressInfo).port}`
+})
+
+test.afterAll(async () => {
+  if (!attachments) return
+  await new Promise<void>((resolve, reject) =>
+    attachments.close((error) => (error ? reject(error) : resolve())),
+  )
+})
 
 async function setup(page: Page) {
   await page.addInitScript(() => {
@@ -75,14 +109,7 @@ async function setup(page: Page) {
       const id = path.split('/').at(-2)
       return route.fulfill({
         headers,
-        json: { url: `${API}/attachments/${id}`, filename: `capture-${id}.webm` },
-      })
-    }
-    if (path.startsWith('/attachments/')) {
-      const id = path.split('/').at(-1)
-      return route.fulfill({
-        path: fixture,
-        headers: { ...headers, 'Content-Disposition': `attachment; filename="capture-${id}.webm"` },
+        json: { url: `${attachmentOrigin}/attachments/${id}`, filename: `capture-${id}.webm` },
       })
     }
     unexpected.push(path)

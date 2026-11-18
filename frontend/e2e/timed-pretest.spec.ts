@@ -365,7 +365,7 @@ test('every default pretest page fits the lab viewport, including conditional de
       }
       for (const question of step.questions.filter((item) => item.type === 'debugging')) {
         const fields = page.locator(`[data-aoi="question.${question.id}"]`)
-        const add = fields.getByRole('button', { name: /Fehler bezieht sich/ })
+        const add = fields.getByRole('button', { name: /Weitere Zeile hinzufügen/ })
         for (let count = 1; count < 5; count++) await add.click()
         await expect(fields.getByRole('spinbutton')).toHaveCount(5)
         await expect(add).toBeDisabled()

@@ -1,3 +1,4 @@
+import AdminTable from '../../components/admin/AdminTable'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -77,7 +78,7 @@ export default function AdminStudyListPage() {
       {studies.isLoading ? (
         <p className="muted">Wird geladen…</p>
       ) : (
-        <table className="table">
+        <AdminTable className="table">
           <thead>
             <tr>
               <th>ID</th>
@@ -107,7 +108,7 @@ export default function AdminStudyListPage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </AdminTable>
       )}
     </div>
   )

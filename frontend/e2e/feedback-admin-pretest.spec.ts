@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import type { AdminQuestionnaire, Study, StudyTexts } from '../src/api/admin'
 import type { Question } from '../src/lib/questionnaire'
+import { expectNoHorizontalOverflow } from './layout'
 
 const API = 'http://a04.invalid'
 const question: Question = {
@@ -214,9 +215,9 @@ test('existing questionnaire edits preserve content and retry keeps draft', asyn
   const originalJson = await page.getByLabel('Fragen (JSON-Array)').inputValue()
   const preview = page.locator('.preview')
   for (let i = 1; i < 5; i++)
-    await preview.getByRole('button', { name: /Fehler bezieht sich/ }).click()
+    await preview.getByRole('button', { name: /Weitere Zeile hinzufügen/ }).click()
   await expect(preview.getByRole('spinbutton')).toHaveCount(5)
-  await expect(preview.getByRole('button', { name: /Fehler bezieht sich/ })).toBeDisabled()
+  await expect(preview.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeDisabled()
   await expect(preview.locator('.code__line').first()).toHaveAttribute('data-line', '1')
   expect(await preview.locator('.code__line').first().textContent()).toMatch(/^\s*$/)
   await preview.screenshot({ path: info.outputPath('admin-ck-preview-five-lines.png') })
@@ -353,3 +354,28 @@ test('pretest-video wording saves independently of the generic case introduction
   await page.screenshot({ path: info.outputPath('admin-pretest-video-intro.png') })
   expect(state.unexpected).toEqual([])
 })
+
+for (const width of [320, 375, 768, 1366]) {
+  test(`questionnaire editor and preview fit at ${width}px`, async ({ page }, info) => {
+    const state = await setup(page)
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/admin/studies/8?tab=questionnaires')
+    await expect(page.getByRole('table', { name: 'Vortest-Abschnitte' })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click()
+    await expect(page.getByLabel('Titel', { exact: true })).toHaveValue('CK vor Änderung')
+    await expectNoHorizontalOverflow(page)
+    await page.getByRole('button', { name: 'Reihenfolge (PCK)', exact: true }).click()
+    await page
+      .locator('.preview')
+      .getByRole('button', { name: /Nach unten/ })
+      .first()
+      .click()
+    await expectNoHorizontalOverflow(page)
+    await page.screenshot({
+      path: info.outputPath(`questionnaire-editor-${width}.png`),
+      fullPage: true,
+    })
+    expect(state.unexpected).toEqual([])
+  })
+}

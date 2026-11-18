@@ -11,9 +11,15 @@
   }
   .case-outro .panel--form {
     max-width: 1080px;
-    padding: 24px 32px;
+    padding: 16px 32px;
   }
   .case-outro .qfield {
-    padding: 14px 0 16px;
+    padding: 10px 0;
+  }
+  .case-outro .qfield__text {
+    margin-bottom: 10px;
+  }
+  .case-outro .panel__actions {
+    margin-top: 16px;
   }
 }

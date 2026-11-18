@@ -7,7 +7,7 @@
  * participant had watched themselves type, and losing a `video_started` event
  * quietly breaks the gaze replay for that clip. A session is one sitting and
  * cannot be repeated, so the queue survives a reload, retries with backoff, and
- * makes anything still unsent visible on screen.
+ * makes failed writes visible while they are retried.
  *
  * Gaze samples deliberately do not come through here — at 120 Hz they are
  * far too many for localStorage, and useGazeCapture retries them in memory.
@@ -25,6 +25,7 @@ export interface OutboxJob {
   owner: string // participant id: one participant's data must never go up as another's
   kind: OutboxKind
   body: Record<string, unknown>
+  failed?: boolean
 }
 
 const STORAGE_KEY = 'a04.outbox'
@@ -44,7 +45,7 @@ let backoff = BASE_BACKOFF_MS
 let draining = false
 let nextId = 0
 
-const listeners = new Set<(pending: number) => void>()
+const listeners = new Set<(pending: number, retrying: number) => void>()
 
 function load(): OutboxJob[] {
   try {
@@ -62,7 +63,7 @@ function persist() {
   } catch {
     /* storage full or disabled — the queue still works for this page */
   }
-  listeners.forEach((fn) => fn(pending()))
+  notify()
 }
 
 /** How many of the current participant's writes have not landed yet. */
@@ -71,9 +72,21 @@ export function pending(): number {
   return queue.filter((job) => job.owner === owner).length
 }
 
-export function subscribe(fn: (count: number) => void): () => void {
+/** Failed writes remain visible until their retry succeeds, including after reload. */
+export function retrying(): number {
+  if (owner === null || !sending) return 0
+  return queue.filter((job) => job.owner === owner && job.failed).length
+}
+
+function notify() {
+  const count = pending()
+  const failed = retrying()
+  listeners.forEach((fn) => fn(count, failed))
+}
+
+export function subscribe(fn: (count: number, retrying: number) => void): () => void {
   listeners.add(fn)
-  fn(pending())
+  fn(pending(), retrying())
   return () => listeners.delete(fn)
 }
 
@@ -132,13 +145,15 @@ export async function drain(): Promise<void> {
           void queryClient.invalidateQueries({ queryKey: ['notes', job.body.video_id] })
         }
       } catch (error) {
-        if (isUnauthorised(error)) return // the session is over; auth will handle it
-        if (isPermanent(error)) {
+        if (!isUnauthorised(error) && isPermanent(error)) {
           console.warn('outbox: dropping a write the server refused', job.kind, error)
           queue.shift()
           persist()
           continue
         }
+        job.failed = true
+        persist()
+        if (isUnauthorised(error)) return // the session is over; auth will handle it
         backoff = Math.min(backoff * 2, MAX_BACKOFF_MS)
         schedule(backoff)
         return
@@ -155,7 +170,7 @@ export function start(participantId: string) {
   owner = participantId
   sending = true
   backoff = BASE_BACKOFF_MS
-  listeners.forEach((fn) => fn(pending()))
+  notify()
   schedule(0)
 }
 
@@ -164,7 +179,7 @@ export function stop() {
   sending = false
   if (timer !== undefined) window.clearTimeout(timer)
   timer = undefined
-  listeners.forEach((fn) => fn(0))
+  notify()
 }
 
 /** Test seam: reset module state between cases. */

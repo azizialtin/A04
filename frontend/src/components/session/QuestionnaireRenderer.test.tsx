@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 
@@ -197,8 +197,11 @@ test('questions that share a matrix key are one table with the statements listed
   ]
   render(<QuestionnaireRenderer title="Fachwissen" questions={rows} onSubmit={onSubmit} />)
 
-  // The statements appear once, in the legend, not under every row.
+  // The statements sit directly above their numbered columns, not under every row.
   expect(screen.getAllByText('Dieses Konzept ist mir nicht bekannt.')).toHaveLength(1)
+  expect(
+    screen.getByRole('columnheader', { name: /Dieses Konzept ist mir nicht bekannt\. 1/ }),
+  ).toBeInTheDocument()
   expect(screen.getByRole('table')).toBeInTheDocument()
   expect(screen.getAllByRole('row')).toHaveLength(3) // header + two concepts
 
@@ -214,6 +217,58 @@ test('questions that share a matrix key are one table with the statements listed
     { ck_pre_vars: 'A1', ck_pre_loop: 'A0' },
     expect.any(Number),
   )
+})
+
+test('matrix answers and gaze targets survive a narrow container and widening again', () => {
+  let resize: ResizeObserverCallback | undefined
+  const disconnect = vi.fn()
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: ResizeObserverCallback) {
+        resize = callback
+      }
+      observe() {}
+      disconnect = disconnect
+    },
+  )
+  const onSubmit = vi.fn()
+  const rows: Question[] = [
+    {
+      id: 'strategy',
+      type: 'multiple_choice',
+      text: 'Welche Vorgehensweise?',
+      matrix: 'strategies',
+      options: [
+        { value: 'low', label: 'Sehr unwahrscheinlich' },
+        { value: 'high', label: 'Sehr wahrscheinlich' },
+      ],
+    },
+  ]
+  try {
+    const { container, unmount } = render(
+      <QuestionnaireRenderer title="Strategien" questions={rows} onSubmit={onSubmit} />,
+    )
+    fireEvent.click(screen.getByRole('radio', { name: /Welche Vorgehensweise\?: 2/ }))
+    const changeWidth = (width: number) =>
+      act(() => resize?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver))
+    changeWidth(360)
+    expect(container.querySelector('.matrix')).toHaveClass('matrix--stacked')
+    expect(container.querySelector('[data-aoi-clip]')).toBeNull()
+    expect(screen.getByRole('radio', { name: /Welche Vorgehensweise\?: 2/ })).toBeChecked()
+    changeWidth(1000)
+    expect(container.querySelector('.matrix')).not.toHaveClass('matrix--stacked')
+    expect(container.querySelector('[data-aoi-clip]')).toHaveAttribute(
+      'data-aoi-clip',
+      'after-row-prompt',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+    expect(onSubmit).toHaveBeenCalledWith({ strategy: 'high' }, expect.any(Number))
+    unmount()
+    expect(disconnect).toHaveBeenCalledOnce()
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })
 
 test('a question can show code above its answer field, numbered line by line', () => {
@@ -272,20 +327,20 @@ test('a capped CK task reuses line controls and preserves both answer components
     target: { value: 'Indexfehler' },
   })
   for (let line = 2; line <= 5; line++) {
-    fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Weitere Zeile hinzufügen/ }))
     fireEvent.change(
       screen.getByRole('spinbutton', { name: `Welche Zeilen?: Zeilennummer ${line}` }),
       { target: { value: String(line) } },
     )
   }
-  expect(screen.getByRole('button', { name: /Fehler bezieht sich/ })).toBeDisabled()
-  fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+  expect(screen.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: /Weitere Zeile hinzufügen/ }))
   expect(screen.getAllByRole('spinbutton')).toHaveLength(5)
   expect(onAnswersChange).toHaveBeenLastCalledWith({
     ck: { lines: [1, 2, 3, 4, 5], explanation: 'Indexfehler' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Zeilennummer 3 entfernen' }))
-  expect(screen.getByRole('button', { name: /Fehler bezieht sich/ })).toBeEnabled()
+  expect(screen.getByRole('button', { name: /Weitere Zeile hinzufügen/ })).toBeEnabled()
   fireEvent.click(submit)
   expect(onSubmit).toHaveBeenCalledWith(
     { ck: { lines: [1, 2, 4, 5], explanation: 'Indexfehler' } },
@@ -402,7 +457,7 @@ test('one error may reference more than five lines while keeping a single explan
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Indexfehler' } })
   fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1' } })
   for (let line = 2; line <= 7; line++) {
-    fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Weitere Zeile hinzufügen/ }))
     const input = screen.getByRole('spinbutton', { name: `Welche Zeilen?: Zeilennummer ${line}` })
     expect(input).toHaveFocus()
     fireEvent.change(input, { target: { value: String(line) } })
@@ -431,7 +486,7 @@ test('line references enforce whole numbers and configured bounds, including add
   }
   fireEvent.change(input, { target: { value: '4' } })
   expect(submit).toBeEnabled()
-  fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Weitere Zeile hinzufügen/ }))
   expect(submit).toBeDisabled()
   fireEvent.click(screen.getByRole('button', { name: 'Zeilennummer 2 entfernen' }))
   expect(submit).toBeEnabled()
@@ -448,7 +503,7 @@ test('a legacy scalar line answer restores and becomes an array when another lin
     />,
   )
   expect(screen.getByRole('spinbutton')).toHaveValue(4)
-  fireEvent.click(screen.getByRole('button', { name: /Fehler bezieht sich/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Weitere Zeile hinzufügen/ }))
   fireEvent.change(screen.getByRole('spinbutton', { name: /Zeilennummer 2$/ }), {
     target: { value: '5' },
   })

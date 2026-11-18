@@ -51,7 +51,7 @@ test('the form opens with an example that the preview renders, Java code include
   )
   expect(configured[0]).toMatchObject({ type: 'line_numbers', min: 1, max: 7 })
   expect(within(preview).getAllByRole('textbox')).toHaveLength(1)
-  fireEvent.click(within(preview).getByRole('button', { name: /Fehler bezieht sich/ }))
+  fireEvent.click(within(preview).getByRole('button', { name: /Weitere Zeile hinzufügen/ }))
   expect(within(preview).getAllByRole('spinbutton')).toHaveLength(2)
 })
 

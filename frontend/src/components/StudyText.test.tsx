@@ -82,3 +82,28 @@ test('an explicit starting line applies to the exercise and a separate exercise 
     ),
   ).toEqual(['8', '9', '1', '2'])
 })
+
+test('legacy JSON student code renders with syntax highlighting and exact source line numbering', () => {
+  const first = ['', 'public class Heizung {', '    private int temperatur;', '}', '']
+  const second = ['Heizung heizung = new Heizung();', 'System.out.println("warm");']
+  const text = `Schüler-Aufgabe\n\nGegebener Code (JSON-Format):\n\nCodeblock 1:\n${JSON.stringify(first, null, 2)}\n\nCodeblock 2:\n${JSON.stringify(second, null, 2)}`
+  const { container } = render(<StudyText text={text} mode="preserve" />)
+  expect(container.querySelectorAll('pre.code')).toHaveLength(2)
+  const rows = Array.from(container.querySelectorAll('.code__line'))
+  expect(rows.map((line) => line.textContent)).toEqual(
+    [...first, ...second].map((line) => line + '\n'),
+  )
+  expect(rows.map((line) => line.getAttribute('data-line'))).toEqual([
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+  ])
+  expect(container.querySelector('.tok--kw')).toHaveTextContent('public')
+  expect(container.querySelector('.tok--str')).toHaveTextContent('"warm"')
+  expect(container.textContent).toContain('Schüler-Aufgabe')
+  expect(container.textContent).not.toContain('JSON-Format')
+})

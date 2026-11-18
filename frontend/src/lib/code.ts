@@ -7,7 +7,8 @@
  * block (optionally followed by a language), another closes it, everything
  * between is code with its indentation kept. A block that is never closed runs
  * to the end — the author plainly meant it as code, and losing it would be
- * worse than over-including.
+ * worse than over-including. Older student tasks instead label their code as
+ * JSON string arrays; only those explicitly marked sections are decoded.
  *
  * `tokenise` splits lines of Java into keywords, strings, comments and numbers
  * for colouring. It is deliberately small — no generics, no annotations — and
@@ -30,6 +31,69 @@ export type TextSegment = CodeSegment | ProseSegment
 
 const FENCE_OPEN = /^\s*```[ \t]*([A-Za-z0-9_+-]*)[ \t]*$/
 const FENCE_CLOSE = /^\s*```[ \t]*$/
+const JSON_CODE_HEADING = /^\s*Gegebener Code\s*\(JSON-Format\)\s*:\s*$/i
+const JSON_CODE_LABEL = /^\s*Codeblock[ \t]+\d+[ \t]*:[ \t]*$/i
+
+/** Find the array boundary without mistaking a bracket in a Java string for it. */
+function readJsonCodeArray(lines: string[], start: number) {
+  if (!lines[start]?.trimStart().startsWith('[')) return null
+  let depth = 0
+  let quoted = false
+  let escaped = false
+  for (let row = start; row < lines.length; row++) {
+    for (let column = 0; column < lines[row].length; column++) {
+      const character = lines[row][column]
+      if (quoted) {
+        if (escaped) escaped = false
+        else if (character === '\\') escaped = true
+        else if (character === '"') quoted = false
+      } else if (character === '"') {
+        quoted = true
+      } else if (character === '[') {
+        depth++
+      } else if (character === ']' && --depth === 0) {
+        // A code array occupies its own lines, never part of a prose sentence.
+        if (lines[row].slice(column + 1).trim()) return null
+        try {
+          const value: unknown = JSON.parse(lines.slice(start, row + 1).join('\n'))
+          if (
+            Array.isArray(value) &&
+            value.length &&
+            value.every((line) => typeof line === 'string')
+          ) {
+            return { lines: codeLines(value, true), end: row + 1 }
+          }
+        } catch {
+          // Malformed or unrelated JSON remains readable as the original prose.
+        }
+        return null
+      }
+    }
+  }
+  return null
+}
+
+function readJsonCodeSection(lines: string[], start: number) {
+  if (!JSON_CODE_HEADING.test(lines[start])) return null
+  const segments: TextSegment[] = []
+  let end = start
+  let cursor = start + 1
+  while (cursor < lines.length) {
+    while (cursor < lines.length && !lines[cursor].trim()) cursor++
+    if (!JSON_CODE_LABEL.test(lines[cursor] ?? '')) break
+    cursor++
+    while (cursor < lines.length && !lines[cursor].trim()) cursor++
+    const code = readJsonCodeArray(lines, cursor)
+    if (!code) break
+    const heading = lines.slice(end, cursor)
+    if (!segments.length) heading[0] = heading[0].replace(/\s*\(JSON-Format\)/i, '')
+    segments.push({ kind: 'prose', text: heading.join('\n') })
+    segments.push({ kind: 'code', lang: 'java', lines: code.lines })
+    end = code.end
+    cursor = end
+  }
+  return segments.length ? { segments, end } : null
+}
 
 /** Leading and trailing blank lines carry nothing, and would number from 2. */
 function trimBlankEdges(lines: string[]): string[] {
@@ -53,6 +117,13 @@ export function splitCodeBlocks(text: string): TextSegment[] {
 
   let i = 0
   while (i < lines.length) {
+    const jsonCode = readJsonCodeSection(lines, i)
+    if (jsonCode) {
+      flushProse()
+      out.push(...jsonCode.segments)
+      i = jsonCode.end
+      continue
+    }
     const open = FENCE_OPEN.exec(lines[i])
     if (!open) {
       prose.push(lines[i])

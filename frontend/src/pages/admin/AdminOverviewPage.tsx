@@ -1,3 +1,4 @@
+import AdminTable from '../../components/admin/AdminTable'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -151,7 +152,7 @@ function OverviewStats() {
 
       <h2 className="section-head">Studien</h2>
       <div className="table-scroll">
-        <table className="table">
+        <AdminTable className="table">
           <thead>
             <tr>
               <th>Studie</th>
@@ -179,7 +180,7 @@ function OverviewStats() {
               </tr>
             )}
           </tbody>
-        </table>
+        </AdminTable>
       </div>
 
       <div className="card">
@@ -189,7 +190,7 @@ function OverviewStats() {
           nicht der Auswertung.
         </p>
         <div className="table-scroll">
-          <table className="table">
+          <AdminTable className="table">
             <thead>
               <tr>
                 <th>Ereignis</th>
@@ -215,7 +216,7 @@ function OverviewStats() {
                 </tr>
               )}
             </tbody>
-          </table>
+          </AdminTable>
         </div>
       </div>
 

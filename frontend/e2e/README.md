@@ -50,6 +50,24 @@ failure that looks like a broken login.
 
 `npm run test:browser` runs a separate Chromium suite on port 5185 with synthetic
 API responses and tracker messages. It needs no database or admin account.
+
+To run the same checks in all three browser engines:
+
+```bash
+npx playwright install chromium firefox webkit
+A04_ALL_BROWSERS=1 npm run test:browser
+```
+
+Downloads use a local HTTP attachment fixture so native download behavior is
+exercised in WebKit as well. Capture checks accept each engine's recording
+format (WebM or MP4); the other tests explicitly decline screen capture to avoid
+opening the operating system's screen picker.
+
+Responsive checks exercise questionnaire choices at 320–1920px, every participant
+screen and both login pages at phone/tablet/desktop widths, and admin tables,
+actions and questionnaire previews at 375/768/1366px. They verify that answers
+can be selected without horizontal scrolling, submissions keep their original
+values, and expanding tracker help does not cover the form.
 The fixture `fixtures/stimulus.webm` is a two-second 320×180 test pattern, so the
 video element also has real decoded dimensions.
 

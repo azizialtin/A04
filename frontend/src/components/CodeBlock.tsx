@@ -4,8 +4,8 @@ import { codeLines, tokenise } from '../lib/code'
 
 /**
  * Code as a participant reads it: monospace, indentation kept, a number on
- * every line so an answer can name one, and sideways scrolling instead of
- * wrapped lines that would shift the numbering. The numbers are drawn by the
+ * every source line so an answer can name one, even when it wraps to fit a
+ * narrow screen. The numbers are drawn by the
  * stylesheet rather than written into the text, so copying the block copies
  * the code alone.
  */

@@ -1,3 +1,4 @@
+import AdminTable from './AdminTable'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -92,7 +93,7 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
         </button>
       </div>
 
-      <table className="table">
+      <AdminTable className="table">
         <thead>
           <tr>
             <th>ID</th>
@@ -155,7 +156,7 @@ export default function ParticipantsSection({ studyId }: { studyId: number }) {
             </tr>
           )}
         </tbody>
-      </table>
+      </AdminTable>
 
       {inspected && (
         <ParticipantStatsPanel participantId={inspected} onClose={() => setInspected(null)} />

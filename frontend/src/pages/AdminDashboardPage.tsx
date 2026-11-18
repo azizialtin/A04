@@ -6,6 +6,7 @@ import AdminGazePage from './admin/AdminGazePage'
 import AdminOverviewPage from './admin/AdminOverviewPage'
 import AdminStudyDetailPage from './admin/AdminStudyDetailPage'
 import AdminStudyListPage from './admin/AdminStudyListPage'
+import './AdminDashboardPage.css'
 
 function link({ isActive }: { isActive: boolean }) {
   return `admin__link${isActive ? ' is-active' : ''}`

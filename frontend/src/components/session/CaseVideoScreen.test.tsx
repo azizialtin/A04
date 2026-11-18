@@ -64,6 +64,26 @@ async function media() {
   return video
 }
 
+test('the student-task popup renders supplied JSON code as numbered and highlighted Java', async () => {
+  const source = ['public class Heizung {', '', '    private int temperatur;', '}']
+  render(
+    <CaseVideoScreen
+      {...props}
+      studentTaskText={`Schüler-Aufgabe und gegebener Code\n\nGegebener Code (JSON-Format):\n\nCodeblock 1:\n${JSON.stringify(source, null, 2)}`}
+      onComplete={vi.fn()}
+    />,
+  )
+  await media()
+  fireEvent.click(screen.getByRole('button', { name: 'Schüler-Aufgabe' }))
+  const dialog = screen.getByRole('dialog', { name: 'Aufgabe der Schüler:innen' })
+  expect(dialog.querySelectorAll('pre.code')).toHaveLength(1)
+  const rows = Array.from(dialog.querySelectorAll('.code__line'))
+  expect(rows.map((line) => line.textContent)).toEqual(source.map((line) => line + '\n'))
+  expect(rows.map((line) => line.getAttribute('data-line'))).toEqual(['1', '2', '3', '4'])
+  expect(dialog.querySelector('.tok--kw')).toHaveTextContent('public')
+  expect(dialog.textContent).not.toContain('JSON-Format')
+})
+
 test('every Continue asks before leaving; cancellation keeps notes, player and capture intact', async () => {
   const user = userEvent.setup()
   const onComplete = vi.fn()

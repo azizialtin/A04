@@ -1,3 +1,4 @@
+import AdminTable from '../../components/admin/AdminTable'
 import { useState } from 'react'
 
 import type { ReplayRef, ScreenSummary } from '../../api/admin'
@@ -44,7 +45,7 @@ export default function AdminGazePage() {
       {recordings.isLoading ? (
         <p className="muted">Wird geladen…</p>
       ) : (
-        <table className="table">
+        <AdminTable className="table">
           <thead>
             <tr>
               <th>Teilnehmer</th>
@@ -108,7 +109,7 @@ export default function AdminGazePage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </AdminTable>
       )}
 
       {inspected && (
@@ -127,7 +128,7 @@ export default function AdminGazePage() {
       {screens.isLoading && <p className="muted">Wird geladen…</p>}
       {screens.isError && <p className="error-text">Aufnahmen konnten nicht geladen werden.</p>}
       {screens.data && (
-        <table className="table">
+        <AdminTable className="table">
           <thead>
             <tr>
               <th>Aufnahme</th>
@@ -163,7 +164,7 @@ export default function AdminGazePage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </AdminTable>
       )}
       {(screenOffset > 0 || (screens.data?.total ?? 0) > 200) && (
         <div className="inline-form">
