@@ -57,6 +57,12 @@ async function openStep(page: Page, step: SessionStep) {
       JSON.stringify({ type: 'status', connected: true, frequency: 120, screen_recording: false }),
     )
     let timer: ReturnType<typeof setInterval> | undefined
+    const stopTimer = () => {
+      clearInterval(timer)
+      timer = undefined
+    }
+    page.once('close', stopTimer)
+    page.context().once('close', stopTimer)
     ws.onMessage((message) => {
       const command = JSON.parse(String(message)).type
       if (command === 'start_gaze' && !timer)
@@ -81,7 +87,7 @@ async function openStep(page: Page, step: SessionStep) {
         timer = undefined
       }
     })
-    ws.onClose(() => clearInterval(timer))
+    ws.onClose(stopTimer)
   })
   const timing =
     step.kind === 'questionnaire' && step.section_key === 'ck_tasks'
@@ -162,8 +168,7 @@ async function openStep(page: Page, step: SessionStep) {
   })
   await page.goto('/session')
   await page.evaluate(() => document.fonts.ready)
-  if (step.kind !== 'think_aloud')
-    await expect.poll(() => state.samples.length).toBeGreaterThan(0)
+  if (step.kind !== 'think_aloud') await expect.poll(() => state.samples.length).toBeGreaterThan(0)
   await expect(page.locator('.unsent')).toHaveCount(0)
   if (step.kind !== 'think_aloud')
     await expect
@@ -480,19 +485,41 @@ for (const scale of [1, 1.25, 1.5])
       const layout = await verifyInventory(page, state.layouts, info, `scale-${scale}`, scale > 1)
       expect(layout.dpr).toBe(scale)
       expect(layout.screen).toMatchObject({ w: viewport.width, h: viewport.height })
-      await page.locator('.matrix__scroll').evaluate((element) => {
-        element.scrollLeft = element.scrollWidth
-      })
-      const row = page.locator('[data-aoi="question.mesp_pre_1a.prompt"]')
-      const prompt = await row.boundingBox()
+      const matrix = page.locator('.matrix')
+      await expect(matrix).toHaveClass(scale > 1 ? /matrix--stacked/ : /^(?!.*matrix--stacked)/)
+      const row = page.locator('[data-aoi="question.mesp_pre_1a"]')
+      await row.scrollIntoViewIfNeeded()
+      const prompt = await row.locator('[data-aoi$=".prompt"]').boundingBox()
+      const expected = await row.locator('[data-aoi$=".answer"]').evaluateAll((cells) =>
+        cells.map((cell) => {
+          const box = cell.getBoundingClientRect()
+          return { x: box.x, y: box.y, w: box.width, h: box.height }
+        }),
+      )
+      expect(expected).toHaveLength(6)
       await expect
-        .poll(() =>
-          state.layouts
-            .at(-1)
-            ?.aois?.filter((area) => area.id === 'question.mesp_pre_1a.answer')
-            .every((area) => area.x >= prompt!.x + prompt!.width - 1),
-        )
+        .poll(() => {
+          const answers =
+            state.layouts
+              .at(-1)
+              ?.aois?.filter((area) => area.id === 'question.mesp_pre_1a.answer') ?? []
+          // Stacked choices sit below their prompt. Table cells sit to its
+          // right. Both layouts must retain every choice with exact DOM bounds.
+          return (
+            answers.length === expected.length &&
+            answers.every(
+              (area, index) =>
+                (['x', 'y', 'w', 'h'] as const).every(
+                  (key) => Math.abs(area[key] - expected[index][key]) < 1,
+                ) &&
+                (scale > 1
+                  ? area.y >= prompt!.y + prompt!.height - 1
+                  : area.x >= prompt!.x + prompt!.width - 1),
+            )
+          )
+        })
         .toBe(true)
+      await verifyInventory(page, state.layouts, info, `scale-${scale}-scrolled`, true)
       const recorded = state.layouts.at(-1)!
       await info.attach(`scale-${scale}-scrolled`, {
         body: JSON.stringify(recorded),
@@ -502,6 +529,73 @@ for (const scale of [1, 1.25, 1.5])
       await context.close()
     }
   })
+
+test('horizontally scrolled matrix answers exclude the sticky prompt and scrollport edges', async ({
+  page,
+}, info) => {
+  const task = source.mesp_pages[0]
+  const state = await openStep(page, questionnaire(task.questions, 'mesp', task.description))
+  // Current responsive matrices reflow rather than scrolling horizontally.
+  // Exercise the collector's clipping contract with a real browser scrollport
+  // and sticky column, so that support remains covered independently of reflow.
+  await page.addStyleTag({
+    content: `
+    .matrix__scroll { max-width: 900px; overflow-x: auto; }
+    .matrix__table { width: 1700px; min-width: 1700px; }
+    .pretest-page--mesp .matrix:not(.matrix--stacked) .matrix__table .matrix__item {
+      width: 300px; position: sticky; left: 0; z-index: 2; background: white;
+    }
+  `,
+  })
+  await expect(page.locator('.matrix')).not.toHaveClass(/matrix--stacked/)
+  const row = page.locator('[data-aoi="question.mesp_pre_1a"]')
+  await row.scrollIntoViewIfNeeded()
+  await page.locator('.matrix__scroll').evaluate((element) => {
+    element.scrollLeft = 275
+  })
+  const measured = await row.evaluate((element) => {
+    const prompt = element.querySelector('[data-aoi$=".prompt"]')!.getBoundingClientRect()
+    const scroller = element.closest('.matrix__scroll')!
+    const scrollport = scroller.getBoundingClientRect()
+    const left = Math.max(prompt.right, scrollport.left + scroller.clientLeft, 0)
+    const right = Math.min(scrollport.left + scroller.clientLeft + scroller.clientWidth, innerWidth)
+    const raw = [...element.querySelectorAll('[data-aoi$=".answer"]')].map((cell) => {
+      const box = cell.getBoundingClientRect()
+      return { x: box.x, y: box.y, w: box.width, h: box.height }
+    })
+    const expected = raw.flatMap((box) => {
+      const x = Math.max(left, box.x),
+        y = Math.max(0, box.y)
+      const end = Math.min(right, box.x + box.w),
+        bottom = Math.min(innerHeight, box.y + box.h)
+      return end > x && bottom > y ? [{ x, y, w: end - x, h: bottom - y }] : []
+    })
+    return { expected, raw, left, scrollLeft: scroller.scrollLeft }
+  })
+  expect(measured.scrollLeft).toBe(275)
+  expect(measured.expected.length).toBeGreaterThan(0)
+  expect(measured.expected.length).toBeLessThan(measured.raw.length)
+  expect(measured.raw.some((box) => box.x < measured.left && box.x + box.w > measured.left)).toBe(
+    true,
+  )
+  await expect
+    .poll(() => {
+      const actual =
+        state.layouts.at(-1)?.aois?.filter((area) => area.id === 'question.mesp_pre_1a.answer') ??
+        []
+      return (
+        actual.length === measured.expected.length &&
+        actual.every((area, index) =>
+          (['x', 'y', 'w', 'h'] as const).every(
+            (key) => Math.abs(area[key] - measured.expected[index][key]) < 1,
+          ),
+        )
+      )
+    })
+    .toBe(true)
+  await verifyInventory(page, state.layouts, info, 'matrix-horizontal-scroll', true)
+  expect(state.unexpected).toEqual([])
+})
 
 test('visual viewport zoom is retained so unsupported mapping can be rejected', async ({
   page,

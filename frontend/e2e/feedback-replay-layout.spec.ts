@@ -211,7 +211,10 @@ for (const viewport of [
     await expect(fullscreen).toBeInViewport({ ratio: 1 })
     await page.getByRole('checkbox', { name: 'Blickpunkt anzeigen' }).uncheck()
     const next = page.getByRole('button', { name: 'Weiter', exact: true })
-    await next.scrollIntoViewIfNeeded()
+    // Chromium can round nearest-edge scrolling down, leaving a fractional
+    // pixel below the viewport. Center-scroll through the page's available
+    // space, then still require the entire control to be visible and usable.
+    await next.evaluate((button) => button.scrollIntoView({ block: 'center', inline: 'nearest' }))
     await expect(next).toBeInViewport({ ratio: 1 })
     await next.click()
     await expect(page.getByRole('heading', { name: 'Vielen Dank!', exact: true })).toBeVisible()
