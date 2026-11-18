@@ -17,11 +17,9 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_participant
-from app.models.enums import QuestionnairePlacement
 from app.models.gaze_calibration import GazeCalibration
 from app.models.gaze_recording import GazeRecording
 from app.models.participant import Participant
-from app.models.questionnaire import Questionnaire
 from app.models.screen_recording import ScreenRecording
 from app.models.video import Video
 from app.services.gaze_replay import compute_replay, compute_screen_replay
@@ -130,10 +128,10 @@ class GazeGeometry(BaseModel):
 
 
 class StartRecordingRequest(BaseModel):
-    video_id: int | None = None
-    step_kind: Literal["case_video", "questionnaire", "diagnosis", "case_outro"] = "case_video"
+    video_id: int
+    step_kind: Literal["case_video"] = "case_video"
     step_index: int | None = Field(default=None, ge=0)
-    questionnaire_id: int | None = None
+    questionnaire_id: None = None
     sampling_rate_hz: float = Field(ge=1, le=2_147_483_647, allow_inf_nan=False)
     geometry: GazeGeometry | None = None
 
@@ -261,6 +259,15 @@ def _local_folder(recording: GazeRecording) -> Path:
     return gaze_dir() / recording.participant_id / str(recording.id)
 
 
+def _require_video_capture(recording: GazeRecording) -> None:
+    # Older clients and pending queues must not extend historical non-video data.
+    if recording.step_kind != "case_video" or recording.video_id is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Eye-tracking data is collected only on the video screen.",
+        )
+
+
 def _stored_chunk(recording: GazeRecording, chunk_name: str, settings) -> bytes | None:
     if not recording.storage_prefix:
         return None
@@ -291,45 +298,13 @@ async def start_recording(
     participant: Participant = Depends(get_current_participant),
     db: AsyncSession = Depends(get_db),
 ) -> StartRecordingResponse:
-    if body.video_id is not None:
-        await _require_assigned(db, participant, body.video_id)
-    elif body.step_kind != "questionnaire":
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "This screen needs a video.")
-    if body.step_kind == "questionnaire" and (
-        body.questionnaire_id is None or body.video_id is not None
-    ):
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "A pre-test page needs a questionnaire, not a video.",
-        )
-    if body.questionnaire_id is not None:
-        questionnaire = await db.get(Questionnaire, body.questionnaire_id)
-        expected = {
-            "questionnaire": QuestionnairePlacement.pre_test,
-            "diagnosis": QuestionnairePlacement.diagnosis,
-            "case_outro": QuestionnairePlacement.case_outro,
-        }.get(body.step_kind)
-        if (
-            questionnaire is None
-            or questionnaire.study_id != participant.study_id
-            or questionnaire.placement != expected
-        ):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Questionnaire not part of this screen.")
-    questionnaire_id = body.questionnaire_id
-    if body.step_kind == "diagnosis" and questionnaire_id is None:
-        questionnaire_id = await db.scalar(
-            select(Questionnaire.id).where(
-                Questionnaire.study_id == participant.study_id,
-                Questionnaire.placement == QuestionnairePlacement.diagnosis,
-            )
-        )
+    await _require_assigned(db, participant, body.video_id)
     settings = get_settings()
     recording = GazeRecording(
         participant_id=participant.id,
         video_id=body.video_id,
         step_kind=body.step_kind,
         step_index=body.step_index,
-        questionnaire_id=questionnaire_id,
         sampling_rate_hz=int(body.sampling_rate_hz),
         storage_mode=settings.GAZE_STORAGE_MODE,
         geometry=[body.geometry.snapshot()] if body.geometry else [],
@@ -403,6 +378,7 @@ async def add_geometry(
     )
     if recording is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found.")
+    _require_video_capture(recording)
     if recording.completed_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Recording already finalised.")
 
@@ -441,6 +417,7 @@ async def upload_samples(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Batch too large.")
 
     recording = await _own_recording(db, participant, recording_id, for_update=True)
+    _require_video_capture(recording)
     ndjson = "\n".join(json.dumps(s.model_dump(exclude_unset=True)) for s in body.samples) + "\n"
     if body.offset is not None:
         if body.offset > recording.sample_count:

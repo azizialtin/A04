@@ -49,7 +49,7 @@ export default function CaseIntroScreen({
       // nothing to click.
       setBusy(false)
     }
-    if (gaze.state !== 'tracking')
+    if (gaze.state !== 'tracker_ready')
       enqueue('event', {
         event_type: 'gaze_preflight_continue_without',
         video_id: videoId ?? null,

@@ -95,12 +95,15 @@ instrument from `MESP_clean_mb.docx` (pre-test pages, the diagnosis confidence
 rating, and the questions after each case); the "Fragebögen" tab is where they are edited,
 and where an older study can be given the ones it is missing.
 
-The gaze exports are separate: `gaze.csv` contains every stored sample at the
+The gaze exports are separate: `gaze.csv` contains every stored video-screen sample at the
 captured rate, with original eye coordinates, validity, timestamps, screen
 context and AOI assignment; `gaze_recordings.csv` contains one metadata row per
-recording. Gaze capture covers the case screen and the in-app pre-test,
-diagnosis and post-case questionnaire screens. Older recordings remain
-exportable, but AOIs are not invented for samples without their captured layout.
+recording. Gaze capture runs only on the case video screen, including pauses,
+notes and its popups. The rendered picture is split at its midpoint into
+`video_students` (left) and `video_code` (right). The pre-case tracker check
+checks connection status without requesting gaze samples. Historical non-video
+recordings remain stored but are excluded from the gaze tables and exports;
+AOIs are not invented for samples without their captured layout.
 See [the gaze operations notes](docs/OPERATIONS.md#gaze-data-and-analysis) for
 mapping limits, failed downloads and migration requirements.
 

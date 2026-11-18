@@ -88,7 +88,7 @@
     "seek": "Videoposition",
     "timer_label": "Zeit",
     "task_label": "Aufgabe",
-    "student_task_button": "Schüler-Aufgabe",
+    "student_task_button": "Schüler-Aufgabe und gegebener Code",
     "notes_label": "Notizen",
     "notes_placeholder": "Notizen während des Videos…",
     "next": "Weiter",
@@ -97,9 +97,11 @@
     "exit_cancel": "Beim Fall bleiben",
     "exit_confirm": "Zur Diagnose",
     "exit_error": "Der Wechsel zur Diagnose ist fehlgeschlagen. Ihr Fall bleibt geöffnet. Bitte versuchen Sie es erneut.",
-    "info_title": "Information",
+    "info_title": "Diagnose Definition",
     "student_task_title": "Aufgabe der Schüler:innen",
-    "no_content": "Kein Inhalt hinterlegt."
+    "no_content": "Kein Inhalt hinterlegt.",
+    "task_button": "Aufgabenstellung",
+    "task_instructions": "Sie sehen hier ein Video einer Unterrichtssituation. Sie können sich während des Videos Notizen machen und so oft wie Sie möchten vor und zurück springen oder sich einzelne Abschnitte sowie das ganze Video nochmal ansehen. Ihre Bearbeitungsaufgabe beinhaltet das Schreiben einer Diagnose zur Situation."
   },
   "diagnosis": {
     "title": "Ihre Diagnose",
@@ -247,7 +249,9 @@
     "replay_empty": "Für diese Wiedergabe sind keine darstellbaren Blickpunkte verfügbar. Die Bildschirmaufnahme und ihr Ton bestätigen keine erfolgreiche Blickaufzeichnung.",
     "mock": "Testmodus: synthetische Blickdaten, kein bestätigter Hardware-Test.",
     "continue_without": "Ohne Blickdaten fortfahren",
-    "preflight_title": "Blickaufzeichnung prüfen"
+    "preflight_title": "Blickaufzeichnung prüfen",
+    "tracker_ready": "Eye-Tracker erkannt",
+    "preflight_status": "Blickdaten werden erst auf der Videoseite erfasst."
   },
   "pilot": {
     "welcome_intro": "Herzlich willkommen und vielen Dank, dass Sie an unserer Studie teilnehmen!\n\nZu Beginn beantworten Sie für ca. 30 Minuten einige Fragen. Nach einer kurzen Pause bearbeiten Sie sieben Videofälle. Die Videos zeigen typische Situationen, in denen Schülerinnen und Schüler Fehler in Programmen suchen und beheben (Debugging). Zu jedem Video bearbeiten Sie die dazugehörigen Aufgaben.\n\nNach einer weiteren kurzen Pause beantworten Sie zum Abschluss noch einige Fragen. Die Studie wird ungefähr 2,5 Stunden dauern.\n\nWenn Sie bereit sind, klicken Sie auf „Weiter“, um zu beginnen.",

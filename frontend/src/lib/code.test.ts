@@ -1,4 +1,4 @@
-import { codeLines, splitCodeBlocks, tokenise, type Token } from './code'
+import { codeLines, splitCodeBlocks, studyCodeLineCount, tokenise, type Token } from './code'
 
 const JAVA = [
   'Lies den Code:',
@@ -52,6 +52,78 @@ test('text without a fence is one prose segment, and blank text is none', () => 
     { kind: 'prose', text: 'Nur Text.\n\nZweiter Absatz.' },
   ])
   expect(splitCodeBlocks('  \n')).toEqual([])
+})
+
+test('marked JSON code arrays become Java blocks with blank lines, indentation and escaping intact', () => {
+  const source = [
+    '',
+    'public class Heizung {',
+    '',
+    '\tprivate int temperatur;',
+    '    String text = "a ] bracket and \\"quoted\\" word";',
+    '    String path = "C:\\\\temp";',
+    '    System.out.println("\\n");',
+    '}',
+    '',
+  ]
+  const text = `Aufgabe der Schüler:innen\n\nGegebener Code (JSON-Format):\n\nCodeblock 1:\n${JSON.stringify(source, null, 2)}\n\nWelche Ausgabe entsteht?`
+  const segments = splitCodeBlocks(text)
+  expect(segments.map((segment) => segment.kind)).toEqual(['prose', 'prose', 'code', 'prose'])
+  expect(segments[0]).toEqual({ kind: 'prose', text: 'Aufgabe der Schüler:innen\n' })
+  expect(segments[1]).toEqual({ kind: 'prose', text: 'Gegebener Code:\n\nCodeblock 1:' })
+  expect(segments[2]).toEqual({ kind: 'code', lang: 'java', lines: source })
+  expect(segments[3]).toEqual({ kind: 'prose', text: '\nWelche Ausgabe entsteht?' })
+  expect(studyCodeLineCount(text)).toBe(source.length)
+})
+
+test('multiple marked JSON blocks and Markdown blocks coexist with continuous physical line counts', () => {
+  const text = [
+    '```java',
+    'int vorher = 1;',
+    '```',
+    'Gegebener Code (JSON-Format):',
+    '',
+    'Codeblock 1:',
+    JSON.stringify(['public class Heizung {\n    int temperatur;\n}']),
+    '',
+    'Codeblock 2:',
+    '',
+    JSON.stringify(['', 'Heizung h = new Heizung();', '']),
+    '',
+    'Danach bleibt dieser Text unverändert.',
+    '```java',
+    'int nachher = 2;',
+    '```',
+  ].join('\r\n')
+  expect(splitCodeBlocks(text).filter((segment) => segment.kind === 'code')).toEqual([
+    { kind: 'code', lang: 'java', lines: ['int vorher = 1;'] },
+    { kind: 'code', lang: 'java', lines: ['public class Heizung {', '    int temperatur;', '}'] },
+    { kind: 'code', lang: 'java', lines: ['', 'Heizung h = new Heizung();', ''] },
+    { kind: 'code', lang: 'java', lines: ['int nachher = 2;'] },
+  ])
+  expect(studyCodeLineCount(text)).toBe(8)
+})
+
+test.each([
+  'Codeblock 1:\n["int x;"]',
+  'An unrelated JSON example:\n["int x;"]',
+  'Gegebener Code (JSON-Format):\n\n["int x;"]',
+  'Gegebener Code (JSON-Format):\n\nCodeblock 1:\n["int x;",]',
+  'Gegebener Code (JSON-Format):\n\nCodeblock 1:\n["int x;", 2]',
+  'Gegebener Code (JSON-Format):\n\nCodeblock 1:\n[["int x;"]]',
+  'Gegebener Code (JSON-Format):\n\nCodeblock 1:\n[]',
+  'Gegebener Code (JSON-Format):\n\nCodeblock 1:\n["int x;"] trailing prose',
+  'Gegebener Code (JSON-Format):\n\nCodeblock 1:\n[\n"unterminated',
+])('unmarked, malformed or unrelated JSON stays unchanged: %s', (text) => {
+  expect(splitCodeBlocks(text)).toEqual([{ kind: 'prose', text }])
+})
+
+test('a malformed second JSON code block remains visible after a valid first block', () => {
+  const malformed = '\nCodeblock 2:\n["int y;",]\nUnveränderte Hinweise.'
+  const text = `Gegebener Code (JSON-Format):\nCodeblock 1:\n["int x;"]\n${malformed}`
+  const segments = splitCodeBlocks(text)
+  expect(segments[1]).toEqual({ kind: 'code', lang: 'java', lines: ['int x;'] })
+  expect(segments[2]).toEqual({ kind: 'prose', text: malformed })
 })
 
 test('code lines come from a list or from a string, trimmed of blank edges', () => {

@@ -152,6 +152,101 @@ test('focus, screen position and clip dimensions remain with a layout snapshot',
   })
 })
 
+function stimulus(x: number, y: number, w: number, h: number, fw = 1600, fh = 900) {
+  const video = document.createElement('video')
+  video.dataset.gazeVideo = ''
+  video.dataset.aoi = 'video'
+  document.body.append(video)
+  box(video, x, y, w, h)
+  Object.defineProperties(video, {
+    videoWidth: { value: fw, configurable: true },
+    videoHeight: { value: fh, configurable: true },
+  })
+  return video
+}
+
+test('video halves share the exact picture midpoint and exclude letterbox bars', () => {
+  stimulus(0, 0, 800, 600)
+  expect(capturePageGeometry().aois).toEqual([
+    { id: 'video_students', x: 0, y: 75, w: 400, h: 450, priority: 0 },
+    { id: 'video_code', x: 400, y: 75, w: 400, h: 450, priority: 0 },
+  ])
+})
+
+test('portrait picture halves exclude pillarboxes and follow a resized video', () => {
+  const video = stimulus(0, 0, 800, 600, 1000, 1000)
+  expect(capturePageGeometry().aois).toEqual([
+    { id: 'video_students', x: 100, y: 0, w: 300, h: 600, priority: 0 },
+    { id: 'video_code', x: 400, y: 0, w: 300, h: 600, priority: 0 },
+  ])
+  box(video, 20, 40, 400, 300)
+  expect(capturePageGeometry().aois).toEqual([
+    { id: 'video_students', x: 70, y: 40, w: 150, h: 300, priority: 0 },
+    { id: 'video_code', x: 220, y: 40, w: 150, h: 300, priority: 0 },
+  ])
+})
+
+test('clipping the video never re-centres the students/code split', () => {
+  const video = stimulus(-300, 20, 800, 450)
+  expect(capturePageGeometry().aois).toEqual([
+    { id: 'video_students', x: 0, y: 20, w: 100, h: 450, priority: 0 },
+    { id: 'video_code', x: 100, y: 20, w: 400, h: 450, priority: 0 },
+  ])
+  const clipper = document.createElement('section')
+  clipper.style.overflowX = 'hidden'
+  document.body.append(clipper)
+  clipper.append(video)
+  box(clipper, 150, 0, 200, 600)
+  Object.defineProperties(clipper, { clientWidth: { value: 200 }, clientLeft: { value: 0 } })
+  expect(capturePageGeometry().aois).toEqual([
+    { id: 'video_code', x: 150, y: 20, w: 200, h: 450, priority: 0 },
+  ])
+})
+
+test('unloaded, hidden and modal-covered videos have no video AOIs', () => {
+  const video = stimulus(0, 0, 800, 450, 0, 0)
+  expect(capturePageGeometry().aois).toEqual([])
+  Object.defineProperties(video, { videoWidth: { value: 1600 }, videoHeight: { value: 900 } })
+  video.hidden = true
+  expect(capturePageGeometry().aois).toEqual([])
+  video.hidden = false
+  const dialog = area('task_dialog')
+  dialog.setAttribute('aria-modal', 'true')
+  area('task_dialog_text', dialog).dataset.aoiPriority = '1'
+  expect(capturePageGeometry().aois?.map(({ id }) => id)).toEqual([
+    'task_dialog',
+    'task_dialog_text',
+  ])
+  dialog.remove()
+  expect(capturePageGeometry().aois?.map(({ id }) => id)).toEqual(['video_students', 'video_code'])
+})
+
+test('video metadata triggers a layout observation without waiting for the polling timer', async () => {
+  vi.useFakeTimers()
+  const video = stimulus(0, 0, 800, 450, 0, 0)
+  const changed = vi.fn(() => capturePageGeometry())
+  const stop = observePageGeometry(changed)
+  await vi.advanceTimersByTimeAsync(20)
+  expect(changed.mock.results.slice(-1)[0]?.value.aois).toEqual([])
+  Object.defineProperties(video, { videoWidth: { value: 1600 }, videoHeight: { value: 900 } })
+  video.dispatchEvent(new Event('loadedmetadata'))
+  await vi.advanceTimersByTimeAsync(20)
+  expect(changed.mock.results.slice(-1)[0]?.value.aois).toHaveLength(2)
+  stop()
+})
+
+test('small button margins retain an unassigned gap and stay inside the viewport', () => {
+  const task = area('task_button')
+  const info = area('info_button')
+  task.dataset.aoiMargin = info.dataset.aoiMargin = '6'
+  box(task, 0, 0, 200, 40)
+  box(info, 0, 64, 200, 40)
+  expect(capturePageGeometry().aois).toEqual([
+    { id: 'task_button', x: 0, y: 0, w: 206, h: 46, priority: 0 },
+    { id: 'info_button', x: 0, y: 58, w: 206, h: 52, priority: 0 },
+  ])
+})
+
 test('notifications follow their painted stack and only foreground notices survive a modal', () => {
   area('question.answer')
   const modal = area('student_task_dialog')

@@ -381,7 +381,7 @@ try {
   await expect(page.locator('.gaze-health--ready')).toContainText(
     'Testmodus: synthetische Blickdaten',
   )
-  await expect(page.locator('.gaze-health--ready')).toContainText('Blickdaten werden empfangen.')
+  await expect(page.locator('.gaze-health--ready')).toContainText('Eye-Tracker erkannt')
   await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeVisible()
   await page.screenshot({
     path: path.join(output, 'preflight-mock-live.png'),
@@ -465,6 +465,12 @@ try {
     return rows.length === 1 && rows[0].sample_count > 0 ? rows : false
   }, 'Case did not store initial gaze samples')
   const firstRow = firstRows[0]
+  // Gaze can be uploaded before the asynchronous play request starts decoding.
+  // Establish the audible baseline that the before/after outage check measures.
+  await page.waitForFunction(() => {
+    const video = document.querySelector('video[data-gaze-video]')
+    return video && !video.paused && video.currentTime >= 1 && video.readyState >= 3
+  })
   console.log('Interrupting only the measured gaze socket while native screen/audio continues')
   interrupted = await page.evaluate(() => {
     const screen = window.qaSockets.find(
@@ -530,6 +536,10 @@ try {
   await page.setViewportSize({ width: 1366, height: 768 })
   await page.screenshot({ path: path.join(output, 'gaze-recovered-1366x768.png'), fullPage: true })
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Fall abschließen?' })
+    .getByRole('button', { name: 'Zur Diagnose', exact: true })
+    .click()
   await page.getByLabel('Was war das Problem?').fill('Synthetic recovery diagnosis')
   await page.getByRole('slider').click()
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()

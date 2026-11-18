@@ -6,6 +6,24 @@ import type { GazeLayout } from '../src/lib/gazeGeometry'
 import type { Question } from '../src/lib/questionnaire'
 
 const API = 'http://a04.invalid'
+const captureChecks: { video: boolean; gazeRequests: string[]; bridgeCommands: string[] }[] = []
+test.beforeEach(() => {
+  captureChecks.length = 0
+})
+test.afterEach(() => {
+  for (const state of captureChecks.filter((check) => !check.video)) {
+    expect(
+      state.gazeRequests,
+      'non-video screens must not create or upload gaze recordings',
+    ).toEqual([])
+    expect(state.bridgeCommands, 'non-video screens must not request gaze streaming').not.toContain(
+      'start_gaze',
+    )
+  }
+})
+
+type Snapshot = () => Promise<GazeLayout | undefined>
+
 test.use({ viewport: { width: 1920, height: 1080 }, screen: { width: 1920, height: 1080 } })
 const clip = readFileSync(new URL('./fixtures/stimulus.webm', import.meta.url))
 const source = JSON.parse(
@@ -48,9 +66,25 @@ async function openStep(page: Page, step: SessionStep) {
     localStorage.setItem('i18nextLng', 'de')
   })
   const state = {
+    video: step.kind === 'case_video',
+    gazeRequests: [] as string[],
+    bridgeCommands: [] as string[],
     layouts: [] as GazeLayout[],
     samples: [] as unknown[],
     unexpected: [] as string[],
+  }
+  captureChecks.push(state)
+  const snapshot: Snapshot = async () => {
+    if (state.video) return state.layouts.at(-1)
+    // Direct test-only geometry inspection keeps responsive AOI coverage without
+    // requesting tracker samples or persisting questionnaire/diagnosis layouts.
+    const layout: GazeLayout = await page.evaluate(async () => {
+      const modulePath = '/src/lib/aoi.ts'
+      const { capturePageGeometry } = await import(modulePath)
+      return capturePageGeometry()
+    })
+    state.layouts.push(layout)
+    return layout
   }
   await page.routeWebSocket('ws://127.0.0.1:8766', (ws) => {
     ws.send(
@@ -65,6 +99,7 @@ async function openStep(page: Page, step: SessionStep) {
     page.context().once('close', stopTimer)
     ws.onMessage((message) => {
       const command = JSON.parse(String(message)).type
+      state.bridgeCommands.push(command)
       if (command === 'start_gaze' && !timer)
         timer = setInterval(
           () =>
@@ -130,6 +165,11 @@ async function openStep(page: Page, step: SessionStep) {
     if (path.endsWith('/notes')) return json([])
     if (path.endsWith('/url')) return json({ signed_url: API + '/stimulus.webm' })
     if (path === '/stimulus.webm') return route.fulfill({ contentType: 'video/webm', body: clip })
+    if (path.startsWith('/gaze/recordings')) {
+      state.gazeRequests.push(`${request.method()} ${path}`)
+      if (!state.video)
+        return route.fulfill({ status: 400, json: { detail: 'Gaze capture is video-only' } })
+    }
     if (path === '/gaze/recordings') {
       state.layouts.push(request.postDataJSON().geometry)
       return json({ recording_id: 1 })
@@ -168,13 +208,15 @@ async function openStep(page: Page, step: SessionStep) {
   })
   await page.goto('/session')
   await page.evaluate(() => document.fonts.ready)
-  if (step.kind !== 'think_aloud') await expect.poll(() => state.samples.length).toBeGreaterThan(0)
+  if (state.video) await expect.poll(() => state.samples.length).toBeGreaterThan(0)
+  else if (step.kind !== 'think_aloud')
+    await expect(page.locator('.session-screen [data-aoi]').first()).toBeVisible()
   await expect(page.locator('.unsent')).toHaveCount(0)
   if (step.kind !== 'think_aloud')
     await expect
-      .poll(() => state.layouts.at(-1)?.aois?.some((area) => area.id === 'unsent_notice'))
+      .poll(async () => (await snapshot())?.aois?.some((area) => area.id === 'unsent_notice'))
       .toBe(false)
-  return state
+  return { ...state, snapshot }
 }
 
 function hit(layout: GazeLayout, point: { x: number; y: number }) {
@@ -194,7 +236,7 @@ function hit(layout: GazeLayout, point: { x: number; y: number }) {
 
 async function verifyInventory(
   page: Page,
-  layouts: GazeLayout[],
+  snapshot: Snapshot,
   info: TestInfo,
   name: string,
   clipped = false,
@@ -207,17 +249,33 @@ async function verifyInventory(
       const style = getComputedStyle(element)
       if (!box.width || !box.height || style.visibility === 'hidden' || style.display === 'none')
         return []
-      const x = Math.max(0, box.left),
-        y = Math.max(0, box.top),
-        right = Math.min(innerWidth, box.right),
-        bottom = Math.min(innerHeight, box.bottom)
+      if (element instanceof HTMLVideoElement && element.dataset.aoi === 'video') {
+        if (!element.videoWidth || !element.videoHeight) return []
+        const scale = Math.min(box.width / element.videoWidth, box.height / element.videoHeight)
+        const width = element.videoWidth * scale,
+          height = element.videoHeight * scale
+        const left = box.left + (box.width - width) / 2,
+          top = box.top + (box.height - height) / 2
+        return ['video_students', 'video_code'].flatMap((id, half) => {
+          const x = Math.max(0, left + (half * width) / 2),
+            y = Math.max(0, top)
+          const right = Math.min(innerWidth, left + ((half + 1) * width) / 2)
+          const bottom = Math.min(innerHeight, top + height)
+          return right > x && bottom > y ? [{ id, x, y, w: right - x, h: bottom - y }] : []
+        })
+      }
+      const margin = Number(element.getAttribute('data-aoi-margin') ?? 0)
+      const x = Math.max(0, box.left - margin),
+        y = Math.max(0, box.top - margin),
+        right = Math.min(innerWidth, box.right + margin),
+        bottom = Math.min(innerHeight, box.bottom + margin)
       if (right <= x || bottom <= y) return []
       return [{ id: element.getAttribute('data-aoi'), x, y, w: right - x, h: bottom - y }]
     }),
   )
   await expect
-    .poll(() => {
-      const actual = layouts.at(-1)?.aois ?? []
+    .poll(async () => {
+      const actual = (await snapshot())?.aois ?? []
       if (clipped)
         return (
           actual.length > 0 &&
@@ -243,7 +301,7 @@ async function verifyInventory(
       )
     })
     .toBe(true)
-  const layout = layouts.at(-1)!
+  const layout = (await snapshot())!
   const points = await page.evaluate((areas) => {
     // Status cards intentionally let mouse clicks pass through. Enable hit
     // testing only during this measurement to inspect their painted order.
@@ -255,11 +313,17 @@ async function verifyInventory(
     const points = areas.map((area) => {
       const x = area.x + area.w / 2,
         y = area.y + area.h / 2
+      const target = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-aoi]')
+      const expected =
+        target instanceof HTMLVideoElement
+          ? x < target.getBoundingClientRect().left + target.getBoundingClientRect().width / 2
+            ? 'video_students'
+            : 'video_code'
+          : (target?.dataset.aoi ?? null)
       return {
         x,
         y,
-        expected:
-          document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-aoi]')?.dataset.aoi ?? null,
+        expected,
       }
     })
     overlays.forEach((element, index) => {
@@ -283,7 +347,7 @@ async function verifyInventory(
 for (const task of source.ck_tasks) {
   test(`AOI inventory: ${task.question.id}`, async ({ page }, info) => {
     const state = await openStep(page, questionnaire([task.question], 'ck_tasks'))
-    const layout = await verifyInventory(page, state.layouts, info, task.question.id)
+    const layout = await verifyInventory(page, state.snapshot, info, task.question.id)
     for (const suffix of ['', '.prompt', '.code', '.answer'])
       expect(layout.aois?.some((area) => area.id === `question.${task.question.id}${suffix}`)).toBe(
         true,
@@ -300,7 +364,7 @@ for (const section of ['pck', 'mesp'] as const)
       const state = await openStep(page, questionnaire(task.questions, section, task.description))
       const layout = await verifyInventory(
         page,
-        state.layouts,
+        state.snapshot,
         info,
         `${section}-${task.source_task}`,
       )
@@ -349,15 +413,17 @@ test('AOIs cover all other field types, conditional visibility and changed answe
     show_if: { question: 'multiple_choice', equals: 'B' },
   })
   const state = await openStep(page, questionnaire(questions, 'demographics'))
-  expect(state.layouts.at(-1)?.aois?.some((area) => area.id.includes('conditional'))).toBe(false)
+  expect((await state.snapshot())?.aois?.some((area) => area.id.includes('conditional'))).toBe(
+    false,
+  )
   await page
     .locator('[data-aoi="question.multiple_choice"]')
     .getByRole('radio', { name: 'B', exact: true })
     .check()
   await page.locator('[data-aoi="question.conditional.answer"]').scrollIntoViewIfNeeded()
   await expect
-    .poll(() =>
-      state.layouts.at(-1)?.aois?.some((area) => area.id === 'question.conditional.answer'),
+    .poll(async () =>
+      (await state.snapshot())?.aois?.some((area) => area.id === 'question.conditional.answer'),
     )
     .toBe(true)
   await page
@@ -368,15 +434,17 @@ test('AOIs cover all other field types, conditional visibility and changed answe
   for (const question of questions) {
     await page.locator(`[data-aoi="question.${question.id}.answer"]`).scrollIntoViewIfNeeded()
     await expect
-      .poll(() =>
-        state.layouts.at(-1)?.aois?.some((area) => area.id === `question.${question.id}.answer`),
+      .poll(async () =>
+        (await state.snapshot())?.aois?.some(
+          (area) => area.id === `question.${question.id}.answer`,
+        ),
       )
       .toBe(true)
   }
-  await verifyInventory(page, state.layouts, info, 'scrolled-fields')
+  await verifyInventory(page, state.snapshot, info, 'scrolled-fields')
   await page.setViewportSize({ width: 1280, height: 720 })
-  await expect.poll(() => state.layouts.at(-1)?.window.inner_w).toBe(1280)
-  await verifyInventory(page, state.layouts, info, 'resized-fields')
+  await expect.poll(async () => (await state.snapshot())?.window.inner_w).toBe(1280)
+  await verifyInventory(page, state.snapshot, info, 'resized-fields')
 })
 
 test('case AOIs and all case/supervisor dialogs follow the foreground', async ({ page }, info) => {
@@ -396,15 +464,16 @@ test('case AOIs and all case/supervisor dialogs follow the foreground', async ({
   await expect
     .poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => video.readyState))
     .toBeGreaterThan(0)
-  const layout = await verifyInventory(page, state.layouts, info, 'case')
+  const layout = await verifyInventory(page, state.snapshot, info, 'case')
   for (const id of [
-    'video',
+    'video_students',
+    'video_code',
     'video_controls',
     'video_play_pause',
     'video_seek',
     'phase_label',
     'timer',
-    'task',
+    'task_button',
     'info_button',
     'student_task_button',
     'notes',
@@ -412,23 +481,28 @@ test('case AOIs and all case/supervisor dialogs follow the foreground', async ({
   ])
     expect(layout.aois?.some((area) => area.id === id)).toBe(true)
   for (const [button, modal] of [
+    ['task_button', 'task_dialog'],
     ['info_button', 'info_dialog'],
     ['student_task_button', 'student_task_dialog'],
     ['continue', 'case_exit_dialog'],
   ]) {
     await page.locator(`[data-aoi="${button}"]`).click()
-    await expect.poll(() => state.layouts.at(-1)?.active_modal).toBe(modal)
-    await expect.poll(() => state.layouts.at(-1)?.aois?.map((area) => area.id)).toEqual([modal])
+    await expect.poll(async () => (await state.snapshot())?.active_modal).toBe(modal)
+    await expect
+      .poll(async () => (await state.snapshot())?.aois?.map((area) => area.id).sort())
+      .toEqual(
+        modal === 'case_exit_dialog' ? [modal] : [modal, `${modal}_close`, `${modal}_text`].sort(),
+      )
     await info.attach(modal, {
-      body: JSON.stringify(state.layouts.at(-1)),
+      body: JSON.stringify(await state.snapshot()),
       contentType: 'application/json',
     })
     await page.keyboard.press('Escape')
-    await expect.poll(() => state.layouts.at(-1)?.active_modal).toBeNull()
+    await expect.poll(async () => (await state.snapshot())?.active_modal).toBeNull()
   }
   await page.keyboard.press('Control+Alt+Shift+KeyB')
-  await expect.poll(() => state.layouts.at(-1)?.active_modal).toBe('supervisor_dialog')
-  expect(state.layouts.at(-1)?.aois?.map((area) => area.id)).toEqual(['supervisor_dialog'])
+  await expect.poll(async () => (await state.snapshot())?.active_modal).toBe('supervisor_dialog')
+  expect((await state.snapshot())?.aois?.map((area) => area.id)).toEqual(['supervisor_dialog'])
   expect(state.unexpected).toEqual([])
 })
 
@@ -462,7 +536,7 @@ for (const kind of ['diagnosis', 'case_outro'] as const)
             questions,
           }
     const state = await openStep(page, step)
-    const layout = await verifyInventory(page, state.layouts, info, kind)
+    const layout = await verifyInventory(page, state.snapshot, info, kind)
     for (const id of kind === 'diagnosis'
       ? ['diagnosis_prompt', 'diagnosis_answer', 'notes', 'continue']
       : ['instructions', 'question.confidence.prompt', 'question.confidence.answer', 'continue'])
@@ -482,7 +556,7 @@ for (const scale of [1, 1.25, 1.5])
     try {
       const task = source.mesp_pages[0]
       const state = await openStep(page, questionnaire(task.questions, 'mesp', task.description))
-      const layout = await verifyInventory(page, state.layouts, info, `scale-${scale}`, scale > 1)
+      const layout = await verifyInventory(page, state.snapshot, info, `scale-${scale}`, scale > 1)
       expect(layout.dpr).toBe(scale)
       expect(layout.screen).toMatchObject({ w: viewport.width, h: viewport.height })
       const matrix = page.locator('.matrix')
@@ -498,11 +572,11 @@ for (const scale of [1, 1.25, 1.5])
       )
       expect(expected).toHaveLength(6)
       await expect
-        .poll(() => {
+        .poll(async () => {
           const answers =
-            state.layouts
-              .at(-1)
-              ?.aois?.filter((area) => area.id === 'question.mesp_pre_1a.answer') ?? []
+            (await state.snapshot())?.aois?.filter(
+              (area) => area.id === 'question.mesp_pre_1a.answer',
+            ) ?? []
           // Stacked choices sit below their prompt. Table cells sit to its
           // right. Both layouts must retain every choice with exact DOM bounds.
           return (
@@ -519,8 +593,8 @@ for (const scale of [1, 1.25, 1.5])
           )
         })
         .toBe(true)
-      await verifyInventory(page, state.layouts, info, `scale-${scale}-scrolled`, true)
-      const recorded = state.layouts.at(-1)!
+      await verifyInventory(page, state.snapshot, info, `scale-${scale}-scrolled`, true)
+      const recorded = (await state.snapshot())!
       await info.attach(`scale-${scale}-scrolled`, {
         body: JSON.stringify(recorded),
         contentType: 'application/json',
@@ -579,10 +653,11 @@ test('horizontally scrolled matrix answers exclude the sticky prompt and scrollp
     true,
   )
   await expect
-    .poll(() => {
+    .poll(async () => {
       const actual =
-        state.layouts.at(-1)?.aois?.filter((area) => area.id === 'question.mesp_pre_1a.answer') ??
-        []
+        (await state.snapshot())?.aois?.filter(
+          (area) => area.id === 'question.mesp_pre_1a.answer',
+        ) ?? []
       return (
         actual.length === measured.expected.length &&
         actual.every((area, index) =>
@@ -593,7 +668,7 @@ test('horizontally scrolled matrix answers exclude the sticky prompt and scrollp
       )
     })
     .toBe(true)
-  await verifyInventory(page, state.layouts, info, 'matrix-horizontal-scroll', true)
+  await verifyInventory(page, state.snapshot, info, 'matrix-horizontal-scroll', true)
   expect(state.unexpected).toEqual([])
 })
 
@@ -609,13 +684,13 @@ test('visual viewport zoom is retained so unsupported mapping can be rejected', 
   )
   const cdp = await context.newCDPSession(page)
   await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1.5 })
-  await expect.poll(() => state.layouts.at(-1)?.visual_viewport?.scale).toBe(1.5)
+  await expect.poll(async () => (await state.snapshot())?.visual_viewport?.scale).toBe(1.5)
   await info.attach('pinch-zoom-geometry', {
-    body: JSON.stringify(state.layouts.at(-1)),
+    body: JSON.stringify(await state.snapshot()),
     contentType: 'application/json',
   })
   await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 })
-  await expect.poll(() => state.layouts.at(-1)?.visual_viewport?.scale).toBe(1)
+  await expect.poll(async () => (await state.snapshot())?.visual_viewport?.scale).toBe(1)
 })
 
 test('a retained gaze delivery failure does not add a task overlay or cover its answer', async ({
@@ -639,8 +714,8 @@ test('a retained gaze delivery failure does not add a task overlay or cover its 
   ).toHaveCount(0)
   await page.locator('textarea').fill('Antwort bleibt erreichbar')
   await expect(page.locator('textarea')).toHaveValue('Antwort bleibt erreichbar')
-  await verifyInventory(page, state.layouts, info, 'gaze-delivery-without-overlay')
-  expect(state.layouts.at(-1)?.aois?.some((area) => area.id === 'gaze_delivery')).toBe(false)
+  await verifyInventory(page, state.snapshot, info, 'gaze-delivery-without-overlay')
+  expect((await state.snapshot())?.aois?.some((area) => area.id === 'gaze_delivery')).toBe(false)
 })
 
 test('replay gaze follows the rendered picture through resize, fullscreen and visibility toggle', async ({

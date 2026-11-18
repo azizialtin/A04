@@ -97,6 +97,7 @@ async def list_gaze_recordings(
         .outerjoin(Video, Video.id == GazeRecording.video_id)
         .outerjoin(Questionnaire, Questionnaire.id == GazeRecording.questionnaire_id)
         .join(Participant, Participant.id == GazeRecording.participant_id)
+        .where(GazeRecording.step_kind == "case_video")
         .order_by(GazeRecording.started_at.desc())
         .limit(limit)
     )

@@ -32,7 +32,8 @@ export default function GazeHealthStatus({
     guard.phase === 'verified' &&
     health.mappingVerified === true &&
     (native.capable ? !!native.proof && guard.profile === 'native_viewport_v1' : guard.enabled)
-  const healthy = state === 'tracking' && (!mappingActive || mapped)
+  const healthy =
+    (state === 'tracking' && (!mappingActive || mapped)) || (preflight && state === 'tracker_ready')
   const help =
     state === 'bridge_unreachable'
       ? t(permission === 'denied' ? 'gaze_health.permission_denied' : 'gaze_health.connection_help')
@@ -55,8 +56,12 @@ export default function GazeHealthStatus({
         {mappingActive && (
           <span>{t(mapped ? 'mapping_ready' : 'mapping_waiting', { ns: 'displayGuard' })}</span>
         )}
-        <span>{t('gaze_health.counts', { received: health.received, valid: health.valid })}</span>
-        {state !== 'tracking' ? (
+        {preflight ? (
+          <span>{t('gaze_health.preflight_status')}</span>
+        ) : (
+          <span>{t('gaze_health.counts', { received: health.received, valid: health.valid })}</span>
+        )}
+        {state !== 'tracking' && !(preflight && state === 'tracker_ready') ? (
           <button type="button" className="btn btn-ghost" onClick={retry}>
             {t('gaze_health.retry')}
           </button>

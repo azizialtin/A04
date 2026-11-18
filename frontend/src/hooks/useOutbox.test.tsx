@@ -54,7 +54,12 @@ test('restores the pending count when participant identity arrives after mountin
   stop()
   function Handoff({ id }: { id?: string }) {
     const count = useOutbox(id)
-    return <button disabled={count > 0}>Next participant</button>
+    return (
+      <>
+        <button disabled={count.pending > 0}>Next participant</button>
+        <output aria-label="Retrying writes">{count.retrying}</output>
+      </>
+    )
   }
   const view = render(
     <StrictMode>
@@ -68,11 +73,13 @@ test('restores the pending count when participant identity arrives after mountin
   )
   await act(async () => drain())
   expect(screen.getByRole('button')).toBeDisabled()
+  expect(screen.getByLabelText('Retrying writes')).toHaveTextContent('1')
   expect(pending('T-001')).toBe(1)
 
   vi.mocked(participantApi.createNote).mockResolvedValue({ id: 1 })
   await act(async () => drain())
   expect(screen.getByRole('button')).toBeEnabled()
+  expect(screen.getByLabelText('Retrying writes')).toHaveTextContent('0')
 })
 
 test('the handoff count includes only its participant and survives a remount', () => {
@@ -82,7 +89,7 @@ test('the handoff count includes only its participant and survives a remount', (
   enqueue('note', { video_id: 7, text: 'Current participant' })
   stop()
   function Count() {
-    return <output>{useOutbox('T-001')}</output>
+    return <output>{useOutbox('T-001').pending}</output>
   }
   const first = render(<Count />)
   expect(screen.getByRole('status')).toHaveTextContent('1')

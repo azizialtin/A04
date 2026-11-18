@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.models.gaze_recording import GazeRecording
-from app.models.questionnaire import Questionnaire
+from app.models.video import Video
 from app.services.gaze_analysis import GazeLayout, averaged_gaze
 from app.services.gaze_export import (
     GAZE_COLUMNS,
@@ -69,6 +69,55 @@ def test_aoi_mapping_respects_browser_chrome_time_priority_and_visibility():
         GazeLayout([hidden]).locate({**SAMPLE, "ts": 2000, "geometry_ts": 2000})["aoi"]
         == "unmapped"
     )
+
+
+@pytest.mark.parametrize(
+    ("viewport_x", "viewport_y", "expected"),
+    [
+        (0, 100, "video_students"),
+        (199.999, 100, "video_students"),
+        (200, 100, "video_code"),
+        (399.999, 100, "video_code"),
+        (400, 100, "other"),
+        (200, 49, "other"),
+        (200, 250, "other"),
+        (440, 100, "task_button"),
+        (450, 125, "other"),
+        (450, 150, "info_button"),
+    ],
+)
+def test_video_halves_share_exact_midpoint_and_margins_are_unassigned(
+    viewport_x, viewport_y, expected
+):
+    geometry = {
+        **GEOMETRY,
+        "aois": [
+            {"id": "video_students", "x": 0, "y": 50, "w": 200, "h": 200},
+            {"id": "video_code", "x": 200, "y": 50, "w": 200, "h": 200},
+            {"id": "task_button", "x": 440, "y": 90, "w": 100, "h": 30},
+            {"id": "info_button", "x": 440, "y": 140, "w": 100, "h": 30},
+        ],
+    }
+    sample = {**SAMPLE, "lx": (viewport_x + 60) / 1000, "ly": (viewport_y + 100) / 800}
+    assert GazeLayout([geometry]).locate(sample)["aoi"] == expected
+
+
+@pytest.mark.parametrize("dialog", ["task_dialog", "info_dialog", "student_task_dialog"])
+def test_popup_layout_tracks_text_and_never_assigns_occluded_video(dialog):
+    geometry = {
+        **GEOMETRY,
+        "active_modal": dialog,
+        "aois": [
+            {"id": dialog, "x": 0, "y": 0, "w": 100, "h": 100},
+            {"id": f"{dialog}_text", "x": 20, "y": 50, "w": 70, "h": 40},
+        ],
+    }
+    layout = GazeLayout([geometry])
+    assert layout.locate(SAMPLE)["aoi"] == f"{dialog}_text"
+    assert layout.locate(SAMPLE)["active_modal"] == dialog
+    assert layout.locate({**SAMPLE, "lx": 0.07})["aoi"] == dialog
+    assert layout.locate({**SAMPLE, "lx": 0.3})["aoi"] == "other"
+    assert layout.locate({**SAMPLE, "lv": False})["aoi"] == "invalid"
 
 
 def test_historical_missing_aoi_is_distinct_from_empty_layout_and_invalid_gaze():
@@ -213,6 +262,43 @@ def test_raw_csv_explains_unsupported_mapping_without_losing_raw_signals(tmp_pat
     assert row["geometry_ts"] == "1000" and row["viewport_x"] == "40.0"
 
 
+def test_raw_csv_preserves_clock_uncertain_samples_across_popup_and_recovery(tmp_path):
+    popup = {
+        **GEOMETRY,
+        "ts": 1600,
+        "active_modal": "task_dialog",
+        "aois": [{"id": "task_dialog_text", "x": 0, "y": 0, "w": 200, "h": 200}],
+    }
+    samples = [
+        {**SAMPLE, "ts": 999, "geometry_ts": None},
+        {**SAMPLE, "ts": 1490, "geometry_ts": None},
+        {**SAMPLE, "ts": 1750, "geometry_ts": 1600},
+        # A delayed sample remains uncertain even after mapping has recovered.
+        {**SAMPLE, "ts": 1495, "geometry_ts": None},
+    ]
+    rec = recording(
+        tmp_path,
+        samples,
+        participant_id="P1",
+        video_id=8,
+        step_kind="case_video",
+        step_index=12,
+        questionnaire_id=None,
+        sampling_rate_hz=120,
+        geometry=[GEOMETRY, popup],
+    )
+    body = b"".join(csv_batches(rec, SimpleNamespace(), [1, "Video", "pre_test"], lambda v: v))
+    rows = list(csv.DictReader(io.StringIO(body.decode()), fieldnames=GAZE_COLUMNS))
+    assert [row["ts"] for row in rows] == ["999", "1490", "1750", "1495"]
+    assert all(row["lx"] == "0.1" and row["lv"] == "True" for row in rows)
+    for row in (rows[0], rows[1], rows[3]):
+        assert row["geometry_ts"] == row["layout_ts"] == row["active_modal"] == ""
+        assert row["aoi"] == row["aoi_status"] == "unmapped"
+    assert rows[2]["geometry_ts"] == rows[2]["layout_ts"] == "1600"
+    assert rows[2]["active_modal"] == "task_dialog"
+    assert rows[2]["aoi"] == "task_dialog_text" and rows[2]["aoi_status"] == "matched"
+
+
 def test_gcs_reader_uses_each_recordings_mode_and_streams_objects(tmp_path, monkeypatch):
     from google.cloud import storage
 
@@ -321,58 +407,74 @@ def test_raw_reader_refuses_incomplete_or_corrupt_data(tmp_path, damage):
         list(iter_samples(rec, SimpleNamespace()))
 
 
-async def test_questionnaire_gaze_is_authorized_and_visible_in_admin(
-    client, db, seed_study, seed_participant, participant_headers, admin_headers
+@pytest.mark.parametrize("step_kind", ["questionnaire", "diagnosis", "case_outro"])
+async def test_historical_non_video_gaze_is_preserved_but_excluded_from_research_tables(
+    client,
+    db,
+    seed_study,
+    seed_participant,
+    participant_headers,
+    admin_headers,
+    step_kind,
+    tmp_path,
 ):
-    question = Questionnaire(study_id=seed_study.id, placement="pre_test", title="Page")
-    db.add(question)
-    await db.flush()
-    response = await client.post(
-        "/gaze/recordings",
-        headers=participant_headers,
-        json={
-            "step_kind": "questionnaire",
-            "step_index": 1,
-            "questionnaire_id": question.id,
-            "sampling_rate_hz": 120,
-            "geometry": GEOMETRY,
-        },
+    stored = recording(tmp_path, [SAMPLE])
+    rec = GazeRecording(
+        participant_id=seed_participant.id,
+        step_kind=step_kind,
+        sample_count=1,
+        storage_prefix=stored.storage_prefix,
+        geometry=[GEOMETRY],
     )
-    assert response.status_code == 201
-    rec = await db.get(GazeRecording, response.json()["recording_id"])
-    assert rec.video_id is None and rec.step_kind == "questionnaire"
+    db.add(rec)
+    await db.flush()
     rows = (await client.get("/admin/gaze/recordings", headers=admin_headers)).json()["items"]
-    assert rows[0]["questionnaire_title"] == "Page"
-    assert rows[0]["replay_available"] is False and rows[0]["screen"] is None
+    assert rows == []
     replay = await client.get(f"/admin/gaze/recordings/{rec.id}/replay", headers=admin_headers)
     assert replay.status_code == 404
-    forbidden = await client.post(
-        "/gaze/recordings",
-        headers=participant_headers,
-        json={
-            "step_kind": "questionnaire",
-            "questionnaire_id": question.id + 99,
-            "sampling_rate_hz": 120,
-        },
-    )
-    assert forbidden.status_code == 404
+    for kind in ("gaze", "gaze_recordings"):
+        response = await client.get(
+            f"/admin/studies/{seed_study.id}/export/{kind}", headers=admin_headers
+        )
+        assert response.status_code == 200
+        assert list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig")))) == []
+    counts = (
+        await client.get(f"/admin/studies/{seed_study.id}/exports", headers=admin_headers)
+    ).json()
+    assert all(row["rows"] == 0 for row in counts if row["kind"] in {"gaze", "gaze_recordings"})
+    assert await db.get(GazeRecording, rec.id) is rec
+    assert list(iter_samples(rec, SimpleNamespace())) == [SAMPLE]
 
 
 async def test_raw_export_has_samples_context_aoi_and_explicit_storage_failure(
     client, db, seed_study, seed_participant, admin_headers, tmp_path
 ):
     stored = recording(tmp_path, [SAMPLE, {**SAMPLE, "ts": 1001, "lv": False}])
+    video = Video(study_id=seed_study.id, title="Case")
+    db.add(video)
+    await db.flush()
     rec = GazeRecording(
         participant_id=seed_participant.id,
-        video_id=None,
-        step_kind="questionnaire",
+        video_id=video.id,
+        step_kind="case_video",
         step_index=1,
         sample_count=2,
         storage_mode="local",
         storage_prefix=stored.storage_prefix,
         geometry=[GEOMETRY],
     )
-    db.add(rec)
+    db.add_all(
+        [
+            rec,
+            # Historical non-video storage must neither count nor block this export.
+            GazeRecording(
+                participant_id=seed_participant.id,
+                video_id=video.id,
+                step_kind="diagnosis",
+                sample_count=50,
+            ),
+        ]
+    )
     await db.flush()
     response = await client.get(
         f"/admin/studies/{seed_study.id}/export/gaze", headers=admin_headers
@@ -381,7 +483,7 @@ async def test_raw_export_has_samples_context_aoi_and_explicit_storage_failure(
     assert response.content.startswith(b"\xef\xbb\xbf")
     rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
     assert len(rows) == 2
-    assert rows[0]["step_kind"] == "questionnaire" and rows[0]["video_id"] == ""
+    assert rows[0]["step_kind"] == "case_video" and rows[0]["video_id"] == str(video.id)
     assert rows[0]["aoi"] == "question:q1" and rows[1]["aoi"] == "invalid"
     assert rows[0]["rx"] == "0.8" and rows[0]["rv"] == "False"
     counts = (
@@ -389,6 +491,11 @@ async def test_raw_export_has_samples_context_aoi_and_explicit_storage_failure(
     ).json()
     by_kind = {r["kind"]: r for r in counts}
     assert by_kind["gaze"]["rows"] == 2 and by_kind["gaze_recordings"]["rows"] == 1
+    metadata = await client.get(
+        f"/admin/studies/{seed_study.id}/export/gaze_recordings", headers=admin_headers
+    )
+    metadata_rows = list(csv.DictReader(io.StringIO(metadata.content.decode("utf-8-sig"))))
+    assert len(metadata_rows) == 1 and metadata_rows[0]["step_kind"] == "case_video"
     (tmp_path / "chunks" / "chunk_000000000.ndjson").unlink()
     missing = await client.get(f"/admin/studies/{seed_study.id}/export/gaze", headers=admin_headers)
     assert missing.status_code == 503
@@ -402,7 +509,7 @@ async def test_corrupt_raw_chunk_aborts_download_instead_of_returning_partial_cs
     rec = GazeRecording(
         participant_id=seed_participant.id,
         sample_count=1,
-        step_kind="questionnaire",
+        step_kind="case_video",
         storage_prefix=stored.storage_prefix,
     )
     db.add(rec)

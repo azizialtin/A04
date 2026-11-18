@@ -57,29 +57,33 @@ const outro: SessionStep = {
 beforeEach(() => capture.mockReset())
 afterEach(() => resetGazeDeliverySession())
 
-test('the measurement owner follows the exact page and keeps questionnaire identity without a video', () => {
+test('only video screens own a gaze recording across the participant flow', () => {
   const { rerender } = render(<SessionGazeCapture step={questionnaire} />)
-  expect(capture).toHaveBeenLastCalledWith({
-    video_id: null,
-    step_kind: 'questionnaire',
-    step_index: 3,
-    questionnaire_id: 12,
-  })
+  expect(capture).toHaveBeenLastCalledWith(null)
   rerender(<SessionGazeCapture step={{ ...caseVideo, index: 8 }} />)
   expect(capture).toHaveBeenLastCalledWith({ video_id: 7, step_kind: 'case_video', step_index: 8 })
   rerender(<SessionGazeCapture step={{ ...diagnosis, index: 9 }} />)
-  expect(capture).toHaveBeenLastCalledWith({ video_id: 7, step_kind: 'diagnosis', step_index: 9 })
+  expect(capture).toHaveBeenLastCalledWith(null)
   rerender(<SessionGazeCapture step={{ ...outro, index: 10 }} />)
-  expect(capture).toHaveBeenLastCalledWith({
-    video_id: 7,
-    step_kind: 'case_outro',
-    step_index: 10,
-    questionnaire_id: 15,
-  })
+  expect(capture).toHaveBeenLastCalledWith(null)
 })
 
-test('intro, welcome, thanks, replay and an outro without questions are not measured', () => {
+test('all other participant screens are excluded from gaze measurement', () => {
   const excluded: SessionStep[] = [
+    questionnaire,
+    diagnosis,
+    outro,
+    { ...base, kind: 'calibration' },
+    { ...base, kind: 'phase_transition', phase_type: 'training', phase_number: 1 },
+    {
+      ...base,
+      kind: 'section_intro',
+      section_key: 'ck',
+      title: '',
+      body: '',
+      time_limit_seconds: null,
+    },
+    { ...base, kind: 'sosci', variant: 'pretest', url: '', id_param: 'id', participant_id: 'P1' },
     { ...base, kind: 'welcome' },
     { ...base, kind: 'thanks' },
     { ...base, kind: 'case_intro', phase_type: 'training', video_id: 7, title: '', body: '' },
@@ -105,7 +109,7 @@ test('intro, welcome, thanks, replay and an outro without questions are not meas
 })
 
 test.each([questionnaire, caseVideo, diagnosis, outro])(
-  '$kind captures in the background without status boxes or delivery warnings',
+  '$kind keeps capture setup and delivery warnings outside task screens',
   (step) => {
     const healthy = {
       state: 'tracking' as const,
@@ -119,7 +123,9 @@ test.each([questionnaire, caseVideo, diagnosis, outro])(
     const { container, rerender } = render(<SessionGazeCapture step={step} />)
     expect(capture).toHaveBeenCalledOnce()
     const context = capture.mock.calls[0][0]
-    expect(context).toMatchObject({ step_kind: step.kind, step_index: step.index })
+    if (step.kind === 'case_video')
+      expect(context).toMatchObject({ step_kind: step.kind, step_index: step.index })
+    else expect(context).toBeNull()
     expect(container).toBeEmptyDOMElement()
 
     capture.mockReturnValue({

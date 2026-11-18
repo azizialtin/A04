@@ -33,7 +33,11 @@ LOGGED_ON_MAIN_SCREEN = {
 
 
 def test_every_main_screen_variable_has_an_event():
-    assert set(MAIN_SCREEN_VARIABLES.values()) == LOGGED_ON_MAIN_SCREEN
+    # The task popup extends the original workbook without renaming its keys.
+    assert set(MAIN_SCREEN_VARIABLES.values()) == LOGGED_ON_MAIN_SCREEN | {
+        "click_event_task_button",
+        "click_event_close_task_pop_up",
+    }
 
 
 def test_one_press_of_play_is_one_row():

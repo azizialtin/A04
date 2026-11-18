@@ -120,7 +120,7 @@ export default function SessionPage() {
   const updateProgress = useUpdateProgress()
   const respond = useRespondQuestionnaire()
   const stepBack = useStepBack()
-  const unsent = useOutbox(me.data?.id)
+  const outbox = useOutbox(me.data?.id)
   const stepNow = session.data?.steps[session.data.current_step_index]
   const guardScope = displayGuardScope(stepNow)
   const guard = useDisplayGuard(me.data?.id, guardScope)
@@ -245,7 +245,7 @@ export default function SessionPage() {
   if (!step || current_step_index >= total_steps) {
     return (
       <>
-        <ThanksScreen pendingWrites={unsent} />
+        <ThanksScreen pendingWrites={outbox.pending} />
         {backDialog}
       </>
     )
@@ -403,7 +403,6 @@ export default function SessionPage() {
           pilot={pilot}
           progressLabel={pilot ? pilotLabel : undefined}
           videoId={step.video_id}
-          taskDescription={step.task_description}
           infoText={step.info_text}
           studentTaskText={step.student_task_text}
           timeLimitSeconds={step.time_limit_seconds}
@@ -484,7 +483,7 @@ export default function SessionPage() {
     case 'thanks':
       // The hand-over screen: it offers the way back to the id prompt, and
       // needs to know whether this run still has writes in flight.
-      content = <ThanksScreen pendingWrites={unsent} />
+      content = <ThanksScreen pendingWrites={outbox.pending} />
       break
     default:
       content = <div className="fullpage is-danger">{t('session.error')}</div>
@@ -503,7 +502,7 @@ export default function SessionPage() {
   // Sits outside the shell: the case screen has no chrome, and that is exactly
   // where notes are written.
   const unsentBanner =
-    unsent > 0 ? (
+    outbox.retrying > 0 ? (
       <div
         className="unsent"
         role="status"
@@ -511,7 +510,7 @@ export default function SessionPage() {
         data-aoi-overlay="true"
         data-aoi-priority="100"
       >
-        {t('session.unsent', { count: unsent })}
+        {t('session.unsent', { count: outbox.retrying })}
       </div>
     ) : null
 

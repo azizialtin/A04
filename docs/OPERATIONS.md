@@ -153,27 +153,39 @@ Participant progress reaches 100% when the participant or session is completed,
 including runs whose saved pointer is on the final thank-you screen. The saved
 zero-based pointer remains unchanged.
 
-Case-level gaze statistics count only `case_video` recordings; participant and
-study totals still include questionnaire samples. The displayed Erfassungsquote
+Case, participant and study gaze statistics count only `case_video` recordings.
+The displayed Erfassungsquote
 is an estimate of sample delivery, not eye validity or calibration accuracy.
 Its denominator sums each completed recording's server-clock duration multiplied
 by that recording's nominal sampling rate, so resumed attempts, gaps and mixed
 rates are handled separately. Upload delays can lower this estimate. Open or
 inconsistent recordings (including impossible sample counts) show no percentage;
 they are never silently clamped to 100%. Historical records without usable timing
-also show no percentage. Raw gaze data and CSV exports are unchanged.
+also show no percentage. Stored historical data is not deleted.
 
-`gaze.csv` is one row per stored sample, including invalid samples. It preserves
+`gaze.csv` is one row per stored video-screen sample, including invalid samples. It preserves
 `ts`, `device_ts`, left/right coordinates, validity and pupil diameters. It also
 includes participant/recording ids, case columns where applicable, `step_kind`,
 `step_index` and `questionnaire_id`. The metadata formerly exported as
 `gaze.csv` is now `gaze_recordings.csv`. A short metadata file is not evidence
 that only that many gaze samples were captured.
 
-New recordings cover the main case screen, standalone in-app questionnaire
-pages, diagnosis and case-outro screens. Standalone pages have no `video_id`.
-They appear in the admin recordings list, but only case recordings have the
-case replay. SoSci runs in another tab and is outside this capture scope.
+New recordings cover only the `case_video` screen, including pauses, notes and
+popups. Navigation stops its gaze subscription synchronously; the remaining
+video samples may finish uploading after navigation. Questionnaires, diagnosis,
+case introductions/outros and think-aloud do not collect research gaze samples
+or layout coordinates. The pre-case tracker check requests connection status
+only; sample reception/validity is checked once the video screen starts.
+Optional calibration retains its separate validation measurements and export.
+The pilot's display checks still protect questionnaires, diagnosis and assigned
+outro questionnaires independently of gaze collection; they do not start gaze
+recordings on those screens.
+The API rejects non-video recording starts and new samples/layouts for old
+non-video recordings. Gaze tables, CSVs and their counts exclude those historical
+non-video recordings, while their database rows and raw files remain intact.
+Deploy the frontend and backend together; older cached clients attempting
+non-video capture will receive HTTP 422. This restriction needs no new database
+migration. SoSci remains outside the capture scope.
 
 The export reads raw NDJSON from each recording's own local/GCS storage mode;
 it does not use the replay's reduced point set. Rows retain native samples,
@@ -210,6 +222,82 @@ eyes are retained in the raw columns but excluded from the derived binocular
 mean; both invalid/unknown eyes produce `invalid`. A valid point outside the
 display/viewport is `offscreen`; a visible known layout with no matching area
 is `other`; a hit has the stable AOI id and `aoi_status=matched`.
+Clock rollback detection checks both layout measurements and sample receipt
+times against the highest browser clock reading seen during the video. An
+observed rollback of more than 100 ms keeps subsequent raw samples but disables
+AOI attribution for the rest of that recording; `gaze_capture_status` events
+carry `clock_uncertain: true`. The 100 ms threshold is a recovery policy, not
+evidence of what caused a clock adjustment.
+
+For smaller detected rollbacks, samples remain raw/unmapped until a fresh DOM
+measurement is later than the pre-rollback high-water mark plus 100 ms, and
+later than every bridge timestamp received within that guard window. This
+guard accounts for the browser and bridge clocks adjusting independently. The
+new measurement is saved even when the layout is unchanged. Samples received
+after recovery map only if their timestamps are strictly newer than that
+measurement plus another 100 ms guard for bridge clock lead. Bridge frames
+received after the first guard window do not keep moving the recovery boundary;
+otherwise a slightly faster bridge clock could prevent recovery indefinitely.
+The uncertainty cutoff is retained and can only advance: older
+delayed samples stay unmapped even after recovery or another rollback. This
+conservatively includes delayed samples preceding the first rollback observation.
+
+Each recording's closing `gaze_capture_status` event (`state:
+capture_finished`, in the `payload` column of `events.csv`) carries
+`clock_rollbacks`: how many times a clock reading, taken at a layout
+measurement or a sample receipt, was lower than the reading before it. A step
+back counts once; the readings that follow while the clock catches up do not.
+With `clock_uncertain: false`, every counted rollback was recovered from as
+described above, and each leaves samples `unmapped` for about 0.2–1.3 s after
+the step while the page is visible: the two 100 ms guards plus the wait for the
+next layout measurement, which is taken at least once a second. A rollback that
+falls entirely between two readings cannot be observed and is not counted. The
+count shows how often a given machine's clock steps back during capture.
+
+Near video entry, a small rollback can make genuine video samples appear older
+than entry. The accepted timestamp boundary is lowered to the pre-rollback
+high-water mark minus 100 ms only when that extends before entry. Samples in
+this overlap are retained without AOIs, including delayed arrivals; clearly
+older frames are still rejected. Wall-clock timestamps alone cannot distinguish
+stale frames from genuine video samples within the overlap. Without a detected
+rollback, the normal entry boundary is unchanged. Collection remains limited
+to the active video subscription.
+
+The video picture has two AOIs: `video_students` is its left half and
+`video_code` its right half. The boundary is exactly the midpoint of the
+rendered picture (`object-fit: contain`), before viewport/scroll clipping;
+letterbox/pillarbox bars belong to neither half. The boundary itself belongs
+to `video_code` (half-open rectangles), so a sample never belongs to both.
+Until video metadata supplies the actual frame size, no video AOI is assigned.
+The controls underneath retain their own AOIs. Historical single-`video` AOIs
+are preserved as captured; the export does not relabel old data.
+
+The three rail buttons have at least 24 CSS pixels of space between them and
+a 6-pixel AOI margin, leaving at least 12 pixels unassigned between neighboring
+button AOIs. Margins are clipped at scroll-container and viewport boundaries.
+`task_button` opens **Aufgabenstellung**, `info_button` opens **Diagnose
+Definition**, and `student_task_button` opens the student task/code. The
+instruction popup uses the standard participant guidance; the researcher’s
+case-specific task wording remains on the diagnosis screen.
+
+Each text popup has a container AOI (`task_dialog`, `info_dialog`,
+`student_task_dialog`), a higher-priority text-body AOI (suffix `_text`) and a
+separate close-button AOI (suffix `_close`). Only the active modal and any
+notifications actually painted above it are eligible; gaze on its backdrop is
+`other`, never attributed to the video underneath. Scrolled-away text is
+excluded from the visible body rectangle.
+
+The interaction log includes `task_opened`/`task_closed`,
+`info_opened`/`info_closed` and `student_task_opened`/`student_task_closed`.
+Close payloads contain `durationMs` (monotonic elapsed open time) and `reason`;
+normal dismissals, screen exits, failed progression and ordinary page exits
+close the interval. Automatic closures remain exposure events but do not receive
+a codebook click-variable label. Events use the durable interaction outbox. An abrupt browser
+or machine crash can still leave an unmatched open event: treat that duration
+as unknown. Open time includes periods without gaze or with the browser hidden;
+it measures availability of the text, not reading. Use valid samples assigned
+to the `_text` AOI for gaze-based attention analysis and specify the fixation/
+dwell estimator and treatment of missing samples separately.
 
 Each recording accepts up to 10,000 layout snapshots. After that limit, the
 client keeps collecting gaze with `geometry_ts=null`, so those samples remain

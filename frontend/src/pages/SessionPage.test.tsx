@@ -14,6 +14,7 @@ const enter = vi.fn()
 const stepBack = vi.fn()
 let currentStepIndex = 0
 let sessionRefetchError = false
+let outboxStatus = { pending: 0, retrying: 0 }
 let me: { id: string; study_name: string; status: string } | undefined
 let guard: DisplayGuardSnapshot
 const useGuard = vi.fn((owner: string | undefined, scope: 'required' | 'monitor' | 'suspended') => {
@@ -126,7 +127,7 @@ vi.mock('../hooks/participant', () => ({
   useFinishCK: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
-vi.mock('../hooks/useOutbox', () => ({ useOutbox: () => 0 }))
+vi.mock('../hooks/useOutbox', () => ({ useOutbox: () => outboxStatus }))
 // The case screen brings the player, the tracker and the recorder with it;
 // here it only has to be the screen the bar is drawn over.
 vi.mock('../components/session/CaseVideoScreen', () => ({
@@ -137,7 +138,14 @@ vi.mock('../components/session/ThinkAloudScreen', () => ({
     <button onClick={onComplete}>Replay next</button>
   ),
 }))
-vi.mock('../components/session/ThanksScreen', () => ({ default: () => <p>Finished</p> }))
+vi.mock('../components/session/ThanksScreen', () => ({
+  default: ({ pendingWrites }: { pendingWrites: number }) => (
+    <>
+      <p>Finished</p>
+      <output aria-label="Pending writes">{pendingWrites}</output>
+    </>
+  ),
+}))
 vi.mock('../hooks/useGazePreflight', () => ({
   useGazePreflight: () => ({
     state: 'tracking',
@@ -158,6 +166,7 @@ beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   currentStepIndex = 0
   sessionRefetchError = false
+  outboxStatus = { pending: 0, retrying: 0 }
   me = { id: 'T-1', study_name: 'S', status: 'active' }
   respond.mockClear()
   stepBack.mockClear()
@@ -698,6 +707,35 @@ test.each([0, 4])('shows step %s without persistent tracking notices', (index) =
   expect(container.querySelector('[data-aoi="gaze_health"]')).toBeNull()
   expect(container.querySelector('[data-aoi="display_check_notice"]')).toBeNull()
   expect(container.querySelector('[data-aoi="gaze_delivery"]')).toBeNull()
+})
+
+test.each([0, 4])('only failed background saves display the retry warning on step %s', (index) => {
+  currentStepIndex = index
+  outboxStatus = { pending: 2, retrying: 0 }
+  const content = () => (
+    <AuthProvider>
+      <ToastProvider>
+        <SessionPage />
+      </ToastProvider>
+    </AuthProvider>
+  )
+  const { container, rerender } = render(content())
+  expect(container.querySelector('.unsent')).toBeNull()
+
+  outboxStatus = { pending: 2, retrying: 1 }
+  rerender(content())
+  expect(container.querySelector('.unsent')).toHaveTextContent('1 Eingabe noch nicht gespeichert')
+
+  outboxStatus = { pending: 1, retrying: 0 }
+  rerender(content())
+  expect(container.querySelector('.unsent')).toBeNull()
+})
+
+test('completion receives pending writes even when none are retrying', () => {
+  currentStepIndex = STEPS.length
+  outboxStatus = { pending: 1, retrying: 0 }
+  view()
+  expect(screen.getByLabelText('Pending writes')).toHaveTextContent('1')
 })
 
 test('starts each displayed step at the top, without jumping on same-page updates', () => {

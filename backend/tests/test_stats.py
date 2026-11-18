@@ -302,6 +302,46 @@ async def test_the_overview_totals_every_study_at_once(client, run, admin_header
     assert row["last_activity_at"] is not None
 
 
+async def test_automatic_popup_closures_are_not_labelled_clicks_in_statistics(
+    client, db, run, admin_headers
+):
+    participant = run["participant"]
+    db.add_all(
+        [
+            InteractionLog(
+                participant_id=participant.id,
+                event_type="task_closed",
+                payload={"reason": reason, "durationMs": 1000},
+            )
+            for reason in ("dismissed", "screen_exit")
+        ]
+        + [
+            InteractionLog(participant_id=participant.id, event_type="info_closed"),
+            InteractionLog(
+                participant_id=participant.id,
+                event_type="student_task_closed",
+                payload={"reason": "dismissed"},
+            ),
+        ]
+    )
+    await db.flush()
+    for url in (
+        "/admin/stats/overview",
+        f"/admin/studies/{participant.study_id}/stats",
+        f"/admin/participants/{participant.id}/stats",
+    ):
+        response = await client.get(url, headers=admin_headers)
+        assert response.status_code == 200
+        events = {row["event_type"]: row for row in response.json()["events_by_type"]}
+        assert events["task_closed"]["count"] == 2
+        assert events["task_closed"]["variable_name"] == ""
+        assert events["info_closed"]["variable_name"] == "click_event_close_info_pop_up"
+        assert (
+            events["student_task_closed"]["variable_name"]
+            == "click_event_close_student_task_pop_up"
+        )
+
+
 async def test_a_study_nobody_is_enrolled_in_still_reports_its_cases(
     client, db, seed_study, admin_headers
 ):
@@ -388,7 +428,7 @@ async def test_completed_progress_is_full_in_participant_and_study_stats(
     assert study["participants"]["avg_progress"] == 100
 
 
-async def test_case_gaze_uses_capture_intervals_and_keeps_other_screens_in_totals(
+async def test_case_gaze_uses_capture_intervals_and_excludes_other_screens_from_all_totals(
     client, db, run, admin_headers
 ):
     p = run["participant"]
@@ -435,9 +475,13 @@ async def test_case_gaze_uses_capture_intervals_and_keeps_other_screens_in_total
     assert case["expected_samples"] == 14400
     assert case["yield"] == 75
     assert case["sampling_rate_hz"] is None
-    assert participant["totals"]["gaze_samples"] == 101300
+    assert participant["totals"]["gaze_samples"] == 10800
     assert study["cases"][0]["gaze_samples"] == 10800
-    assert study["roster"][0]["gaze_samples"] == 101300
+    assert study["roster"][0]["gaze_samples"] == 10800
+    assert study["roster"][0]["gaze_recordings"] == 2
+    overview = (await client.get("/admin/stats/overview", headers=admin_headers)).json()
+    assert overview["totals"]["gaze_samples"] == 10800
+    assert overview["totals"]["gaze_recordings"] == 2
 
 
 @pytest.mark.parametrize(

@@ -54,6 +54,18 @@ failure that looks like a broken login.
 `npm run test:browser` runs a separate Chromium suite on port 5185 with synthetic
 API responses and tracker messages. It needs no database or admin account.
 
+To run the same checks in all three browser engines:
+
+```bash
+npx playwright install chromium firefox webkit
+A04_ALL_BROWSERS=1 npm run test:browser
+```
+
+Downloads use a local HTTP attachment fixture so native download behavior is
+exercised in WebKit as well. Capture checks accept each engine's recording
+format (WebM or MP4); the other tests explicitly decline screen capture to avoid
+opening the operating system's screen picker.
+
 Responsive checks exercise questionnaire choices at 320–1920px, every participant
 screen and both login pages at phone/tablet/desktop widths, and admin tables,
 actions and questionnaire previews at 375/768/1366px. They verify that answers
@@ -66,8 +78,9 @@ only, and vertical current/intended values while capture continues in the backgr
 The fixture `fixtures/stimulus.webm` is a two-second 320×180 test pattern, so the
 video element also has real decoded dimensions.
 
-These checks cover case and questionnaire AOI rectangles at different viewport
-sizes, scroll and popup visibility, seven line-number inputs, continuous code
+These checks cover video-only capture across screen transitions, midpoint-split
+video AOIs at different viewport sizes, button margins and gaps, popup text AOIs
+and open-duration events, seven line-number inputs, continuous code
 line numbers, participant Details below a long roster, and real MediaRecorder
 encoding/upload alongside gaze collection. The display stream is a synthetic
 canvas: this does not test the OS screen-share picker or permissions.

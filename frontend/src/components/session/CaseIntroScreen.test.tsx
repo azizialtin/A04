@@ -10,9 +10,9 @@ vi.mock('../../lib/outbox', () => ({ enqueue: vi.fn() }))
 // rejection even when the caller catches it.
 let prepareCapture = vi.fn()
 const gaze = vi.hoisted(() => ({
-  state: 'tracking',
-  received: 12,
-  valid: 10,
+  state: 'tracker_ready',
+  received: 0,
+  valid: 0,
   retry: vi.fn(),
   close: vi.fn(),
 }))
@@ -26,7 +26,7 @@ vi.mock('../../lib/screenCapture', () => ({
 beforeEach(() => {
   prepareCapture = vi.fn()
   vi.mocked(enqueue).mockClear()
-  gaze.state = 'tracking'
+  gaze.state = 'tracker_ready'
   gaze.retry.mockClear()
   gaze.close.mockClear()
 })
@@ -46,6 +46,7 @@ test('secures a screen capture before moving on to the clip', async () => {
 
   release()
   await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1))
+  expect(enqueue).not.toHaveBeenCalled()
 })
 
 test('a capture that cannot be arranged does not hold the run up', async () => {

@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { participantApi } from '../api/participant'
-import { __reset, drain, enqueue, pending, pendingNote, start, stop, subscribe } from './outbox'
+import {
+  __reset,
+  drain,
+  enqueue,
+  pending,
+  pendingNote,
+  retrying,
+  start,
+  stop,
+  subscribe,
+} from './outbox'
 
 vi.mock('../api/participant', () => ({
   participantApi: { createNote: vi.fn(), logEvent: vi.fn() },
@@ -188,6 +198,50 @@ describe('durability', () => {
 })
 
 describe('reporting', () => {
+  it('keeps normal background writes quiet, even while the request is in flight', async () => {
+    let resolve!: (value: { id: number }) => void
+    createNote.mockReturnValue(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    const report = vi.fn()
+    subscribe(report)
+    start('T-001')
+    enqueue('note', { video_id: 1, text: 'still sending' })
+    const request = drain()
+
+    expect(pending()).toBe(1)
+    expect(retrying()).toBe(0)
+    expect(report).toHaveBeenLastCalledWith(1, 0)
+
+    resolve({ id: 1 })
+    await request
+    expect(report).toHaveBeenLastCalledWith(0, 0)
+  })
+
+  it('reports a failed write until it is delivered and keeps that status in the durable queue', async () => {
+    const report = vi.fn()
+    subscribe(report)
+    start('T-001')
+    createNote.mockRejectedValueOnce(new Error('offline'))
+    enqueue('note', { video_id: 1, text: 'retry me' })
+    await drain()
+
+    expect(retrying()).toBe(1)
+    expect(report).toHaveBeenLastCalledWith(1, 1)
+    expect(JSON.parse(window.localStorage.getItem('a04.outbox')!)[0].failed).toBe(true)
+
+    stop()
+    start('T-002')
+    expect(retrying()).toBe(0)
+    start('T-001')
+    expect(retrying()).toBe(1)
+    await drain()
+    expect(retrying()).toBe(0)
+    expect(report).toHaveBeenLastCalledWith(0, 0)
+  })
+
   it('tells subscribers how much is outstanding', async () => {
     let seen = -1
     subscribe((n) => {

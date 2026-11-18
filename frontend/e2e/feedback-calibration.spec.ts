@@ -159,7 +159,7 @@ for (const mode of [
         await page
           .getByRole('button', { name: 'Ohne Eye-Tracking fortfahren', exact: true })
           .click()
-        expect(saves[1].status).toBe('skipped')
+        await expect.poll(() => saves[1]?.status).toBe('skipped')
       }
       await expect(page.getByRole('heading', { name: 'Vielen Dank!', exact: true })).toBeVisible()
       expect(unexpected).toEqual([])

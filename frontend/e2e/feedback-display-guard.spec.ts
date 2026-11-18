@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import type { SessionStep } from '../src/api/participant'
 import type { Question } from '../src/lib/questionnaire'
 import type { NativeViewport } from '../src/lib/nativeViewport'
+import { APP_VERSION } from '../src/lib/appVersion'
 
 const API = 'http://a04.invalid'
 const PARTICIPANT = 'QA-DISPLAY-GUARD'
@@ -76,6 +77,7 @@ async function setup(
     visits: [] as Record<string, unknown>[],
     events: [] as Record<string, unknown>[],
     responses: [] as Record<string, unknown>[],
+    notes: [] as Record<string, unknown>[],
     progress: [] as Record<string, unknown>[],
     finishes: [] as Record<string, unknown>[],
     recordings: [] as Record<string, unknown>[],
@@ -281,7 +283,10 @@ async function setup(
       state.events.push(request.postDataJSON())
       return json({ id: 1 })
     }
-    if (path === '/participant/notes') return json({ id: 1 })
+    if (path === '/participant/notes') {
+      state.notes.push(request.postDataJSON())
+      return json({ id: state.notes.length })
+    }
     if (path.endsWith('/notes')) return json([])
     if (path.endsWith('/url')) return json({ signed_url: `${API}/stimulus.webm` })
     if (path === '/stimulus.webm') return route.fulfill({ contentType: 'video/webm', body: clip })
@@ -309,6 +314,18 @@ async function setup(
   return state
 }
 
+function expectNoGazeCapture(state: Awaited<ReturnType<typeof setup>>) {
+  expect(state.recordings).toEqual([])
+  expect(state.layouts).toEqual([])
+  expect(state.samples).toEqual([])
+  expect(state.commands).not.toContain('start_gaze')
+}
+
+async function finishVideo(page: Page) {
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await page.getByRole('button', { name: 'Zur Diagnose', exact: true }).click()
+}
+
 async function resume(page: Page) {
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeVisible()
   await expect(page.getByRole('button', { name: RESUME })).toBeEnabled()
@@ -316,7 +333,7 @@ async function resume(page: Page) {
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
 }
 
-test('initial verification gates visits and capture; ordinary page changes retain verification', async ({
+test('initial verification gates questionnaire visits without gaze; page changes retain verification', async ({
   page,
 }) => {
   const state = await setup(page, [questionnaire(), questionnaire(1)])
@@ -339,6 +356,7 @@ test('initial verification gates visits and capture; ordinary page changes retai
   await expect.poll(() => state.visits.length).toBe(2)
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
   expect(state.responses[0]).toMatchObject({ answers: { answer_0: 'Gesicherter Entwurf' } })
+  expectNoGazeCapture(state)
   expect(state.unexpected).toEqual([])
 })
 
@@ -432,6 +450,7 @@ for (const disturbance of ['resize', 'windowed', 'zoom', 'display scale'] as con
         .filter((event) => String(event.event_type).startsWith('display_guard_'))
         .every((event) => Number.isInteger(event.client_ts)),
     ).toBe(true)
+    expectNoGazeCapture(state)
     expect(state.unexpected).toEqual([])
   })
 }
@@ -529,6 +548,7 @@ test('native tab focus loss blocks input and preserves the draft and visit until
           ),
         )
         .toBe(true)
+      expectNoGazeCapture(state)
       expect(state.unexpected).toEqual([])
     } catch (error) {
       writeFileSync(info.outputPath('native-focus-errors.json'), JSON.stringify(errors, null, 2))
@@ -651,6 +671,7 @@ test('SoSci can open a new tab and returning to measured content requires fresh 
   await resume(page)
   await expect(page.getByRole('heading', { name: 'Prüfseite 3', exact: true })).toBeVisible()
   await expect.poll(() => state.visits.length).toBe(2)
+  expectNoGazeCapture(state)
   expect(state.unexpected).toEqual([])
 })
 
@@ -682,6 +703,7 @@ test('CK deadline saves the blocked draft exactly once and holds the next PCK pa
   await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
   await expect.poll(() => state.visits.length).toBe(2)
   expect(state.finishes).toHaveLength(1)
+  expectNoGazeCapture(state)
   expect(state.unexpected).toEqual([])
 })
 
@@ -813,7 +835,7 @@ for (const section of ['pck', 'mesp'] as const) {
       await resume(page)
       await expect(page.getByRole('heading', { name: task.title, exact: true })).toBeVisible()
       await page.evaluate(() => document.fonts.ready)
-      await expect.poll(() => state.samples.length).toBeGreaterThan(0)
+      expectNoGazeCapture(state)
       await expect(page.locator('input:checked')).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeDisabled()
       expect(normalize(await page.locator('[data-aoi="instructions"]').innerText())).toBe(
@@ -881,6 +903,7 @@ for (const section of ['pck', 'mesp'] as const) {
       }
       await assertGuardedLayout(page, info, `${section}-${task.source_task}`)
       expect(state.visits).toHaveLength(1)
+      expectNoGazeCapture(state)
       expect(state.unexpected).toEqual([])
     })
   }
@@ -911,6 +934,7 @@ test('guard-enabled MESP introduction preserves the complete instructions and vi
   expect(state.visits).toHaveLength(0)
   expect(state.recordings).toHaveLength(0)
   expect(state.screenStarts).toBe(0)
+  expectNoGazeCapture(state)
   expect(state.unexpected).toEqual([])
 })
 
@@ -1037,10 +1061,11 @@ test('invalid display settings leave all unmeasured pages navigable and defer th
     duration_seconds: 420,
     finished: false,
   })
+  expectNoGazeCapture(state)
   expect(state.unexpected).toEqual([])
 })
 
-test('a questionnaire-backed outro retains its existing guard and capture scope even with no questions', async ({
+test('a questionnaire-backed outro retains its display guard without gaze capture even with no questions', async ({
   page,
 }) => {
   const state = await setup(page, [
@@ -1066,8 +1091,7 @@ test('a questionnaire-backed outro retains its existing guard and capture scope 
   await page.setViewportSize({ width: 1920, height: 1080 })
   await resume(page)
   await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
-  await expect.poll(() => state.recordings.length).toBe(1)
-  expect(state.recordings[0]).toMatchObject({ step_kind: 'case_outro', questionnaire_id: 99 })
+  expectNoGazeCapture(state)
   expect(state.screenStarts).toBe(0)
   expect(state.unexpected).toEqual([])
 })
@@ -1109,7 +1133,7 @@ for (const disturbed of [false, true]) {
     const state = await setup(page, steps)
     await page.goto('/session')
     await resume(page)
-    await expect.poll(() => state.recordings.length).toBe(1)
+    expectNoGazeCapture(state)
     await page.locator('textarea').fill('Antwort vor den Hinweisen')
     await page.getByRole('button', { name: 'Weiter', exact: true }).click()
     await expect(
@@ -1126,7 +1150,7 @@ for (const disturbed of [false, true]) {
       await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeVisible()
       await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
       expect(state.visits).toHaveLength(1)
-      expect(state.recordings).toHaveLength(1)
+      expectNoGazeCapture(state)
       await advanceUnmeasured(page, state, step.index)
     }
     if (disturbed) {
@@ -1143,6 +1167,7 @@ for (const disturbed of [false, true]) {
         () => state.events.filter((event) => event.event_type === 'display_guard_resumed').length,
       )
       .toBe(disturbed ? 2 : 1)
+    expectNoGazeCapture(state)
     expect(state.unexpected).toEqual([])
   })
 }
@@ -1167,7 +1192,7 @@ async function continueUnverified(page: Page) {
 }
 
 for (const reportedDisplay of ['windowed', 'fullscreen with negative origin', 'scaled'] as const) {
-  test(`unverified continuation works ${reportedDisplay}, preserves drafts and never certifies gaze`, async ({
+  test(`unverified continuation works ${reportedDisplay}, preserves drafts and never starts gaze capture`, async ({
     page,
   }, info) => {
     const state = await setup(page, [questionnaire(), questionnaire(1)])
@@ -1201,13 +1226,7 @@ for (const reportedDisplay of ['windowed', 'fullscreen with negative origin', 's
     await expect.poll(() => state.visits.length).toBe(1)
     await page.locator('textarea').fill('Der Entwurf bleibt beim Ändern der Anzeige erhalten.')
     const visit = state.visits[0].visit_id
-    await expect.poll(() => state.recordings.length).toBe(1)
-    expect(state.recordings[0].geometry).toMatchObject({
-      display_guard: { profile: 'lab_1080p', verified: false },
-    })
-    await expect.poll(() => state.samples.length).toBeGreaterThan(5)
-    expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
-    expect(state.samples[0]).toMatchObject({ lpd: 3.2, rpd: 3.3 })
+    expectNoGazeCapture(state)
 
     if (reportedDisplay === 'fullscreen with negative origin') {
       await page.evaluate(() => document.exitFullscreen())
@@ -1233,6 +1252,7 @@ for (const reportedDisplay of ['windowed', 'fullscreen with negative origin', 's
       answers: { answer_0: 'Der Entwurf bleibt beim Ändern der Anzeige erhalten.' },
     })
     expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+    expectNoGazeCapture(state)
     expect(state.unexpected).toEqual([])
   })
 }
@@ -1266,6 +1286,7 @@ test('unverified continuation keeps the CK deadline and saves its draft once bef
   await page.locator('textarea').fill('PCK bleibt bedienbar')
   expect(state.finishes).toHaveLength(1)
   expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+  expectNoGazeCapture(state)
   expect(state.unexpected).toEqual([])
   await page.screenshot({ path: info.outputPath('pck-after-windowed-ck-expiry.png') })
 })
@@ -1313,63 +1334,78 @@ test('unverified continuation permits the SoSci popup and return without another
   await expect.poll(() => state.visits.length).toBe(2)
   await page.locator('textarea').fill('Antwort nach SoSci')
   expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+  expectNoGazeCapture(state)
   expect(state.unexpected).toEqual([])
   await page.screenshot({ path: info.outputPath('windowed-return-from-sosci.png') })
 })
 
-test('unverified continuation allows video playback and resize while retaining raw gaze as unverified', async ({
-  page,
-}, info) => {
-  const state = await setup(page, [
-    {
-      kind: 'case_video',
-      index: 0,
-      completed: false,
-      video_id: 7,
-      task_description: 'Beobachten Sie den Fall.',
-      info_text: '',
-      student_task_text: '',
-      time_limit_seconds: 600,
-    },
-  ])
-  await page.setViewportSize({ width: 1600, height: 900 })
-  await retainLabScreen(page)
-  await page.goto('/session')
-  await continueUnverified(page)
-  await expect.poll(() => state.recordings.length).toBe(1)
-  await expect.poll(() => state.screenStarts).toBe(1)
-  const video = page.locator('video')
-  // Keep the short fixture playing while resize and upload assertions run.
-  await video.evaluate((el) => {
-    ;(el as HTMLVideoElement).loop = true
+for (const reportedDisplay of ['windowed', 'negative origin', 'scaled'] as const) {
+  test(`unverified video continuation ${reportedDisplay} retains playback and raw unmapped gaze`, async ({
+    page,
+  }, info) => {
+    const state = await setup(page, [
+      {
+        kind: 'case_video',
+        index: 0,
+        completed: false,
+        video_id: 7,
+        task_description: 'Beobachten Sie den Fall.',
+        info_text: '',
+        student_task_text: '',
+        time_limit_seconds: 600,
+      },
+    ])
+    await page.setViewportSize(
+      reportedDisplay === 'scaled' ? { width: 1536, height: 864 } : { width: 1600, height: 900 },
+    )
+    if (reportedDisplay === 'scaled')
+      await page.addInitScript(() => {
+        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => 1.25 })
+      })
+    if (reportedDisplay === 'negative origin')
+      await page.addInitScript(() => {
+        for (const key of ['screenX', 'screenY'])
+          Object.defineProperty(window, key, { configurable: true, get: () => -8 })
+      })
+    await retainLabScreen(page)
+    await page.goto('/session')
+    await continueUnverified(page)
+    await expect.poll(() => state.recordings.length).toBe(1)
+    await expect.poll(() => state.screenStarts).toBe(1)
+    const video = page.locator('video')
+    // Keep the short fixture playing while resize and upload assertions run.
+    await video.evaluate((el) => {
+      ;(el as HTMLVideoElement).loop = true
+    })
+    await page.locator('[data-aoi="video_play_pause"]').click()
+    await expect.poll(() => video.evaluate((el) => !(el as HTMLVideoElement).paused)).toBe(true)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+    await expect.poll(() => state.samples.length).toBeGreaterThan(5)
+    expect(await video.evaluate((el) => (el as HTMLVideoElement).paused)).toBe(false)
+    expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
+    expect(state.samples[0]).toMatchObject({ lpd: 3.2, rpd: 3.3 })
+    expect(state.recordings[0].geometry).toMatchObject({
+      display_guard: { profile: 'lab_1080p', verified: false },
+    })
+    expect(
+      state.layouts.every(
+        (layout) =>
+          (layout.display_guard as { verified?: boolean } | undefined)?.verified === false,
+      ),
+    ).toBe(true)
+    expect(state.recordings).toHaveLength(1)
+    expect(state.screenStarts).toBe(1)
+    expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
+    expect(state.unexpected).toEqual([])
+    await page.screenshot({ path: info.outputPath('windowed-video-playing.png') })
   })
-  await page.locator('[data-aoi="video_play_pause"]').click()
-  await expect.poll(() => video.evaluate((el) => !(el as HTMLVideoElement).paused)).toBe(true)
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
-  await expect.poll(() => state.samples.length).toBeGreaterThan(5)
-  expect(await video.evaluate((el) => (el as HTMLVideoElement).paused)).toBe(false)
-  expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
-  expect(state.samples[0]).toMatchObject({ lpd: 3.2, rpd: 3.3 })
-  expect(state.recordings[0].geometry).toMatchObject({
-    display_guard: { profile: 'lab_1080p', verified: false },
-  })
-  expect(
-    state.layouts.every(
-      (layout) => (layout.display_guard as { verified?: boolean } | undefined)?.verified === false,
-    ),
-  ).toBe(true)
-  expect(state.recordings).toHaveLength(1)
-  expect(state.screenStarts).toBe(1)
-  expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toEqual([])
-  expect(state.unexpected).toEqual([])
-  await page.screenshot({ path: info.outputPath('windowed-video-playing.png') })
-})
+}
 
 test('unverified continuation recovers an interrupted draft and does not recertify restored dimensions', async ({
   page,
 }, info) => {
-  const state = await setup(page, [questionnaire(), questionnaire(1)])
+  const state = await setup(page, [questionnaire(), { ...caseVideo, index: 1 }, questionnaire(2)])
   await retainLabScreen(page)
   await page.goto('/session')
   await resume(page)
@@ -1382,26 +1418,20 @@ test('unverified continuation recovers an interrupted draft and does not recerti
   await expect(page.locator('textarea')).toHaveValue('Bereits begonnene Antwort bleibt bestehen')
   expect(state.visits).toHaveLength(1)
   expect(state.visits[0].visit_id).toBe(visit)
-  const continuedAt = Date.now()
   await page.setViewportSize({ width: 1920, height: 1080 })
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
-  await expect
-    .poll(() => state.samples.filter((sample) => sample.ts > continuedAt).length)
-    .toBeGreaterThan(5)
-  expect(
-    state.samples
-      .filter((sample) => sample.ts > continuedAt)
-      .every((sample) => sample.geometry_ts === null),
-  ).toBe(true)
-  expect(state.layouts.at(-1)).toMatchObject({
-    display_guard: { profile: 'lab_1080p', verified: false },
-  })
+  expectNoGazeCapture(state)
   expect(state.events.filter((event) => event.event_type === 'display_guard_resumed')).toHaveLength(
     1,
   )
   await page.screenshot({ path: info.outputPath('interrupted-draft-recovered.png') })
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+  await expect(page.locator('video')).toBeVisible()
+  await expect.poll(() => state.samples.length).toBeGreaterThan(5)
+  expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
+  expect(state.recordings[0].geometry).toMatchObject({
+    display_guard: { profile: 'lab_1080p', verified: false },
+  })
   expect(state.responses[0]).toMatchObject({
     answers: { answer_0: 'Bereits begonnene Antwort bleibt bestehen' },
   })
@@ -1422,7 +1452,7 @@ for (const mode of ['windowed', 'fullscreen', 'zoomed'] as const) {
     await page.setViewportSize(
       mode === 'fullscreen' ? { width: 1920, height: 1080 } : { width: 1152, height: 640 },
     )
-    const state = await setup(page, [questionnaire(), questionnaire(1)], 420_000, native)
+    const state = await setup(page, [caseVideo, questionnaire(1)], 420_000, native)
     await page.goto('/session')
     if (mode === 'fullscreen') await page.getByRole('button', { name: 'Vollbild öffnen' }).click()
     await expect(
@@ -1497,11 +1527,15 @@ for (const mode of ['windowed', 'fullscreen', 'zoomed'] as const) {
       ),
     )
     await page.screenshot({ path: info.outputPath(`native-${mode}-mapping.png`) })
-    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+    await finishVideo(page)
     await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
-    expect(state.responses[0]).toMatchObject({
-      answers: { answer_0: 'Erfasste Antwort mit gemessener Fensterposition' },
-    })
+    await expect
+      .poll(() =>
+        state.notes.some((note) => note.text === 'Erfasste Antwort mit gemessener Fensterposition'),
+      )
+      .toBe(true)
+    expect(state.recordings).toHaveLength(1)
+    expect(state.recordings[0]).toMatchObject({ step_kind: 'case_video' })
     expect(state.unexpected).toEqual([])
   })
 }
@@ -1511,12 +1545,12 @@ test('native viewport remeasures movement and resize automatically without losin
 }, info) => {
   const native = nativeFixture()
   await page.setViewportSize({ width: 1152, height: 640 })
-  const state = await setup(page, [questionnaire()], 420_000, native)
+  const state = await setup(page, [caseVideo], 420_000, native)
   await page.goto('/session')
   await resume(page)
   await page.locator('textarea').fill('Entwurf bei Fensteränderung')
-  await expect.poll(() => state.visits.length).toBe(1)
-  const visit = state.visits[0].visit_id
+  await expect.poll(() => state.recordings.length).toBe(1)
+  const recording = state.recordings[0]
   const firstId = native.proof!.id
   native.x = 240
   native.y = 135
@@ -1524,8 +1558,8 @@ test('native viewport remeasures movement and resize automatically without losin
   await expect.poll(() => native.proof?.id).not.toBe(firstId)
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden({ timeout: 6000 })
   await expect(page.locator('textarea')).toHaveValue('Entwurf bei Fensteränderung')
-  expect(state.visits).toHaveLength(1)
-  expect(state.visits[0].visit_id).toBe(visit)
+  expect(state.visits).toHaveLength(0)
+  expect(state.recordings).toEqual([recording])
   const now = Date.now()
   await expect
     .poll(
@@ -1553,7 +1587,7 @@ test('native viewport excludes only samples with a stale or different physical g
 }) => {
   const native = nativeFixture()
   await page.setViewportSize({ width: 1152, height: 640 })
-  const state = await setup(page, [questionnaire()], 420_000, native)
+  const state = await setup(page, [caseVideo], 420_000, native)
   await page.goto('/session')
   await resume(page)
   await expect
@@ -1616,6 +1650,7 @@ test('native windowed CK deadline and SoSci return retain verified mapping', asy
         participant_id: PARTICIPANT,
       },
       questionnaire(2),
+      { ...caseVideo, index: 3 },
     ],
     5000,
     native,
@@ -1645,6 +1680,10 @@ test('native windowed CK deadline and SoSci return retain verified mapping', asy
     timeout: 6000,
   })
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
+  expectNoGazeCapture(state)
+  await page.locator('textarea').fill('Antwort nach SoSci')
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await expect(page.locator('video')).toBeVisible()
   const now = Date.now()
   await expect
     .poll(() => state.samples.filter((row) => row.ts > now && row.geometry_ts !== null).length)
@@ -1680,7 +1719,7 @@ test('bridge recovery explains a denied permission and waits for the researcher 
   native.transport = 'offline'
   await mockLoopbackPermission(page, 'denied')
   await page.setViewportSize({ width: 1152, height: 640 })
-  const state = await setup(page, [questionnaire()], 420_000, native)
+  const state = await setup(page, [caseVideo], 420_000, native)
   let releasePrompt!: () => void
   const permissionPrompt = new Promise<void>((resolve) => {
     releasePrompt = resolve
@@ -1739,7 +1778,7 @@ test('bridge recovery upgrades an old bridge without bypassing native gaze verif
   const native = nativeFixture()
   native.transport = 'legacy'
   await page.setViewportSize({ width: 1152, height: 640 })
-  const state = await setup(page, [questionnaire()], 420_000, native)
+  const state = await setup(page, [caseVideo], 420_000, native)
   await page.route('http://127.0.0.1:8766/', (route) =>
     route.fulfill({ status: 426, body: 'Upgrade required' }),
   )
@@ -1764,7 +1803,7 @@ test('bridge recovery shows a native measurement failure and retains the confirm
 }) => {
   const native = nativeFixture()
   await page.setViewportSize({ width: 1152, height: 640 })
-  const state = await setup(page, [questionnaire()], 420_000, native)
+  const state = await setup(page, [caseVideo], 420_000, native)
   await page.goto('/session')
   await resume(page)
   await page.locator('textarea').fill('Diese Antwort muss erhalten bleiben.')
@@ -1777,7 +1816,7 @@ test('bridge recovery shows a native measurement failure and retains the confirm
     'multiple_displays',
   )
   await expect(page.getByLabel('Technische Diagnose ohne Teilnehmerdaten')).toContainText(
-    '2026-11-18.1',
+    APP_VERSION,
   )
   native.unavailable = false
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
@@ -1835,7 +1874,7 @@ for (const viewport of [
     await page.screenshot({ path: info.outputPath(`bridge-recovery-${viewport.width}.png`) })
     await page.getByText('Technischer Status', { exact: false }).click()
     await expect(page.getByLabel('Technische Diagnose ohne Teilnehmerdaten')).toContainText(
-      '2026-11-18.1',
+      APP_VERSION,
     )
   })
 }
@@ -1843,7 +1882,7 @@ for (const viewport of [
 test('a scrollbar change reported by the visual viewport does not reopen the dialog', async ({
   page,
 }) => {
-  const state = await setup(page, [questionnaire()])
+  const state = await setup(page, [caseVideo])
   await page.goto('/session')
   await resume(page)
   await page.locator('textarea').fill('Entwurf')
@@ -1954,12 +1993,12 @@ const caseVideo: SessionStep = {
 test('@observe a correct display asks nothing: the page starts at once and gaze is mapped', async ({
   page,
 }, info) => {
-  const state = await setup(page, [questionnaire(), questionnaire(1)])
+  const state = await setup(page, [caseVideo, questionnaire(1)])
   const opened = Date.now()
   await page.goto('/session')
   await expect(page.locator('textarea')).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect.poll(() => state.visits.length).toBe(1)
+  await expect.poll(() => state.recordings.length).toBe(1)
   await page.locator('textarea').fill('Sofort nutzbar')
   await expect.poll(() => mappedSince(state, opened).length).toBeGreaterThan(5)
   await expectNoPersistentDisplayStatus(page)
@@ -1984,14 +2023,18 @@ test('@observe a correct display asks nothing: the page starts at once and gaze 
     expect(sample.geometry_ts!).toBeLessThanOrEqual(sample.ts)
   }
   expect(mappedSince(state, opened).every((sample) => sample.ts >= verifiedAt)).toBe(true)
-  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await finishVideo(page)
   await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
   await expectNoPersistentDisplayStatus(page)
-  const second = Date.now()
-  await expect.poll(() => mappedSince(state, second).length).toBeGreaterThan(5)
-  // The next measured page keeps the verification: no new gap, no new events.
+  await expect
+    .poll(() => state.commands.filter((command) => command === 'stop_gaze').length)
+    .toBe(1)
+  expect(state.recordings).toHaveLength(1)
+  expect(state.recordings[0]).toMatchObject({ step_kind: 'case_video' })
+  expect(state.visits).toHaveLength(1)
+  // The next guarded page keeps verification without starting another gaze stream.
   expect(guardEvents(state)).toEqual(['interrupted', 'resumed'])
-  expect(state.responses[0]).toMatchObject({ answers: { answer_0: 'Sofort nutzbar' } })
+  await expect.poll(() => state.notes.some((note) => note.text === 'Sofort nutzbar')).toBe(true)
   saveRoundtrip(info, 'observe-correct-display', state)
   expect(state.unexpected).toEqual([])
 })
@@ -2001,7 +2044,7 @@ for (const disturbance of ['resize', 'zoom', 'display scale'] as const) {
     page,
     context,
   }, info) => {
-    const state = await setup(page, [questionnaire()])
+    const state = await setup(page, [caseVideo, questionnaire(1)])
     const opened = Date.now()
     await page.goto('/session')
     await page.locator('textarea').fill('Entwurf')
@@ -2041,7 +2084,7 @@ for (const disturbance of ['resize', 'zoom', 'display scale'] as const) {
     await page.locator('textarea').fill('Entwurf, während der Störung weitergeschrieben')
     await expect.poll(() => unmappedSince(state, invalidFrom).length).toBeGreaterThan(5)
     expect(mappedSince(state, invalidFrom)).toEqual([])
-    // Settings stay on the welcome page. The questionnaire has no status box,
+    // Settings stay on the welcome page. The video has no status box,
     // settings launcher or modal even while geometry becomes invalid.
     await expectNoPersistentDisplayStatus(page)
     expect(state.responses).toHaveLength(0)
@@ -2062,12 +2105,18 @@ for (const disturbance of ['resize', 'zoom', 'display scale'] as const) {
     await expect(page.locator('textarea')).toHaveValue(
       'Entwurf, während der Störung weitergeschrieben',
     )
-    expect(state.visits).toHaveLength(1)
+    expect(state.visits).toHaveLength(0)
+    expect(state.recordings).toHaveLength(1)
     expect(guardEvents(state)).toEqual(['interrupted', 'resumed', 'interrupted', 'resumed'])
     // Raw gaze is complete throughout; only its AOI reference is withheld.
     expect(unmappedSince(state, invalidFrom)[0]).toMatchObject({ lpd: 3.2, rpd: 3.3, lx: 0.5 })
-    await page.getByRole('button', { name: 'Weiter', exact: true }).click()
-    await expect.poll(() => state.responses.length).toBe(1)
+    await finishVideo(page)
+    await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+    await expect
+      .poll(() =>
+        state.notes.some((note) => note.text === 'Entwurf, während der Störung weitergeschrieben'),
+      )
+      .toBe(true)
     saveRoundtrip(info, `observe-${disturbance.replace(' ', '-')}`, state, {
       invalid: [invalidFrom, invalidUntil],
     })
@@ -2092,7 +2141,7 @@ test('@observe 125% Windows scaling without a measuring bridge: the session runs
   ).toEqual([1536, 1536, 864, 1.25])
   const state = await setup(
     page,
-    [{ kind: 'welcome', index: 0, completed: false }, questionnaire(1)],
+    [{ kind: 'welcome', index: 0, completed: false }, questionnaire(1), { ...caseVideo, index: 2 }],
     420_000,
     { ...nativeFixture(), transport: 'legacy' },
   )
@@ -2122,12 +2171,9 @@ test('@observe 125% Windows scaling without a measuring bridge: the session runs
   // The check informs; the way on is never withheld.
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
   await expect(page.locator('textarea')).toBeVisible()
-  const entered = Date.now()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.locator('textarea').fill('Antwort trotz abweichender Anzeige')
-  await expect.poll(() => unmappedSince(state, entered).length).toBeGreaterThan(40)
-  expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
-  expect(snapshots(state).every((layout) => layout.display_guard?.verified === false)).toBe(true)
+  expectNoGazeCapture(state)
   await expectNoPersistentDisplayStatus(page)
   // A setup that stays wrong is one open interval, not a stream of events: the
   // entry boundary, moved back once to the last observation before the page.
@@ -2141,6 +2187,11 @@ test('@observe 125% Windows scaling without a measuring bridge: the session runs
   expect(state.responses[0]).toMatchObject({
     answers: { answer_1: 'Antwort trotz abweichender Anzeige' },
   })
+  await expect(page.locator('video')).toBeVisible()
+  const entered = Date.now()
+  await expect.poll(() => unmappedSince(state, entered).length).toBeGreaterThan(40)
+  expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
+  expect(snapshots(state).every((layout) => layout.display_guard?.verified === false)).toBe(true)
   saveRoundtrip(info, 'observe-125-percent', state)
   expect(state.unexpected).toEqual([])
   await context.close()
@@ -2300,7 +2351,7 @@ for (const mode of ['windowed', 'fullscreen', 'zoomed'] as const) {
     await page.setViewportSize(
       mode === 'fullscreen' ? { width: 1920, height: 1080 } : { width: 1152, height: 640 },
     )
-    const state = await setup(page, [questionnaire()], 420_000, native)
+    const state = await setup(page, [caseVideo], 420_000, native)
     await page.goto('/session')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await page.locator('textarea').fill('Gemessen ohne Bestätigung')
@@ -2347,7 +2398,7 @@ for (const mode of ['windowed', 'fullscreen', 'zoomed'] as const) {
 }
 
 test('@observe a scrollbar appearing or disappearing is not a display change', async ({ page }) => {
-  const state = await setup(page, [questionnaire()])
+  const state = await setup(page, [caseVideo])
   const opened = Date.now()
   await page.goto('/session')
   await page.locator('textarea').fill('Entwurf')

@@ -30,6 +30,7 @@ interface Props {
   onClose: () => void
   children: ReactNode
   aoiId?: string
+  bodyAoiId?: string
   closeDisabled?: boolean
   focusPriority?: number
 }
@@ -40,6 +41,7 @@ export default function Modal({
   onClose,
   children,
   aoiId = 'dialog',
+  bodyAoiId,
   closeDisabled = false,
   focusPriority = 0,
 }: Props) {
@@ -134,12 +136,20 @@ export default function Modal({
             className="btn btn-ghost"
             onClick={() => close.current()}
             aria-label="Schließen"
+            data-aoi={bodyAoiId ? `${aoiId}_close` : undefined}
+            data-aoi-priority={bodyAoiId ? 1 : undefined}
             disabled={closeDisabled}
           >
             ✕
           </button>
         </div>
-        <div className="modal__body">{children}</div>
+        <div
+          className="modal__body"
+          data-aoi={bodyAoiId}
+          data-aoi-priority={bodyAoiId ? 1 : undefined}
+        >
+          {children}
+        </div>
       </div>
     </div>
   )

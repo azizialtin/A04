@@ -45,7 +45,7 @@ from app.models.study import Study
 from app.models.text_entry import TextEntry
 from app.models.video import Video
 from app.models.video_set import VideoSet, VideoSetItem
-from app.services.log_data import variable_name
+from app.services.log_data import POPUP_CLOSE_EVENTS, variable_name
 from app.services.section_timing import CK_SECONDS, CK_SECTION
 from app.services.session_script import (
     build_steps,
@@ -172,6 +172,7 @@ async def _event_types(db: AsyncSession, study_id: int | None = None) -> list[di
             InteractionLog.event_type,
             func.count(),
             func.count(distinct(InteractionLog.participant_id)),
+            _tally(_automatic_popup_close()),
         )
         .group_by(InteractionLog.event_type)
         .order_by(func.count().desc())
@@ -183,12 +184,22 @@ async def _event_types(db: AsyncSession, study_id: int | None = None) -> list[di
     return [
         {
             "event_type": name,
-            "variable_name": variable_name(name),
+            "variable_name": variable_name(name, {"reason": "automatic"} if automatic else None),
             "count": count,
             "participants": people,
         }
-        for name, count, people in (await db.execute(stmt)).all()
+        for name, count, people, automatic in (await db.execute(stmt)).all()
     ]
+
+
+def _automatic_popup_close():
+    # A group containing automatic closures must not be labelled a click count.
+    reason = InteractionLog.payload["reason"].astext
+    return (
+        InteractionLog.event_type.in_(POPUP_CLOSE_EVENTS)
+        & reason.is_not(None)
+        & (reason != "dismissed")
+    )
 
 
 # --- every study at once --------------------------------------------------
@@ -225,7 +236,13 @@ async def overview_stats(
     diagnoses = await _by_study(db, TextEntry, func.count(), where=TextEntry.kind == "diagnosis")
     responses = await _by_study(db, QuestionnaireResponse, func.count())
     events = await _by_study(db, InteractionLog, func.count(), func.max(InteractionLog.created_at))
-    gaze = await _by_study(db, GazeRecording, func.count(), _total(GazeRecording.sample_count))
+    gaze = await _by_study(
+        db,
+        GazeRecording,
+        func.count(),
+        _total(GazeRecording.sample_count),
+        where=GazeRecording.step_kind == "case_video",
+    )
     screens = await _by_study(
         db,
         ScreenRecording,
@@ -547,7 +564,7 @@ async def study_stats(
         GazeRecording.participant_id,
         func.count(),
         _total(GazeRecording.sample_count),
-        where=GazeRecording.participant_id.in_(ids),
+        where=GazeRecording.participant_id.in_(ids) & (GazeRecording.step_kind == "case_video"),
     )
     p_screens = await _grouped(
         db,
@@ -1085,18 +1102,19 @@ async def participant_stats(
     by_type = [
         {
             "event_type": name,
-            "variable_name": variable_name(name),
+            "variable_name": variable_name(name, {"reason": "automatic"} if automatic else None),
             "count": count,
             "first_at": _iso(first),
             "last_at": _iso(last),
         }
-        for name, count, first, last in (
+        for name, count, first, last, automatic in (
             await db.execute(
                 select(
                     InteractionLog.event_type,
                     func.count(),
                     func.min(InteractionLog.created_at),
                     func.max(InteractionLog.created_at),
+                    _tally(_automatic_popup_close()),
                 )
                 .where(mine)
                 .group_by(InteractionLog.event_type)
@@ -1155,7 +1173,13 @@ async def participant_stats(
         ).scalars()
     }
     gaze_recordings = (
-        (await db.execute(select(GazeRecording).where(GazeRecording.participant_id == p.id)))
+        (
+            await db.execute(
+                select(GazeRecording).where(
+                    GazeRecording.participant_id == p.id, GazeRecording.step_kind == "case_video"
+                )
+            )
+        )
         .scalars()
         .all()
     )

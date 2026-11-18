@@ -2,10 +2,9 @@ import apiClient from './client'
 import type { GazeLayout } from '../lib/gazeGeometry'
 
 export interface GazeContext {
-  video_id: number | null
-  step_kind: 'case_video' | 'questionnaire' | 'diagnosis' | 'case_outro'
+  video_id: number
+  step_kind: 'case_video'
   step_index: number
-  questionnaire_id?: number | null
 }
 
 // Bridge samples with the browser's observed geometry reference. Coordinates

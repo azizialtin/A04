@@ -31,7 +31,6 @@ vi.mock('../../lib/outbox', () => ({ enqueue: vi.fn() }))
 
 const props = {
   videoId: 7,
-  taskDescription: 'Beobachten Sie die Schüler:innen.',
   infoText: 'Information',
   studentTaskText: 'Aufgabe',
   timeLimitSeconds: null,
@@ -64,6 +63,140 @@ async function media() {
   fireEvent.loadedMetadata(video)
   return video
 }
+
+test('instructions are shown only in their popup, with separate text and close AOIs', async () => {
+  const user = userEvent.setup()
+  render(<CaseVideoScreen {...props} onComplete={vi.fn()} />)
+  await media()
+  expect(screen.queryByText(/Sie sehen hier ein Video/)).not.toBeInTheDocument()
+  const button = screen.getByRole('button', { name: 'Aufgabenstellung' })
+  expect(button).toHaveAttribute('data-aoi', 'task_button')
+  await user.click(button)
+  const dialog = screen.getByRole('dialog', { name: 'Aufgabenstellung' })
+  expect(dialog).toHaveAttribute('data-aoi-modal', 'task_dialog')
+  expect(dialog.querySelector('[data-aoi="task_dialog_text"]')).toHaveTextContent(
+    'Sie sehen hier ein Video einer Unterrichtssituation. Sie können sich während des Videos Notizen machen und so oft wie Sie möchten vor und zurück springen oder sich einzelne Abschnitte sowie das ganze Video nochmal ansehen. Ihre Bearbeitungsaufgabe beinhaltet das Schreiben einer Diagnose zur Situation.',
+  )
+  expect(within(dialog).getByRole('button', { name: 'Schließen' })).toHaveAttribute(
+    'data-aoi',
+    'task_dialog_close',
+  )
+  await user.keyboard('{Escape}')
+  expect(screen.queryByText(/Sie sehen hier ein Video/)).not.toBeInTheDocument()
+  expect(button).toHaveFocus()
+  expect(capture.start).toHaveBeenCalledOnce()
+  expect(capture.stop).not.toHaveBeenCalled()
+})
+
+test.each([
+  ['Aufgabenstellung', 'task'],
+  ['Diagnose Definition', 'info'],
+  ['Schüler-Aufgabe und gegebener Code', 'student_task'],
+])(
+  'the pilot display guard gates the %s popup without recording a false exposure',
+  async (label, prefix) => {
+    const guard = vi.spyOn(displayGuard, 'checkDisplayGuard').mockReturnValue(false)
+    render(<CaseVideoScreen {...props} pilot onComplete={vi.fn()} />)
+    await media()
+    const button = screen.getByRole('button', { name: label })
+    fireEvent.click(button)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(enqueue).not.toHaveBeenCalledWith(
+      'event',
+      expect.objectContaining({ event_type: `${prefix}_opened` }),
+    )
+    guard.mockReturnValue(true)
+    fireEvent.click(button)
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-aoi-modal', `${prefix}_dialog`)
+    expect(button).toHaveAttribute('data-aoi-margin', '6')
+    expect(enqueue).toHaveBeenCalledWith(
+      'event',
+      expect.objectContaining({ event_type: `${prefix}_opened` }),
+    )
+  },
+)
+
+test.each([
+  ['Aufgabenstellung', 'task'],
+  ['Diagnose Definition', 'info'],
+  ['Schüler-Aufgabe und gegebener Code', 'student_task'],
+])('%s logs one exposure per open, including a screen exit', async (buttonLabel, eventPrefix) => {
+  vi.useFakeTimers({
+    toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'],
+  })
+  const { unmount } = render(<CaseVideoScreen {...props} onComplete={vi.fn()} />)
+  await act(async () => {})
+  fireEvent.click(screen.getByRole('button', { name: buttonLabel }))
+  const dialog = screen.getByRole('dialog')
+  expect(dialog.querySelector(`[data-aoi="${eventPrefix}_dialog_text"]`)).toHaveAttribute(
+    'data-aoi-priority',
+    '1',
+  )
+  await act(async () => vi.advanceTimersByTime(2500))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }))
+  expect(enqueue).toHaveBeenCalledWith(
+    'event',
+    expect.objectContaining({
+      event_type: `${eventPrefix}_closed`,
+      payload: { currentTime: 0, durationMs: 2500, reason: 'dismissed' },
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: buttonLabel }))
+  await act(async () => vi.advanceTimersByTime(1500))
+  unmount()
+  const events = vi.mocked(enqueue).mock.calls.map(([, body]) => body)
+  expect(events.filter((body) => body.event_type === `${eventPrefix}_opened`)).toHaveLength(2)
+  expect(events.filter((body) => body.event_type === `${eventPrefix}_closed`)).toHaveLength(2)
+  expect(enqueue).toHaveBeenCalledWith(
+    'event',
+    expect.objectContaining({
+      event_type: `${eventPrefix}_closed`,
+      payload: { currentTime: 0, durationMs: 1500, reason: 'screen_exit' },
+    }),
+  )
+})
+
+test('the student-task popup renders supplied JSON code as numbered and highlighted Java', async () => {
+  const source = ['public class Heizung {', '', '    private int temperatur;', '}']
+  render(
+    <CaseVideoScreen
+      {...props}
+      studentTaskText={`Schüler-Aufgabe und gegebener Code\n\nGegebener Code (JSON-Format):\n\nCodeblock 1:\n${JSON.stringify(source, null, 2)}`}
+      onComplete={vi.fn()}
+    />,
+  )
+  await media()
+  fireEvent.click(screen.getByRole('button', { name: 'Schüler-Aufgabe und gegebener Code' }))
+  const dialog = screen.getByRole('dialog', { name: 'Aufgabe der Schüler:innen' })
+  expect(dialog.querySelectorAll('pre.code')).toHaveLength(1)
+  const rows = Array.from(dialog.querySelectorAll('.code__line'))
+  expect(rows.map((line) => line.textContent)).toEqual(source.map((line) => line + '\n'))
+  expect(rows.map((line) => line.getAttribute('data-line'))).toEqual(['1', '2', '3', '4'])
+  expect(dialog.querySelector('.tok--kw')).toHaveTextContent('public')
+  expect(dialog.textContent).not.toContain('JSON-Format')
+})
+
+test('a normal page exit closes popup exposure once even without a React unmount', async () => {
+  vi.useFakeTimers({
+    toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'],
+  })
+  const { unmount } = render(<CaseVideoScreen {...props} onComplete={vi.fn()} />)
+  await act(async () => {})
+  fireEvent.click(screen.getByRole('button', { name: 'Aufgabenstellung' }))
+  await act(async () => vi.advanceTimersByTime(1200))
+  fireEvent(window, new PageTransitionEvent('pagehide', { persisted: false }))
+  expect(enqueue).toHaveBeenCalledWith(
+    'event',
+    expect.objectContaining({
+      event_type: 'task_closed',
+      payload: { currentTime: 0, durationMs: 1200, reason: 'page_exit' },
+    }),
+  )
+  unmount()
+  expect(
+    vi.mocked(enqueue).mock.calls.filter(([, body]) => body.event_type === 'task_closed'),
+  ).toHaveLength(1)
+})
 
 test('every Continue asks before leaving; cancellation keeps notes, player and capture intact', async () => {
   const user = userEvent.setup()
@@ -218,7 +351,9 @@ test.each(['rejection', 'throw'] as const)(
 test.each(['confirm', 'timer'] as const)(
   '%s arriving first wins the confirmation/expiry race without resetting the timer',
   async (first) => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({
+      toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'],
+    })
     const request = deferred()
     const onComplete = vi.fn(() => request.promise)
     render(<CaseVideoScreen {...props} timeLimitSeconds={1} onComplete={onComplete} />)
@@ -239,12 +374,14 @@ test.each(['confirm', 'timer'] as const)(
 )
 
 test('timer expiry still advances without a click; a failed request is visible and retryable', async () => {
-  vi.useFakeTimers()
+  vi.useFakeTimers({
+    toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'],
+  })
   const request = deferred()
   const onComplete = vi.fn(() => request.promise)
   render(<CaseVideoScreen {...props} timeLimitSeconds={1} onComplete={onComplete} />)
   await act(async () => {})
-  fireEvent.click(screen.getByRole('button', { name: 'Schüler-Aufgabe' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Schüler-Aufgabe und gegebener Code' }))
   expect(screen.getByRole('dialog', { name: 'Aufgabe der Schüler:innen' })).toBeInTheDocument()
   await act(async () => vi.advanceTimersByTime(1000))
   expect(onComplete).toHaveBeenCalledOnce()
@@ -255,6 +392,13 @@ test('timer expiry still advances without a click; a failed request is visible a
   expect(screen.getByRole('alert')).toHaveTextContent('fehlgeschlagen')
   expect(screen.getByRole('button', { name: 'Zur Diagnose' })).toBeEnabled()
   expect(capture.stop).not.toHaveBeenCalled()
+  expect(enqueue).toHaveBeenCalledWith(
+    'event',
+    expect.objectContaining({
+      event_type: 'student_task_closed',
+      payload: { currentTime: 0, durationMs: 1000, reason: 'completion_failed' },
+    }),
+  )
 })
 
 test('timer expiry queues the last note before requesting navigation', async () => {

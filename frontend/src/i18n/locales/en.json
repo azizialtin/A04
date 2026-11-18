@@ -88,7 +88,7 @@
     "seek": "Video position",
     "timer_label": "Time",
     "task_label": "Task",
-    "student_task_button": "Student task",
+    "student_task_button": "Student task and provided code",
     "notes_label": "Notes",
     "notes_placeholder": "Notes while watching…",
     "next": "Continue",
@@ -97,9 +97,11 @@
     "exit_cancel": "Stay on this case",
     "exit_confirm": "Continue to diagnosis",
     "exit_error": "We could not continue to the diagnosis. Your case is still open. Please try again.",
-    "info_title": "Information",
+    "info_title": "Diagnosis definition",
     "student_task_title": "The students' task",
-    "no_content": "No content provided."
+    "no_content": "No content provided.",
+    "task_button": "Task instructions",
+    "task_instructions": "You are watching a video of a classroom situation. You can take notes during the video, jump forwards and backwards as often as you like, and watch individual sections or the entire video again. Your task is to write a diagnosis of the situation."
   },
   "diagnosis": {
     "title": "Your diagnosis",
@@ -247,7 +249,9 @@
     "replay_empty": "No displayable gaze points are available for this replay. A screen recording and its soundtrack do not confirm successful gaze capture.",
     "mock": "Test mode: synthetic gaze, not a verified hardware test.",
     "continue_without": "Continue without gaze data",
-    "preflight_title": "Check gaze recording"
+    "preflight_title": "Check gaze recording",
+    "tracker_ready": "Eye tracker detected",
+    "preflight_status": "Gaze data is collected only on the video screen."
   },
   "pilot": {
     "welcome_intro": "Welcome, and thank you for participating in our study!\n\nFirst, you will answer questions for approximately 30 minutes. After a short break, you will work through seven video cases. The videos show typical situations in which students find and fix errors in programs (debugging). Complete the tasks accompanying each video.\n\nAfter another short break, you will answer some final questions. The study takes approximately 2.5 hours.\n\nWhen you are ready, select “Continue” to begin.",

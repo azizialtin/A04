@@ -11,6 +11,30 @@ import { expectNoHorizontalOverflow } from './layout'
 type SourceTask = { source_task: number; title: string; description: string; questions: Question[] }
 
 const API = 'http://a04.invalid'
+const captureChecks: { gazeRequests: string[]; bridgeCommands: string[] }[] = []
+test.beforeEach(() => {
+  captureChecks.length = 0
+})
+test.afterEach(() => {
+  for (const state of captureChecks) {
+    expect(
+      state.gazeRequests,
+      'non-video screens must not create or upload gaze recordings',
+    ).toEqual([])
+    expect(state.bridgeCommands, 'non-video screens must not request gaze streaming').not.toContain(
+      'start_gaze',
+    )
+  }
+})
+
+async function measureGeometry(page: Page): Promise<GazeLayout> {
+  // Test-only DOM inspection; participants never start a gaze subscription here.
+  return page.evaluate(async () => {
+    const modulePath = '/src/lib/aoi.ts'
+    const { capturePageGeometry } = await import(modulePath)
+    return capturePageGeometry()
+  })
+}
 const source = JSON.parse(
   readFileSync(
     new URL('../../backend/app/data/pretest_pilot20261116.json', import.meta.url),
@@ -34,6 +58,8 @@ async function openStep(
     localStorage.setItem('a04_auth', JSON.stringify({ token }))
     localStorage.setItem('i18nextLng', 'de')
   })
+  const capture = { gazeRequests: [] as string[], bridgeCommands: [] as string[] }
+  captureChecks.push(capture)
   await page.routeWebSocket('ws://127.0.0.1:8766', (ws) => {
     ws.send(
       JSON.stringify({ type: 'status', connected: true, frequency: 120, screen_recording: false }),
@@ -41,6 +67,7 @@ async function openStep(
     let samples: ReturnType<typeof setInterval> | undefined
     ws.onMessage((message) => {
       const request = JSON.parse(String(message))
+      capture.bridgeCommands.push(request.type)
       if (request.type === 'start_gaze' && !samples) {
         samples = setInterval(
           () =>
@@ -69,7 +96,6 @@ async function openStep(
   const state = {
     current: 0,
     answers: [] as Record<string, unknown>[],
-    layouts: [] as GazeLayout[],
     unexpected: [] as string[],
   }
   await page.route(API + '/**', async (route) => {
@@ -104,24 +130,16 @@ async function openStep(
       return json({ status: 'ok' })
     }
     if (path === '/participant/events') return json({ id: 1 })
-    if (path === '/gaze/recordings') {
-      state.layouts.push(request.postDataJSON().geometry)
-      return json({ recording_id: 1 })
+    if (path.startsWith('/gaze/recordings')) {
+      capture.gazeRequests.push(`${request.method()} ${path}`)
+      return route.fulfill({ status: 400, json: { detail: 'Gaze capture is video-only' } })
     }
-    if (path === '/gaze/recordings/1/geometry') {
-      state.layouts.push(request.postDataJSON())
-      return json({ status: 'ok' })
-    }
-    if (/^\/gaze\/recordings\/1\/(samples|complete)$/.test(path)) return json({ status: 'ok' })
     state.unexpected.push(`${request.method()} ${path}`)
     return route.fulfill({ status: 404, json: { detail: path } })
   })
   await page.goto('/session')
   await expect(page.getByRole('heading', { name: step.title, exact: true })).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
-  // Capture the ready, unanswered page after the synthetic tracker has connected.
-  if (step.kind === 'questionnaire')
-    await expect.poll(() => state.layouts.length).toBeGreaterThan(0)
   return state
 }
 
@@ -303,12 +321,11 @@ for (const task of source.pck_pages) {
     }
     await expect(next).toBeEnabled()
     await assertFits(page, info, 'answered')
-    await expect.poll(() => state.layouts.length).toBeGreaterThan(0)
-    const last = state.layouts.at(-1)!
+    const last = await measureGeometry(page)
     for (const question of task.questions) {
       const bounds = await page.locator(`[data-aoi="question.${question.id}.prompt"]`).boundingBox()
       const area = last.aois?.find((item) => item.id === `question.${question.id}.prompt`)
-      expect(area, `gaze prompt for ${question.id}`).toBeDefined()
+      expect(area, `DOM area for ${question.id}`).toBeDefined()
       expect(area!.x).toBeCloseTo(bounds!.x, 0)
       expect(area!.y).toBeCloseTo(bounds!.y, 0)
     }
@@ -389,8 +406,7 @@ for (const task of source.mesp_pages) {
     }
     await expect(next).toBeEnabled()
     await assertFits(page, info, 'answered')
-    await expect.poll(() => state.layouts.length).toBeGreaterThan(0)
-    const last = state.layouts.at(-1)!
+    const last = await measureGeometry(page)
     const legendAreas = last.aois?.filter(
       (item) => item.id === `matrix.${task.questions[0].matrix}.legend`,
     )

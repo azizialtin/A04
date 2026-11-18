@@ -10,7 +10,6 @@ from app.api.gaze import GazeGeometry
 from app.models.gaze_recording import GazeRecording
 from app.models.interaction_log import InteractionLog
 from app.models.participant import Participant
-from app.models.questionnaire import Questionnaire
 from app.models.screen_recording import ScreenRecording
 from app.models.video import Video
 from app.services import storage
@@ -353,7 +352,8 @@ async def test_geometry_rejects_malformed_guard(client, participant_headers, gua
         "/gaze/recordings",
         headers=participant_headers,
         json={
-            "step_kind": "questionnaire",
+            "video_id": 1,
+            "step_kind": "case_video",
             "sampling_rate_hz": 120,
             "geometry": {**GEOMETRY, "display_guard": guard},
         },
@@ -536,8 +536,10 @@ async def test_guard_events_are_participant_scoped_across_recordings(
 ):
     monkeypatch.setattr(storage, "UPLOADS", tmp_path)
     other = Participant(id="OTHER-GUARD", study_id=seed_study.id)
-    questionnaire = Questionnaire(study_id=seed_study.id, placement="pre_test", title="Page")
-    db.add_all([other, questionnaire])
+    video = Video(
+        study_id=seed_study.id, title="Guarded lab", phase_type="training", gcp_filename="guard.mp4"
+    )
+    db.add_all([other, video])
     await db.flush()
 
     db.add(
@@ -554,8 +556,8 @@ async def test_guard_events_are_participant_scoped_across_recordings(
             "/gaze/recordings",
             headers=participant_headers,
             json={
-                "step_kind": "questionnaire",
-                "questionnaire_id": questionnaire.id,
+                "step_kind": "case_video",
+                "video_id": video.id,
                 "step_index": index,
                 "sampling_rate_hz": 120,
                 "geometry": copy.deepcopy(GEOMETRY),

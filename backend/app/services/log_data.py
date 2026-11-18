@@ -28,6 +28,9 @@ MAIN_SCREEN_VARIABLES: dict[str, str] = {
     "video_seeked": "set_video_playhad_to",
     "notes_focused": "click_event_notes_field",
     "notes_typed": "type_in_notes_field",
+    # Added with the task popup; these extend the original workbook's codebook.
+    "task_opened": "click_event_task_button",
+    "task_closed": "click_event_close_task_pop_up",
     "info_opened": "click_event_info_button",
     "info_closed": "click_event_close_info_pop_up",
     "student_task_opened": "click_event_student_task_button",
@@ -35,7 +38,15 @@ MAIN_SCREEN_VARIABLES: dict[str, str] = {
 }
 
 
-def variable_name(event_type: str) -> str:
+POPUP_CLOSE_EVENTS = ("task_closed", "info_closed", "student_task_closed")
+
+
+def variable_name(event_type: str, payload: Mapping[str, Any] | None = None) -> str:
+    if event_type in POPUP_CLOSE_EVENTS and (payload or {}).get("reason") not in (
+        None,
+        "dismissed",
+    ):
+        return ""
     return MAIN_SCREEN_VARIABLES.get(event_type, "")
 
 

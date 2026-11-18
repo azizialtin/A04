@@ -61,6 +61,7 @@ export default function StudyText({
           code={segment.lines}
           lang={segment.lang}
           startLine={firstLine}
+          preserveBlankLines
           aoiId={aoiId}
         />
       )
