@@ -323,6 +323,21 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
             .click()
         } else {
           await fillQuestions(page, step.questions)
+          if (step.section_key === 'demographics') {
+            await expect(page.locator('.questionnaire-page-title')).toHaveText(
+              'Seite 1 von 2: Persönliche Angaben und Ausbildung',
+            )
+            await expectPageFits(page)
+            await next.click()
+            await expect(page.locator('.questionnaire-page-title')).toHaveText(
+              'Seite 2 von 2: Unterricht und Erfahrung',
+            )
+            // The presentation has two screens, but the research instrument
+            // must remain one server step, one visit, and one response.
+            expect((await getSession()).current_step_index).toBe(index)
+            await fillQuestions(page, step.questions)
+            await expectPageFits(page)
+          }
           if (step.section_key === 'pck' || step.section_key === 'mesp') {
             await page.screenshot({
               path: info.outputPath(`page-${index}-${step.section_key}.png`),
@@ -447,6 +462,23 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
   expect(csv).toContain('mesp_pre_6e')
   expect(csv).not.toContain('msk_pre_')
   const rows = csvRecords(csv)
+  const demographics = rows.filter((row) => row.section_key === 'demographics')
+  expect(demographics).toHaveLength(1)
+  expect(JSON.parse(demographics[0].answers)).toEqual(
+    expect.objectContaining({ sex: expect.anything(), java_ex: expect.anything() }),
+  )
+  const sections = await request.get(`${API}/admin/studies/${studyId}/export/sections`, {
+    headers: headers(token),
+    params: { participant_ids: participantId },
+  })
+  expect(sections.ok(), await sections.text()).toBeTruthy()
+  const demographicsSection = csvRecords(await sections.text()).find(
+    (row) => row.section_key === 'demographics',
+  )!
+  expect(demographicsSection).toMatchObject({ pages_answered: '1', visited_pages: '1' })
+  expect(JSON.parse(demographicsSection.page_visits)).toEqual([
+    expect.objectContaining({ exit_reason: 'submitted' }),
+  ])
   const skipped = rows.find((row) => 'ck_pre_02' in JSON.parse(row.answers))!
   expect(skipped.response_status).toBe('skipped')
   expect(JSON.parse(skipped.answers)).toEqual({

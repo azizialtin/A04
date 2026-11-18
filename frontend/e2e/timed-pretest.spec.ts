@@ -552,6 +552,20 @@ test('every default pretest page fits the lab viewport, including conditional de
     expect(source.ck_tasks.find((task) => task.source_row === 25)?.question.id).toBe('ck_pre_12')
     expect(source.ck_tasks.find((task) => task.source_row === 26)?.question.id).toBe('ck_pre_13')
     const reports = []
+    const demographicExperienceIds = new Set([
+      'st_fach1',
+      'st_fach2',
+      'st_fach3',
+      'st_schulpraktikum',
+      'st_unterricht',
+      'teach_class',
+      'teach_inf_ex',
+      'teach_inf_year',
+      'teach_prog_ex',
+      'teach_prog_year',
+      'java_ex',
+      'java_years',
+    ])
     let current = initial.current_step_index
     for (const step of pages) {
       await api(request, '/participant/session/progress', participantToken, 'PATCH', {
@@ -562,103 +576,133 @@ test('every default pretest page fits the lab viewport, including conditional de
       current = step.index
       await page.reload()
       await expect(page.getByRole('heading', { name: step.title, exact: true })).toBeVisible()
-      // Choose the branch that exposes each conditional field, using the
-      // instrument's own option values rather than translated label guesses.
-      for (const [id, value] of Object.entries({
-        participant_group: 1,
-        st_enrollment: 1,
-        st_schulform: 7,
-        teach_inf_ex: 1,
-        teach_prog_ex: 1,
-        java_ex: 1,
-      })) {
-        const question = step.questions.find((item) => item.id === id)
-        if (!question) continue
-        const option =
-          question.options?.findIndex((item) => typeof item !== 'string' && item.value === value) ??
-          -1
-        expect(option, `missing branch ${id}=${value}`).toBeGreaterThanOrEqual(0)
-        await page.locator(`[data-aoi="question.${id}"] input[type="radio"]`).nth(option).check()
-      }
-      for (const question of step.questions.filter((item) => item.show_if)) {
-        await expect(page.locator(`[data-aoi="question.${question.id}"]`)).toBeVisible()
-      }
-      for (const question of step.questions.filter((item) => item.type === 'debugging')) {
-        const fields = page.locator(`[data-aoi="question.${question.id}"]`)
-        const add = fields.getByRole('button', { name: /Fehler bezieht sich/ })
-        for (let count = 1; count < 5; count++) await add.click()
-        await expect(fields.getByRole('spinbutton')).toHaveCount(5)
-        await expect(add).toBeDisabled()
-        for (const input of await fields.getByRole('spinbutton').all()) await input.fill('1')
-        await fields
-          .getByLabel('Was ist der Fehler?', { exact: true })
-          .fill('Begründung für die Browserprüfung.')
-        await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
-      }
-      if (step.section_key === 'pck') {
-        for (const textarea of await page.locator('textarea').all())
-          await textarea.fill('Antwort zur Unterrichtssituation.')
-        await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeDisabled()
-        await page
-          .getByRole('button', { name: 'Diese Reihenfolge übernehmen', exact: true })
-          .click()
-        const ranking = step.questions.find((question) => question.type === 'ranking')!
-        const second = ranking.options![1]
-        const secondLabel = typeof second === 'string' ? second : second.label
-        await page
-          .getByRole('button', { name: secondLabel + ': Nach oben verschieben', exact: true })
-          .click()
-        await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
-      }
-      await page.evaluate(() => document.fonts.ready)
-      const report = {
-        title: step.title,
-        questionnaire_id: step.questionnaire_id,
-        ...(await viewportReport(page)),
-      }
-      reports.push(report)
-      await page.screenshot({
-        path: info.outputPath('default-pretest-' + step.page + '.png'),
-        fullPage: true,
-      })
-      // Measure the intended layout first, then complete any remaining fields.
-      // Every questionnaire must be saved through the participant controls;
-      // moving the progress pointer cannot bypass an unanswered page.
-      for (const question of step.questions) {
-        const field = page.locator(`[data-aoi="question.${question.id}"]`)
-        if (!(await field.isVisible())) continue
-        if (question.type === 'multiple_choice' || question.type === 'likert') {
-          if (!(await field.locator('input:checked').count()))
-            await field.getByRole('radio').first().check()
-        } else if (question.type === 'number') {
-          const input = field.getByRole('spinbutton')
-          if (!(await input.inputValue()))
-            await input.fill(String(Math.max(question.min ?? 0, Math.min(question.max ?? 25, 25))))
-        } else if (question.type === 'free_text') {
-          const input = field.getByRole('textbox')
-          if (!(await input.inputValue())) await input.fill('Antwort zur Browserprüfung.')
-        } else if (question.type === 'multi_select') {
-          if (!(await field.locator('input:checked').count())) {
-            for (let choice = 0; choice < (question.min_selections ?? 1); choice++)
-              await field.getByRole('checkbox').nth(choice).check()
-          }
-        } else if (question.type === 'slider') {
-          await field.getByRole('slider').press('ArrowRight')
-        } else {
-          expect(['debugging', 'ranking']).toContain(question.type)
+      const localPageCount = step.section_key === 'demographics' ? 2 : 1
+      for (let localPage = 1; localPage <= localPageCount; localPage++) {
+        if (localPageCount === 2)
+          await expect(page.locator('.questionnaire-page-title')).toHaveText(
+            localPage === 1
+              ? 'Seite 1 von 2: Persönliche Angaben und Ausbildung'
+              : 'Seite 2 von 2: Unterricht und Erfahrung',
+          )
+        const localQuestions =
+          localPageCount === 1
+            ? step.questions
+            : step.questions.filter(
+                (question) => demographicExperienceIds.has(question.id) === (localPage === 2),
+              )
+        // Choose the branch that exposes each conditional field, using the
+        // instrument's own option values rather than translated label guesses.
+        for (const [id, value] of Object.entries({
+          participant_group: 1,
+          st_enrollment: 1,
+          st_schulform: 7,
+          teach_inf_ex: 1,
+          teach_prog_ex: 1,
+          java_ex: 1,
+        })) {
+          const question = localQuestions.find((item) => item.id === id)
+          if (!question) continue
+          const option =
+            question.options?.findIndex(
+              (item) => typeof item !== 'string' && item.value === value,
+            ) ?? -1
+          expect(option, `missing branch ${id}=${value}`).toBeGreaterThanOrEqual(0)
+          await page.locator(`[data-aoi="question.${id}"] input[type="radio"]`).nth(option).check()
         }
-      }
-      await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
-      await page.getByRole('button', { name: 'Weiter', exact: true }).click()
-      await expect
-        .poll(
-          async () =>
+        for (const question of localQuestions.filter((item) => item.show_if)) {
+          await expect(page.locator(`[data-aoi="question.${question.id}"]`)).toBeVisible()
+        }
+        for (const question of step.questions.filter((item) => item.type === 'debugging')) {
+          const fields = page.locator(`[data-aoi="question.${question.id}"]`)
+          const add = fields.getByRole('button', { name: /Fehler bezieht sich/ })
+          for (let count = 1; count < 5; count++) await add.click()
+          await expect(fields.getByRole('spinbutton')).toHaveCount(5)
+          await expect(add).toBeDisabled()
+          for (const input of await fields.getByRole('spinbutton').all()) await input.fill('1')
+          await fields
+            .getByLabel('Was ist der Fehler?', { exact: true })
+            .fill('Begründung für die Browserprüfung.')
+          await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
+        }
+        if (step.section_key === 'pck') {
+          for (const textarea of await page.locator('textarea').all())
+            await textarea.fill('Antwort zur Unterrichtssituation.')
+          await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeDisabled()
+          await page
+            .getByRole('button', { name: 'Diese Reihenfolge übernehmen', exact: true })
+            .click()
+          const ranking = step.questions.find((question) => question.type === 'ranking')!
+          const second = ranking.options![1]
+          const secondLabel = typeof second === 'string' ? second : second.label
+          await page
+            .getByRole('button', { name: secondLabel + ': Nach oben verschieben', exact: true })
+            .click()
+          await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
+        }
+        await page.evaluate(() => document.fonts.ready)
+        const report = {
+          title: step.title,
+          questionnaire_id: step.questionnaire_id,
+          local_page: localPage,
+          ...(await viewportReport(page)),
+        }
+        reports.push(report)
+        await page.screenshot({
+          path: info.outputPath(`default-pretest-${step.page}-${localPage}.png`),
+          fullPage: true,
+        })
+        // Measure the intended layout first, then complete any remaining fields.
+        // Every questionnaire must be saved through the participant controls;
+        // moving the progress pointer cannot bypass an unanswered page.
+        for (const question of step.questions) {
+          const field = page.locator(`[data-aoi="question.${question.id}"]`)
+          if (!(await field.isVisible())) continue
+          if (question.type === 'multiple_choice' || question.type === 'likert') {
+            if (!(await field.locator('input:checked').count()))
+              await field.getByRole('radio').first().check()
+          } else if (question.type === 'number') {
+            const input = field.getByRole('spinbutton')
+            if (!(await input.inputValue()))
+              await input.fill(
+                String(Math.max(question.min ?? 0, Math.min(question.max ?? 25, 25))),
+              )
+          } else if (question.type === 'free_text') {
+            const input = field.getByRole('textbox')
+            if (!(await input.inputValue())) await input.fill('Antwort zur Browserprüfung.')
+          } else if (question.type === 'multi_select') {
+            if (!(await field.locator('input:checked').count())) {
+              for (let choice = 0; choice < (question.min_selections ?? 1); choice++)
+                await field.getByRole('checkbox').nth(choice).check()
+            }
+          } else if (question.type === 'slider') {
+            await field.getByRole('slider').press('ArrowRight')
+          } else {
+            expect(['debugging', 'ranking']).toContain(question.type)
+          }
+        }
+        await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeEnabled()
+        await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+        if (localPage < localPageCount) {
+          await expect(page.locator('.questionnaire-page-title')).toHaveText(
+            'Seite 2 von 2: Unterricht und Erfahrung',
+          )
+          expect(
             (await api<SessionScript>(request, '/participant/session', participantToken))
               .current_step_index,
-        )
-        .toBe(step.index + 1)
-      current = step.index + 1
+          ).toBe(step.index)
+          continue
+        }
+        await expect
+          .poll(
+            async () =>
+              (await api<SessionScript>(request, '/participant/session', participantToken))
+                .current_step_index,
+          )
+          .toBe(step.index + 1)
+        current = step.index + 1
+      }
     }
+    expect(reports).toHaveLength(25)
     await info.attach('default-pretest-viewport.json', {
       body: JSON.stringify(reports, null, 2),
       contentType: 'application/json',
