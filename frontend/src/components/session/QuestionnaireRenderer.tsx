@@ -1,12 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useElapsedSeconds } from '../../hooks/useElapsedSeconds'
@@ -265,18 +257,32 @@ function Matrix({
       )
     })
   const container = useRef<HTMLDivElement>(null)
-  const [narrow, setNarrow] = useState(false)
-  useEffect(() => {
-    if (!container.current || typeof ResizeObserver === 'undefined') return
+  const [stacked, setStacked] = useState(false)
+  useLayoutEffect(() => {
+    const element = container.current
+    if (!element) return
+    const fit = (width: number) => {
+      if (width <= 0) return
+      const fontSize = Number.parseFloat(getComputedStyle(element).fontSize) || 16
+      // Full descriptions need readable columns. Numbered scales can stay
+      // compact in the authored PCK columns, but every layout must still reflow.
+      const promptWidth = deduplicateLegend ? 12.5 : 20
+      const optionWidth = labelsInHeaders ? 8 : deduplicateLegend ? 2.5 : 4
+      setStacked(width < (promptWidth + block.options.length * optionWidth) * fontSize)
+    }
+    const style = getComputedStyle(element)
+    fit(
+      element.clientWidth -
+        parseFloat(style.paddingLeft || '0') -
+        parseFloat(style.paddingRight || '0'),
+    )
+    if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(([entry]) => {
-      setNarrow(entry.contentRect.width < 320 + block.options.length * 64)
+      fit(entry.contentRect.width)
     })
-    observer.observe(container.current)
+    observer.observe(element)
     return () => observer.disconnect()
-  }, [block.options.length])
-  // The wide task layouts place a compact table in a column that is narrow on
-  // purpose and are fitted to the lab screen as authored; they are not stacked.
-  const stacked = narrow && !deduplicateLegend && !labelsInHeaders
+  }, [block.options.length, deduplicateLegend, labelsInHeaders])
   return (
     <div
       ref={container}

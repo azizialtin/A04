@@ -56,3 +56,31 @@ test('pilot introduction retains ID and Weiter while removing obsolete nine-case
   expect(screen.queryByRole('list')).toBeNull()
   expect(screen.getByText(/sieben Videofälle/)).toBeInTheDocument()
 })
+
+test('puts the optional display check inside the welcome card before Continue', () => {
+  const onContinue = vi.fn()
+  render(
+    <WelcomeScreen
+      participantId="PILOT-1"
+      onContinue={onContinue}
+      pilot
+      displayCheck={
+        <details>
+          <summary>Bildschirmeinstellungen</summary>
+          <p>Aktuelle Bildschirmauflösung</p>
+        </details>
+      }
+    />,
+  )
+  const summary = screen.getByText('Bildschirmeinstellungen')
+  const button = screen.getByRole('button', { name: 'Weiter' })
+  const details = summary.closest('details')!
+  expect(details.closest('.panel')).toBe(button.closest('.panel'))
+  expect(details.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(details).not.toHaveAttribute('open')
+
+  fireEvent.click(summary)
+  expect(onContinue).not.toHaveBeenCalled()
+  fireEvent.click(button)
+  expect(onContinue).toHaveBeenCalledOnce()
+})

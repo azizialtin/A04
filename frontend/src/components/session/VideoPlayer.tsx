@@ -217,7 +217,7 @@ export default function VideoPlayer({ videoId, onTimeUpdate, onEnded }: Props) {
   return (
     <div className="case-video">
       {audioIssue ? (
-        <p role="status" className="is-danger">
+        <p role="status" className="case-video__audio-status">
           {t(`recording_audio.${audioIssue}`)}
         </p>
       ) : null}

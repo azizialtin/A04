@@ -1,8 +1,9 @@
 import { render } from '@testing-library/react'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { SessionStep } from '../../api/participant'
 import { useGazeCapture } from '../../hooks/useGazeCapture'
+import { reportGazeDelivery, resetGazeDeliverySession } from '../../lib/gazeDelivery'
 import SessionGazeCapture from './SessionGazeCapture'
 
 vi.mock('../../hooks/useGazeCapture', () => ({ useGazeCapture: vi.fn() }))
@@ -53,7 +54,8 @@ const outro: SessionStep = {
   questions: [],
 }
 
-beforeEach(() => capture.mockClear())
+beforeEach(() => capture.mockReset())
+afterEach(() => resetGazeDeliverySession())
 
 test('the measurement owner follows the exact page and keeps questionnaire identity without a video', () => {
   const { rerender } = render(<SessionGazeCapture step={questionnaire} />)
@@ -94,9 +96,41 @@ test('intro, welcome, thanks, replay and an outro without questions are not meas
       batch_size: 1,
     },
   ]
-  const { rerender } = render(<SessionGazeCapture step={excluded[0]} />)
+  const { container, rerender } = render(<SessionGazeCapture step={excluded[0]} />)
   for (const step of excluded) {
     rerender(<SessionGazeCapture step={step} />)
     expect(capture).toHaveBeenLastCalledWith(null)
+    expect(container).toBeEmptyDOMElement()
   }
 })
+
+test.each([questionnaire, caseVideo, diagnosis, outro])(
+  '$kind captures in the background without status boxes or delivery warnings',
+  (step) => {
+    const healthy = {
+      state: 'tracking' as const,
+      received: 24,
+      valid: 20,
+      issue: null,
+      mappingVerified: true,
+      retry: vi.fn(),
+    }
+    capture.mockReturnValue(healthy)
+    const { container, rerender } = render(<SessionGazeCapture step={step} />)
+    expect(capture).toHaveBeenCalledOnce()
+    const context = capture.mock.calls[0][0]
+    expect(context).toMatchObject({ step_kind: step.kind, step_index: step.index })
+    expect(container).toBeEmptyDOMElement()
+
+    capture.mockReturnValue({
+      ...healthy,
+      state: 'bridge_unreachable',
+      issue: 'upload_failed',
+      mappingVerified: false,
+    })
+    reportGazeDelivery('upload_failed')
+    rerender(<SessionGazeCapture step={step} />)
+    expect(capture).toHaveBeenLastCalledWith(context)
+    expect(container).toBeEmptyDOMElement()
+  },
+)

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 
+import pilotSource from '../../../../backend/app/data/pretest_pilot20261116.json'
 import type { Question } from '../../lib/questionnaire'
 import QuestionnaireRenderer from './QuestionnaireRenderer'
 
@@ -428,6 +429,108 @@ test('matrix answers and gaze targets survive a narrow container and widening ag
     vi.unstubAllGlobals()
   }
 })
+
+const pilotPages = pilotSource as unknown as {
+  mesp_pages: { source_task: number; title: string; questions: Question[] }[]
+  pck_pages: { source_task: number; title: string; questions: Question[] }[]
+}
+
+function observeMatrixWidths() {
+  const callbacks = new Map<Element, ResizeObserverCallback>()
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(element: Element) {
+        callbacks.set(element, this.callback)
+      }
+      disconnect() {}
+    },
+  )
+  return (width: number) => {
+    act(() => {
+      for (const [target, callback] of callbacks) {
+        callback([{ target, contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver)
+      }
+    })
+  }
+}
+
+test.each(pilotPages.mesp_pages)(
+  'pilot MESP task $source_task reflows full scale labels and retains every saved value',
+  (task) => {
+    const resize = observeMatrixWidths()
+    const onSubmit = vi.fn()
+    try {
+      const { container } = render(
+        <QuestionnaireRenderer
+          title={task.title}
+          questions={task.questions}
+          matrixLabels="headers"
+          onSubmit={onSubmit}
+        />,
+      )
+      // The screenshot's panel has less room than its desktop viewport suggests.
+      resize(1060)
+      expect(container.querySelector('.matrix')).toHaveClass('matrix--stacked')
+      const expected: Record<string, unknown> = {}
+      for (const [index, question] of task.questions.entries()) {
+        const row = container.querySelector(`[data-aoi="question.${question.id}"]`)!
+        const radios = within(row as HTMLElement).getAllByRole('radio')
+        expect(radios).toHaveLength(question.options!.length)
+        fireEvent.click(radios[index % radios.length])
+        expected[question.id] = (
+          question.options![index % radios.length] as { value: unknown }
+        ).value
+      }
+      for (const width of [1700, 280, 1700]) {
+        resize(width)
+        expect(container.querySelector('.matrix')?.classList.contains('matrix--stacked')).toBe(
+          width === 280,
+        )
+        expect(container.querySelectorAll('input:checked')).toHaveLength(task.questions.length)
+        const answer = container.querySelector('[data-aoi$=".answer"]')!
+        expect(answer.hasAttribute('data-aoi-clip')).toBe(width !== 280)
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+      expect(onSubmit).toHaveBeenCalledWith(expected, expect.any(Number))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  },
+)
+
+test.each(pilotPages.pck_pages)(
+  'pilot PCK task $source_task stays compact in a lab column and reflows on small screens',
+  (task) => {
+    const resize = observeMatrixWidths()
+    try {
+      const { container } = render(
+        <QuestionnaireRenderer
+          title={task.title}
+          questions={task.questions}
+          layout="columns"
+          onSubmit={vi.fn()}
+        />,
+      )
+      const matrices = Array.from(container.querySelectorAll('.matrix'))
+      const selected = matrices.map((matrix) => {
+        const radio = within(matrix as HTMLElement).getAllByRole('radio')[4]
+        fireEvent.click(radio)
+        return radio
+      })
+      for (const width of [550, 280, 550]) {
+        resize(width)
+        for (const matrix of matrices) {
+          expect(matrix.classList.contains('matrix--stacked')).toBe(width === 280)
+        }
+        for (const radio of selected) expect(radio).toBeChecked()
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  },
+)
 
 test('a question can show code above its answer field, numbered line by line', () => {
   const debugging: Question[] = [

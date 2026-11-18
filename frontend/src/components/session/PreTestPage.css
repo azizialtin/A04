@@ -211,9 +211,8 @@
 }
 .pretest-page--mesp .matrix__table {
   table-layout: fixed;
-  min-width: 1600px;
 }
-.pretest-page--mesp .matrix__table .matrix__item {
+.pretest-page--mesp .matrix:not(.matrix--stacked) .matrix__table .matrix__item {
   width: 40%;
 }
 .pretest-page--mesp .matrix__table thead th {
@@ -236,8 +235,8 @@
   background: #fafcfb;
   text-wrap: pretty;
 }
-.pretest-page--mesp .matrix__table th,
-.pretest-page--mesp .matrix__table td {
+.pretest-page--mesp .matrix:not(.matrix--stacked) .matrix__table th,
+.pretest-page--mesp .matrix:not(.matrix--stacked) .matrix__table td {
   padding-block: 10px;
 }
 .pretest-page--mesp .matrix__num {
@@ -419,19 +418,22 @@
     line-height: 1.3;
     gap: 6px;
   }
-  .pretest-page--pilot.pretest-page--pck .matrix__table th,
-  .pretest-page--pilot.pretest-page--pck .matrix__table td {
+  .pretest-page--pilot.pretest-page--pck .matrix:not(.matrix--stacked) .matrix__table th,
+  .pretest-page--pilot.pretest-page--pck .matrix:not(.matrix--stacked) .matrix__table td {
     padding: 6px 3px;
   }
   /* These tables are fitted to the lab screen with the statement column sized
      by its text. The responsive defaults (fixed layout, a 40% statement column)
      wrap the statements and push the page past the screen. */
-  .pretest-page--pilot.pretest-page--pck .matrix__table {
+  .pretest-page--pilot.pretest-page--pck .matrix:not(.matrix--stacked) .matrix__table {
     table-layout: auto;
   }
-  .pretest-page--pilot.pretest-page--pck .matrix__table .matrix__item {
+  .pretest-page--pilot.pretest-page--pck
+    .matrix:not(.matrix--stacked)
+    .matrix__table
+    .matrix__item {
     width: auto;
-    overflow-wrap: normal;
+    overflow-wrap: anywhere;
     min-width: 0;
     padding-right: 12px;
     font-weight: 400;
@@ -449,7 +451,7 @@
   .pretest-page--pilot.pretest-page--pck .matrix__table tbody tr:hover {
     background: #f0f5f4;
   }
-  .pretest-page--pilot.pretest-page--pck .matrix__cell {
+  .pretest-page--pilot.pretest-page--pck .matrix:not(.matrix--stacked) .matrix__cell {
     min-width: 28px;
     min-height: 28px;
   }
@@ -496,21 +498,5 @@
   .pretest-page--pilot.pretest-page--pck .questionnaire-footer > .small {
     margin: 0;
     font-size: 15px;
-  }
-}
-
-/* The pilot pages are fitted to the lab screen to the pixel. A status line in
-   the page flow would push them past it, so here it floats over the corner as
-   it did when those pages were laid out. */
-@media (min-width: 1200px) {
-  .session-screen:has(> .pretest-page--pilot) > .gaze-health-stack {
-    position: fixed;
-    left: 1rem;
-    top: 1rem;
-    z-index: 100;
-    width: auto;
-    max-width: min(34rem, calc(100vw - 2rem));
-    margin: 0;
-    pointer-events: none;
   }
 }

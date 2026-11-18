@@ -163,7 +163,7 @@ async function openStep(page: Page, step: SessionStep) {
   await page.goto('/session')
   await page.evaluate(() => document.fonts.ready)
   if (step.kind !== 'think_aloud')
-    await expect(page.getByText('Blickdaten werden empfangen.', { exact: true })).toBeVisible()
+    await expect.poll(() => state.samples.length).toBeGreaterThan(0)
   await expect(page.locator('.unsent')).toHaveCount(0)
   if (step.kind !== 'think_aloud')
     await expect
@@ -524,28 +524,29 @@ test('visual viewport zoom is retained so unsupported mapping can be rejected', 
   await expect.poll(() => state.layouts.at(-1)?.visual_viewport?.scale).toBe(1)
 })
 
-test('a previous gaze delivery warning has its own foreground AOI and can be dismissed', async ({
+test('a retained gaze delivery failure does not add a task overlay or cover its answer', async ({
   page,
 }, info) => {
   const state = await openStep(
     page,
     questionnaire([{ id: 'answer', type: 'free_text', text: 'Antwort' }], ''),
   )
-  // Exercise the same retained warning store that a failed final upload sets.
+  // Recording delivery retains its failure state without placing technical UI
+  // over the participant's next task.
   await page.evaluate(async () => {
     const modulePath = '/src/lib/gazeDelivery.ts'
     const { reportGazeDelivery } = await import(modulePath)
     reportGazeDelivery('upload_failed')
   })
-  await expect(page.locator('[data-aoi="gaze_delivery"]')).toBeVisible()
-  await expect
-    .poll(() => state.layouts.at(-1)?.aois?.some((area) => area.id === 'gaze_delivery'))
-    .toBe(true)
-  await verifyInventory(page, state.layouts, info, 'gaze-delivery-warning')
-  await page.locator('[data-aoi="gaze_delivery"]').getByRole('button').click()
-  await expect
-    .poll(() => state.layouts.at(-1)?.aois?.some((area) => area.id === 'gaze_delivery'))
-    .toBe(false)
+  await expect(
+    page.locator(
+      '[data-aoi="gaze_delivery"], [data-aoi="gaze_health"], [data-aoi="display_check_notice"]',
+    ),
+  ).toHaveCount(0)
+  await page.locator('textarea').fill('Antwort bleibt erreichbar')
+  await expect(page.locator('textarea')).toHaveValue('Antwort bleibt erreichbar')
+  await verifyInventory(page, state.layouts, info, 'gaze-delivery-without-overlay')
+  expect(state.layouts.at(-1)?.aois?.some((area) => area.id === 'gaze_delivery')).toBe(false)
 })
 
 test('replay gaze follows the rendered picture through resize, fullscreen and visibility toggle', async ({

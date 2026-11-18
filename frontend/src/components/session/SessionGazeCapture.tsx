@@ -1,41 +1,10 @@
-import { useSyncExternalStore } from 'react'
-import { useTranslation } from 'react-i18next'
 import type { SessionStep } from '../../api/participant'
 import { useGazeCapture } from '../../hooks/useGazeCapture'
 import { gazeContext } from '../../lib/gazeContext'
-import {
-  gazeDeliveryWarning,
-  subscribeGazeDelivery,
-  reportGazeDelivery,
-} from '../../lib/gazeDelivery'
-import { DISPLAY_GUARD_BLOCKING } from '../../lib/displayGuard'
-import { DisplayCheckButton } from './DisplayCheckPanel'
-import GazeHealthStatus from './GazeHealthStatus'
 
 export default function SessionGazeCapture({ step }: { step: SessionStep }) {
-  const { t } = useTranslation()
-  const context = gazeContext(step)
-  const health = useGazeCapture(context)
-  const warning = useSyncExternalStore(subscribeGazeDelivery, gazeDeliveryWarning)
-  return (
-    <div className="gaze-health-stack">
-      {context && health ? <GazeHealthStatus health={health} retry={health.retry} compact /> : null}
-      {/* The blocking dialog already says all of this when it is enabled. */}
-      {context && !DISPLAY_GUARD_BLOCKING ? <DisplayCheckButton /> : null}
-      {warning ? (
-        <div
-          className="gaze-health"
-          role="status"
-          data-aoi="gaze_delivery"
-          data-aoi-overlay="true"
-          data-aoi-priority="100"
-        >
-          {t(`gaze_health.previous_${warning}`)}
-          <button type="button" className="btn btn-ghost" onClick={() => reportGazeDelivery(null)}>
-            {t('gaze_health.dismiss')}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  )
+  // Recording, verification, retries and diagnostic events continue in the
+  // background. Setup details belong on the welcome page, outside the tasks.
+  useGazeCapture(gazeContext(step))
+  return null
 }

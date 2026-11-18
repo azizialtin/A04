@@ -3,9 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { bridgeCanRecord, prepareCapture } from '../../lib/screenCapture'
 import StudyText from '../StudyText'
-import Modal from '../Modal'
 import { useGazePreflight } from '../../hooks/useGazePreflight'
-import GazeHealthStatus from './GazeHealthStatus'
 import { enqueue } from '../../lib/outbox'
 
 /**
@@ -23,7 +21,6 @@ export default function CaseIntroScreen({
   body,
   videoId,
   onContinue,
-  pilot = false,
 }: {
   title?: string
   pilot?: boolean
@@ -33,7 +30,6 @@ export default function CaseIntroScreen({
 }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
-  const [showHealth, setShowHealth] = useState(false)
   const gaze = useGazePreflight()
 
   // Warm the probe so the click does not spend its gesture waiting on it.
@@ -66,7 +62,6 @@ export default function CaseIntroScreen({
         },
       })
     gaze.close()
-    setShowHealth(false)
     onContinue()
   }
 
@@ -74,56 +69,16 @@ export default function CaseIntroScreen({
     <div className="panel">
       <h2>{title || t('case_intro.title')}</h2>
       <StudyText text={body || t('case_intro.body')} className="lead" />
-      {!pilot && <GazeHealthStatus health={gaze} retry={gaze.retry} preflight />}
       <div className="panel__actions">
         <button
           type="button"
           className="btn btn-primary"
-          onClick={() => {
-            if (pilot && gaze.state !== 'tracking') setShowHealth(true)
-            else void proceed()
-          }}
+          onClick={() => void proceed()}
           disabled={busy}
         >
-          {busy
-            ? t('case_intro.preparing')
-            : pilot || gaze.state === 'tracking'
-              ? t('common.continue')
-              : t('gaze_health.continue_without')}
+          {busy ? t('case_intro.preparing') : t('common.continue')}
         </button>
       </div>
-      {pilot && showHealth && (
-        <Modal
-          open
-          title={t('gaze_health.preflight_title')}
-          onClose={() => {
-            if (!busy) setShowHealth(false)
-          }}
-          aoiId="gaze_preflight_dialog"
-        >
-          <GazeHealthStatus health={gaze} retry={gaze.retry} preflight />
-          <div className="modal__actions">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy}
-              onClick={() => setShowHealth(false)}
-            >
-              {t('step_back.cancel')}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => void proceed()}
-            >
-              {busy
-                ? t('case_intro.preparing')
-                : t(gaze.state === 'tracking' ? 'common.continue' : 'gaze_health.continue_without')}
-            </button>
-          </div>
-        </Modal>
-      )}
     </div>
   )
 }

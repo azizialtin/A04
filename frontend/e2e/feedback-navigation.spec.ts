@@ -137,9 +137,7 @@ async function setup(page: Page) {
 
 async function confirmIntro(page: Page) {
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Blickaufzeichnung prüfen' })
-  await expect(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: 'Ohne Blickdaten fortfahren', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Blickaufzeichnung prüfen' })).toHaveCount(0)
 }
 
 async function offlineHint(page: Page) {

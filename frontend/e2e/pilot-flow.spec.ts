@@ -374,7 +374,7 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
         if (step.case_number === 2)
           await page.evaluate(() => window.dispatchEvent(new Event('offline')))
         await next.click()
-        await page.getByRole('button', { name: 'Ohne Blickdaten fortfahren', exact: true }).click()
+        await expect(page.getByRole('dialog', { name: 'Blickaufzeichnung prüfen' })).toHaveCount(0)
         if (step.case_number === 2) {
           try {
             await expect.poll(async () => (await getSession()).current_step_index).toBe(index + 1)

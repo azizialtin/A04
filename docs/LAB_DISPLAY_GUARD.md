@@ -39,20 +39,22 @@ In the default build:
 
 ### Where the study lead sees the settings
 
-**Bildschirmeinstellung prüfen** on the welcome page lists each setting as the
-browser reports it next to the intended value: bridge, resolution, scaling ×
-zoom, browser area, full screen, connected displays, pinch zoom, foreground and
-AOI mapping. It is folded away when everything is in order and open otherwise,
-and it follows the display while visible. With a bridge that measures the page,
-resolution, scaling and full screen are layout notes; without one they decide
-whether gaze can be mapped and are shown as deviations. It offers **Vollbild
-öffnen** and **Bridge erneut verbinden** and nothing that confirms or waives.
+The welcome page has one collapsed settings summary inside the welcome card.
+It reports whether settings are ready, different, or still unverified. Clicking
+or keyboard-activating the line expands a vertical list of only the different
+or unverified settings, with the current and intended values below each heading.
+It never opens itself after a measurement changes. Unknown values are not
+reported as correct. With a bridge that measures the page, resolution, scaling
+and fullscreen are layout notes; without one they decide whether gaze can be
+mapped. **Vollbild öffnen** and **Bridge erneut verbinden** remain available
+inside the expanded section.
 
-On measured pages the gaze badge shows **AOI-Zuordnung aktiv.** for both
-profiles. While a real deviation keeps gaze unmapped, a notice offers the same
-table on request; it does not appear during the 500 ms settling after a page
-change and never opens by itself. See the
-[study-lead checklist](LAB_SETUP_CHECKLIST.md).
+Questionnaires, case introductions and video pages do not show persistent gaze,
+AOI or display-status boxes, and case introductions do not repeat the setup
+confirmation. Capture, retries, display verification and diagnostic events
+continue in the background. Missing gaze is still recorded as a diagnostic
+event when entering a case. Answer-saving failure messages remain visible.
+See the [study-lead checklist](LAB_SETUP_CHECKLIST.md).
 
 ### Scrollbars
 
@@ -98,8 +100,10 @@ Windows scaling and 100% Edge zoom remains the layout-regression baseline,
 but it is no longer required for native coordinate mapping. Windowed,
 maximized and fullscreen Edge are supported. Desktop browser zoom and Windows
 scaling are supported when the physical content dimensions agree with the
-reported CSS viewport and DPR. A smaller CSS viewport may need scrolling;
-this does not change the authored page layout or option order.
+reported CSS viewport and DPR. A smaller CSS viewport may need vertical scrolling. Questionnaire matrices
+reflow into statement-by-statement choices when their container is too narrow
+for readable columns; all options remain reachable without horizontal scrolling.
+Question wording, option order and stored answer values remain unchanged.
 
 Pinch zoom/panning, multiple monitors, content outside the calibrated display,
 an ambiguous browser window, or a missing/stale native measurement are not
@@ -107,7 +111,11 @@ converted using guessed offsets. Keep the study tab in the foreground. The
 existing guard intercepts Ctrl/Cmd plus/minus and Ctrl-wheel on measured pages;
 zoom selected before entry or through browser controls is still measured.
 
-## Participant behavior
+## Participant behavior with the optional blocking build
+
+This section describes `VITE_LAB_DISPLAY_GUARD_BLOCKING=true`, not the default
+observing build described above. Persistent gaze-status badges are not shown
+in either build.
 
 - The first measured page waits for a fresh native measurement stable for
   500 ms and explicit **Studienleitung: Fortsetzen** confirmation. Until then,
@@ -130,10 +138,10 @@ zoom selected before entry or through browser controls is still measured.
   does not reset or pause it. Expiry saves the partial answer through the
   existing retry-safe finish-CK path and advances once; PCK becomes accessible
   after the native measurement is valid again. Case deadlines also continue.
-- The gaze badge distinguishes raw eye-coordinate reception from
-  **AOI-Zuordnung aktiv.** The latter requires an admitted sample with a fresh
-  native proof and a verified, visible DOM layout. A connected tracker, raw
-  sample counts or a measured window alone are insufficient.
+- Active AOI mapping requires an admitted sample with a fresh native proof
+  and a verified, visible DOM layout. A connected tracker, raw sample counts
+  or a measured window alone are insufficient. Verify this in the recorded
+  diagnostics and synthetic-run exports.
 - **Mit aktueller Anzeige fortfahren** remains an explicit fallback for
   continuing without verified mapping. It retains answers and deadlines, but
   does not make uncertain gaze valid for AOIs. It lasts until reload/logout and
@@ -183,7 +191,7 @@ Raw coordinates, timestamps, eye validity and pupil values are retained during
 brief uncertain transitions. Those samples remain unmapped rather than being
 assigned to the wrong AOI. Reasons include `display_guard_interrupted`,
 `unverified_display`, `native_viewport_mismatch` and `stale_native_viewport`.
-The mapping-waiting badge makes this visible. Durable interruption/resume
+Recorded diagnostics retain this status. Durable interruption/resume
 boundaries are scoped by participant and guard profile; an old open
 `lab_1080p` interval does not suppress newly verified native data.
 
@@ -204,7 +212,7 @@ geometry; the native measurement must recover.
 
 ## Verification on the lab PC
 
-### If the display dialog cannot continue
+### If the optional blocking display dialog cannot continue
 
 Open the current study at `https://a04.rdm.lab.lrz.de/session` in Edge and refresh
 with Ctrl+F5. The recovery dialog identifies app version `2026-11-17.2` and later
@@ -236,8 +244,9 @@ Distinct connection states are also logged, with a per-session limit, before the
 blocked questionnaire mounts. This separates a local connection failure from
 server availability and a native mapping error.
 
-Verified AOI collection still requires **Studienleitung: Fortsetzen** and
-**AOI-Zuordnung aktiv.** Unverified continuation is not a repair for missing gaze.
+The optional blocking build requires **Studienleitung: Fortsetzen**; the
+default build verifies automatically. In both builds, verify actual AOI
+collection in a synthetic run. Unverified continuation does not repair missing gaze.
 
 ### Fixation and session checks
 
@@ -246,8 +255,8 @@ Verified AOI collection still requires **Studienleitung: Fortsetzen** and
    bridge. Verify the real Fusion, 120 Hz and valid gaze samples. Calibrate and
    validate externally on the intended single monitor.
 2. Start a synthetic participant in an ordinary Edge window. Confirm the
-   initial measured display, then check both raw reception and
-   **AOI-Zuordnung aktiv.** Look at known targets on the video, code,
+   welcome settings, then check raw reception and active AOI mapping in
+   the recorded diagnostics and exports. Look at known targets on the video, code,
    instructions, response controls and a popup. Compare the replay and exported
    AOIs with those targets; check `mapping_method=native_viewport`.
 3. Move and resize the window, maximize it, enter/leave fullscreen and test the
@@ -259,8 +268,9 @@ Verified AOI collection still requires **Studienleitung: Fortsetzen** and
    the display interrupted across expiry and confirm the partial answer saves
    once, the deadline is unchanged and PCK becomes accessible after recovery.
 5. Test a missing bridge or unverified continuation separately. Confirm the
-   badge does not claim active AOI mapping merely because raw gaze arrives.
-   Reload and confirm the measured setup before the actual data-collection run.
+   recorded diagnostics and exports do not claim active AOI mapping merely
+   because raw gaze arrives. Reload and check the welcome settings before
+   the actual data-collection run.
 
 Automated tests check transformations and data integrity with synthetic gaze.
 The Windows build also compares native measurements with actual Edge pointer

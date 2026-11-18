@@ -75,23 +75,41 @@ test("shows the study's own wording when it has any, and the default otherwise",
   expect(screen.getByText(/Gleich sehen Sie ein neues Video/)).toBeInTheDocument()
 })
 
-test('unverified gaze makes continuation explicit and offers a retry without blocking', async () => {
-  gaze.state = 'bridge_unreachable'
-  const onContinue = vi.fn()
-  render(<CaseIntroScreen onContinue={onContinue} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Eye-Tracker erneut prüfen' }))
-  expect(gaze.retry).toHaveBeenCalledOnce()
-  fireEvent.click(screen.getByRole('button', { name: 'Ohne Blickdaten fortfahren' }))
-  await waitFor(() => expect(onContinue).toHaveBeenCalledOnce())
-  expect(gaze.close).toHaveBeenCalled()
-  expect(enqueue).toHaveBeenCalledWith(
-    'event',
-    expect.objectContaining({
-      event_type: 'gaze_preflight_continue_without',
-      payload: expect.objectContaining({ state: 'bridge_unreachable' }),
-    }),
-  )
-})
+test.each([false, true])(
+  'missing gaze stays in diagnostics while a single Continue starts the case (pilot=%s)',
+  async (pilot) => {
+    gaze.state = 'bridge_unreachable'
+    let release: () => void = () => {}
+    prepareCapture.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const onContinue = vi.fn()
+    render(<CaseIntroScreen pilot={pilot} videoId={7} onContinue={onContinue} />)
+
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+
+    expect(prepareCapture).toHaveBeenCalledOnce()
+    expect(onContinue).not.toHaveBeenCalled()
+    expect(screen.getByRole('button')).toBeDisabled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    release()
+
+    await waitFor(() => expect(onContinue).toHaveBeenCalledOnce())
+    expect(gaze.close).toHaveBeenCalledOnce()
+    expect(gaze.retry).not.toHaveBeenCalled()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(enqueue).toHaveBeenCalledWith(
+      'event',
+      expect.objectContaining({
+        event_type: 'gaze_preflight_continue_without',
+        video_id: 7,
+        payload: expect.objectContaining({ state: 'bridge_unreachable' }),
+      }),
+    )
+  },
+)
 
 test('pilot normal intro contains only the case text and Weiter when tracking', async () => {
   const onContinue = vi.fn()
@@ -108,34 +126,8 @@ test('pilot normal intro contains only the case text and Weiter when tracking', 
   fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
   await waitFor(() => expect(onContinue).toHaveBeenCalledOnce())
   expect(screen.queryByRole('dialog')).toBeNull()
-})
-
-test('pilot defers unhealthy tracking details until Weiter and requires explicit continuation', async () => {
-  gaze.state = 'bridge_unreachable'
-  const onContinue = vi.fn()
-  render(
-    <CaseIntroScreen
-      pilot
-      title="Fall 3"
-      body="Haben Sie bis hierhin Fragen?"
-      onContinue={onContinue}
-    />,
-  )
-  expect(screen.queryByText('Keine Verbindung zur A04Bridge.')).toBeNull()
-  expect(screen.getAllByRole('button')).toHaveLength(1)
-  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
-  expect(screen.getByRole('dialog', { name: 'Blickaufzeichnung prüfen' })).toBeInTheDocument()
-  expect(onContinue).not.toHaveBeenCalled()
-  expect(prepareCapture).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Eye-Tracker erneut prüfen' }))
-  expect(gaze.retry).toHaveBeenCalledOnce()
-  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
-  expect(screen.queryByRole('dialog')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Ohne Blickdaten fortfahren' }))
-  await waitFor(() => expect(onContinue).toHaveBeenCalledOnce())
   expect(prepareCapture).toHaveBeenCalledOnce()
-  expect(enqueue).toHaveBeenCalledWith(
+  expect(enqueue).not.toHaveBeenCalledWith(
     'event',
     expect.objectContaining({ event_type: 'gaze_preflight_continue_without' }),
   )

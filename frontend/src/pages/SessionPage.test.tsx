@@ -689,13 +689,15 @@ test('expected CK deadline takeover does not display a generic connection error'
   expect(currentStepIndex).toBe(0)
 })
 
-test.each([0, 4])('keeps tracking notices before the content on step %s', (index) => {
+test.each([0, 4])('shows step %s without persistent tracking notices', (index) => {
   currentStepIndex = index
   const { container } = view()
   const sessionScreen = container.querySelector('.session-screen')
-  const notices = sessionScreen?.querySelector(':scope > .gaze-health-stack')
-  expect(notices).toBeInTheDocument()
-  expect(notices?.nextElementSibling).not.toBeNull()
+  expect(sessionScreen).toHaveTextContent(index === 0 ? 'Angaben zur Person' : 'Fallvideo')
+  expect(container.querySelector('.gaze-health-stack')).toBeNull()
+  expect(container.querySelector('[data-aoi="gaze_health"]')).toBeNull()
+  expect(container.querySelector('[data-aoi="display_check_notice"]')).toBeNull()
+  expect(container.querySelector('[data-aoi="gaze_delivery"]')).toBeNull()
 })
 
 test('starts each displayed step at the top, without jumping on same-page updates', () => {

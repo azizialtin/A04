@@ -1,9 +1,9 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { DisplayGuardSnapshot, DisplayMetrics } from '../../lib/displayGuard'
 import type { NativeViewportState } from '../../lib/nativeViewport'
-import { DisplayCheckButton, DisplayCheckSection, DisplayCheckTable } from './DisplayCheckPanel'
+import { DisplayCheckSection } from './DisplayCheckPanel'
 
 let guard: DisplayGuardSnapshot
 let native: NativeViewportState
@@ -74,59 +74,93 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-const row = (name: string) => screen.getByRole('row', { name: new RegExp(name) })
-const cells = (name: string) =>
-  within(row(name))
-    .getAllByRole('cell')
-    .map((cell) => cell.textContent)
+const difference = (key: string) => document.querySelector(`[data-check="${key}"]`)
+const openSection = () => {
+  const details = document.querySelector('details')!
+  fireEvent.click(details.querySelector('summary')!)
+  expect(details).toHaveAttribute('open')
+  return details
+}
 const connected = () => {
   native = { ...native, capable: true, connection: 'connected' }
   guard = { ...guard, profile: 'native_viewport_v1' }
 }
 
-test('shows each setting as it is next to what is intended', () => {
+test('starts collapsed and expands only differing settings as a vertical list', () => {
   metrics = { ...metrics, screenWidth: 1536, screenHeight: 864, dpr: 1.25 }
   guard = { ...guard, phase: 'blocked', reasons: ['screen_resolution', 'display_scale'] }
-  render(<DisplayCheckTable />)
-  const resolution = within(row('Bildschirmauflösung')).getAllByRole('cell')
-  expect(resolution.map((cell) => cell.textContent)).toEqual([
-    '1536 × 864 (bei 125 % Skalierung/Zoom)',
-    '1920 × 1080',
-    '✕ weicht ab',
-  ])
-  const scale = within(row('Windows-Skalierung')).getAllByRole('cell')
-  expect(scale.map((cell) => cell.textContent)).toEqual(['125 %', '100 %', '✕ weicht ab'])
-  expect(cells('AOI-Zuordnung')[0]).toBe('nicht aktiv')
-  // It explains the consequence and says outright that the study goes on.
-  expect(screen.getByRole('status')).toHaveTextContent('keinen Bereichen (AOIs) zugeordnet')
-  expect(screen.getByRole('status')).toHaveTextContent(
-    'Die Studie kann trotzdem fortgesetzt werden',
+  render(<DisplayCheckSection />)
+  expect(document.querySelector('details')).not.toHaveAttribute('open')
+  expect(
+    screen.getByText('Nicht alle Einstellungen stimmen – Details anzeigen.'),
+  ).toBeInTheDocument()
+  openSection()
+  const resolution = difference('resolution')!
+  expect(resolution.querySelector('.display-check__current')).toHaveTextContent(
+    'Aktuell: 1536 × 864 (bei 125 % Skalierung/Zoom)',
   )
+  expect(resolution.querySelector('.display-check__expected')).toHaveTextContent(
+    'Vorgesehen: 1920 × 1080',
+  )
+  expect(difference('scale')).toHaveTextContent('Aktuell: 125 %')
+  expect(difference('mapping')).toHaveTextContent('Aktuell: nicht aktiv')
+  expect(difference('browser_area')).toBeNull()
+  expect(difference('foreground')).toBeNull()
+  expect(screen.queryByRole('table')).toBeNull()
+  expect(screen.getByText(/Die Studie kann trotzdem fortgesetzt werden/)).toBeInTheDocument()
   expect(screen.getByText(/Skalierung → 100 %/)).toBeInTheDocument()
 })
 
-test('a correct display reads as in order, and has no confirmation to give', () => {
+test('a correct display stays collapsed and has no differences or confirmation', () => {
   connected()
-  render(<DisplayCheckTable />)
-  expect(screen.getByRole('status')).toHaveTextContent('entspricht den vorgesehenen Einstellungen')
-  expect(cells('AOI-Zuordnung')).toEqual(['aktiv', 'aktiv', '✓ in Ordnung'])
+  render(<DisplayCheckSection />)
+  expect(document.querySelector('details')).not.toHaveAttribute('open')
+  expect(screen.getByText('Die Bildschirmeinstellungen sind in Ordnung.')).toBeInTheDocument()
+  openSection()
+  expect(screen.queryByRole('list')).toBeNull()
   expect(screen.queryByRole('button', { name: /Fortsetzen|fortfahren/ })).toBeNull()
 })
 
-test('follows the display while it is open', () => {
+test('follows changes without opening itself, and preserves the chosen open state', () => {
   vi.useFakeTimers()
-  render(<DisplayCheckTable />)
-  expect(cells('Vollbild')[0]).toBe('ja')
+  connected()
+  render(<DisplayCheckSection />)
   metrics = { ...metrics, innerHeight: 969, outerHeight: 1040 }
   act(() => void vi.advanceTimersByTime(500))
-  expect(cells('Vollbild')).toEqual(['nein', 'ja', '✕ weicht ab'])
-  expect(cells('Browserfläche')[0]).toBe('1920 × 969')
+  expect(document.querySelector('details')).not.toHaveAttribute('open')
+  const details = openSection()
+  expect(difference('fullscreen')).toHaveTextContent('Aktuell: nein')
+  expect(difference('browser_area')).toHaveTextContent('Aktuell: 1920 × 969')
+  metrics = { ...metrics, innerHeight: 1080, outerHeight: 1080 }
+  act(() => void vi.advanceTimersByTime(500))
+  expect(details).toHaveAttribute('open')
+  expect(difference('fullscreen')).toBeNull()
+  fireEvent.click(details.querySelector('summary')!)
+  setGuard({ phase: 'blocked', reasons: ['window_size'] })
+  expect(details).not.toHaveAttribute('open')
+  expect(difference('mapping')).not.toBeNull()
+})
+
+test('unknown settings are listed and never summarized as ready', () => {
+  connected()
+  metrics = { ...metrics, extended: undefined }
+  guard = { ...guard, phase: 'suspended', required: false }
+  render(<DisplayCheckSection />)
+  expect(
+    screen.getByText('Einige Einstellungen konnten noch nicht geprüft werden – Details anzeigen.'),
+  ).toBeInTheDocument()
+  openSection()
+  expect(difference('displays')).toHaveAttribute('data-status', 'info')
+  expect(difference('displays')).toHaveTextContent('nicht feststellbar')
+  expect(difference('mapping')).toBeNull()
+  expect(screen.getAllByRole('listitem')).toHaveLength(1)
 })
 
 test('offers fullscreen and a bridge reconnect, and reports a refused fullscreen', async () => {
   const request = vi.fn().mockRejectedValue(new Error('denied'))
   document.documentElement.requestFullscreen = request
-  render(<DisplayCheckTable />)
+  render(<DisplayCheckSection />)
+  openSection()
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Vollbild öffnen' }))
   })
@@ -136,73 +170,16 @@ test('offers fullscreen and a bridge reconnect, and reports a refused fullscreen
   expect(retry).toHaveBeenCalledOnce()
 })
 
-test('the opening section is folded away when all is well and open when it is not', () => {
-  connected()
-  const { unmount, container } = render(<DisplayCheckSection />)
-  expect(container.querySelector('details')).not.toHaveAttribute('open')
-  expect(screen.getByText(/Bildschirmeinstellung prüfen · in Ordnung/)).toBeInTheDocument()
-  unmount()
-  metrics = { ...metrics, dpr: 1.25 }
-  guard = { ...guard, phase: 'blocked', reasons: ['display_scale'] }
-  const second = render(<DisplayCheckSection />)
-  expect(second.container.querySelector('details')).toHaveAttribute('open')
-  expect(screen.getByText(/Einstellungen weichen ab/)).toBeInTheDocument()
-})
-
-test('on a measured page the notice appears only for a real deviation and opens on request', () => {
-  render(<DisplayCheckButton />)
-  expect(screen.queryByText(/keinen Bereichen zugeordnet/)).toBeNull()
-  // The half second after a page change is not a deviation.
-  setGuard({ phase: 'blocked', reasons: ['checking_display'] })
-  expect(screen.queryByText(/keinen Bereichen zugeordnet/)).toBeNull()
-  setGuard({ phase: 'blocked', reasons: ['window_size'] })
-  expect(screen.getByText(/keinen Bereichen zugeordnet/)).toBeInTheDocument()
-  expect(screen.queryByRole('dialog')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Einstellungen anzeigen' }))
-  const dialog = screen.getByRole('dialog', { name: 'Bildschirmeinstellung prüfen' })
-  expect(within(dialog).getByRole('table')).toBeInTheDocument()
-  // Unlike the blocking dialog it can simply be closed again.
-  fireEvent.keyDown(dialog, { key: 'Escape' })
-  expect(screen.queryByRole('dialog')).toBeNull()
-})
-
-test('the notice stays away on pages that are not measured and when the guard is off', () => {
-  guard = { ...guard, required: false, phase: 'blocked', reasons: ['window_size'] }
-  const { unmount } = render(<DisplayCheckButton />)
-  expect(screen.queryByRole('status')).toBeNull()
-  unmount()
-  guard = { ...guard, enabled: false, required: true }
-  render(<DisplayCheckButton />)
-  expect(screen.queryByRole('status')).toBeNull()
-})
-
-test('when only the focus is missing, the notice says what to do', () => {
-  guard = { ...guard, phase: 'blocked', reasons: ['window_focus'] }
-  render(<DisplayCheckButton />)
-  expect(screen.getByRole('status')).toHaveTextContent('Bitte einmal in die Studienseite klicken')
-})
-
-test('the dialog is not a child of the click-through status stack', () => {
-  guard = { ...guard, phase: 'blocked', reasons: ['window_size'] }
-  const { container } = render(
-    <div className="gaze-health-stack">
-      <DisplayCheckButton />
-    </div>,
-  )
-  fireEvent.click(screen.getByRole('button', { name: 'Einstellungen anzeigen' }))
-  const dialog = screen.getByRole('dialog')
-  expect(container.contains(dialog)).toBe(false)
-  expect(dialog.parentElement).toBe(document.body)
-})
-
 test('a bridge that is measuring cannot be reconnected by accident', () => {
   connected()
   native = { ...native, proof: { id: 'p' } as never }
-  const { unmount } = render(<DisplayCheckTable />)
+  const { unmount } = render(<DisplayCheckSection />)
+  openSection()
   expect(screen.getByRole('button', { name: 'Bridge erneut verbinden' })).toBeDisabled()
   unmount()
   native = { ...native, proof: null }
-  render(<DisplayCheckTable />)
+  render(<DisplayCheckSection />)
+  openSection()
   expect(screen.getByRole('button', { name: 'Bridge erneut verbinden' })).toBeEnabled()
 })
 
@@ -214,8 +191,10 @@ test('fullscreen follows the browser, so a zoomed fullscreen page is not sent ou
     vi.fn((query: string) => ({ matches: query === '(display-mode: fullscreen)' })),
   )
   try {
-    render(<DisplayCheckTable />)
-    expect(cells('Vollbild')[0]).toBe('ja')
+    render(<DisplayCheckSection />)
+    openSection()
+    expect(difference('fullscreen')).toBeNull()
+    expect(difference('scale')).toHaveTextContent('Aktuell: 110 %')
   } finally {
     vi.unstubAllGlobals()
   }

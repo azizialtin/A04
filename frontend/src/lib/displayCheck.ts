@@ -1,5 +1,5 @@
 // What the study lead sees before a session: each display setting as the
-// browser reports it, next to what the study expects. Nothing here decides
+// browser reports it, compared with what the study expects. Nothing here decides
 // whether gaze is admitted — the display guard does that — it only explains it.
 
 import type { DisplayGuardSnapshot, DisplayMetrics } from './displayGuard'
@@ -170,8 +170,10 @@ export function displayChecklist(
 }
 
 /** The worst row decides the headline. */
-export function displayCheckSummary(rows: DisplayCheckRow[]): 'ok' | 'warn' | 'fail' {
+export function displayCheckSummary(rows: DisplayCheckRow[]): 'ok' | 'warn' | 'fail' | 'pending' {
   if (rows.some((row) => row.status === 'fail')) return 'fail'
   if (rows.some((row) => row.status === 'warn')) return 'warn'
+  if (rows.some((row) => row.status === 'info' && row.current.id !== 'mapping_paused'))
+    return 'pending'
   return 'ok'
 }

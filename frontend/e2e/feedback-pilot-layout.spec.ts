@@ -1,9 +1,12 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 import type { SessionStep } from '../src/api/participant'
 import type { GazeLayout } from '../src/lib/gazeGeometry'
-import type { Question } from '../src/lib/questionnaire'
+import { normaliseOption, type Question } from '../src/lib/questionnaire'
+import { expectNoHorizontalOverflow } from './layout'
 
 type SourceTask = { source_task: number; title: string; description: string; questions: Question[] }
 
@@ -22,8 +25,10 @@ const source = JSON.parse(
 async function openStep(
   page: Page,
   step: Extract<SessionStep, { kind: 'questionnaire' | 'section_intro' }>,
+  viewport = { width: 1920, height: 1080 },
+  flowVersion = 'pilot_20261116',
 ) {
-  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.setViewportSize(viewport)
   await page.addInitScript(() => {
     const token = `e30.${btoa(JSON.stringify({ sub: 'PILOT-LAYOUT', role: 'participant', exp: 4_000_000_000 }))}.test`
     localStorage.setItem('a04_auth', JSON.stringify({ token }))
@@ -84,7 +89,7 @@ async function openStep(
       return json({ id: 'PILOT-LAYOUT', status: 'active', study_name: 'Pilot layout' })
     if (path === '/participant/session')
       return json({
-        flow_version: 'pilot_20261116',
+        flow_version: flowVersion,
         status: 'active',
         current_step_index: state.current,
         total_steps: 2,
@@ -116,17 +121,22 @@ async function openStep(
   await page.evaluate(() => document.fonts.ready)
   // Capture the ready, unanswered page after the synthetic tracker has connected.
   if (step.kind === 'questionnaire')
-    await expect(page.getByText('Blickdaten werden empfangen.', { exact: true })).toBeVisible()
+    await expect.poll(() => state.layouts.length).toBeGreaterThan(0)
   return state
 }
 
-async function openTask(page: Page, task: SourceTask, sectionKey: 'pck' | 'mesp' = 'pck') {
+async function openTask(
+  page: Page,
+  task: SourceTask,
+  sectionKey: 'pck' | 'mesp' = 'pck',
+  viewport = { width: 1920, height: 1080 },
+) {
   const step: SessionStep = {
     ...task,
     index: 0,
     completed: false,
     kind: 'questionnaire',
-    questionnaire_id: task.source_task,
+    questionnaire_id: (sectionKey === 'mesp' ? 200 : 100) + task.source_task,
     placement: 'pre_test',
     section: sectionKey === 'mesp' ? 'MESP' : 'PCK-Pretest',
     section_key: sectionKey,
@@ -137,7 +147,7 @@ async function openTask(page: Page, task: SourceTask, sectionKey: 'pck' | 'mesp'
         : 17 + source.pck_pages.findIndex((page) => page.source_task === task.source_task),
     page_count: 25,
   }
-  const state = await openStep(page, step)
+  const state = await openStep(page, step, viewport)
   await expect(page.locator('[data-aoi="page_description"]')).toHaveText(
     `Fragebogenseite ${step.page} von 25 insgesamt`,
   )
@@ -405,3 +415,163 @@ for (const task of source.mesp_pages) {
     expect(state.unexpected).toEqual([])
   })
 }
+
+// Read the default MSK definitions from their authoritative Python source without
+// importing the database-backed service. Only the pure MSK data/functions execute.
+const defaultMsk: SourceTask[] = JSON.parse(
+  execFileSync(
+    'python3',
+    [
+      '-c',
+      `
+import ast, json, sys
+source = ast.parse(open(sys.argv[1]).read())
+names = {'MSK_SCALE', 'MSK_INSTRUCTION', 'MSK_QUESTION', 'MSK_TASKS', 'msk_questions', 'msk_description'}
+def selected(node):
+    if isinstance(node, ast.FunctionDef): return node.name in names
+    if isinstance(node, ast.AnnAssign): return isinstance(node.target, ast.Name) and node.target.id in names
+    if isinstance(node, ast.Assign): return any(isinstance(target, ast.Name) and target.id in names for target in node.targets)
+    return False
+namespace = {'Question': dict}
+exec(compile(ast.Module(body=[node for node in source.body if selected(node)], type_ignores=[]), sys.argv[1], 'exec'), namespace)
+print(json.dumps([{'source_task': index, 'title': 'MSK: Aufgabe ' + str(index), 'description': namespace['msk_description'](index, scenario), 'questions': namespace['msk_questions'](index, statements)} for index, (scenario, statements) in enumerate(namespace['MSK_TASKS'], 1)]))
+`,
+      fileURLToPath(new URL('../../backend/app/services/study_content.py', import.meta.url)),
+    ],
+    { encoding: 'utf8' },
+  ),
+)
+
+async function answerSourceTask(page: Page, task: SourceTask) {
+  const expected: Record<string, unknown> = {}
+  for (const question of task.questions) {
+    const field = page.locator(`[data-aoi="question.${question.id}"]`)
+    if (question.type === 'multiple_choice' || question.type === 'likert') {
+      const radios = field.getByRole('radio')
+      if (question.options) await expect(radios).toHaveCount(question.options.length)
+      // Checking the last option catches the previously offscreen rightmost cell.
+      await radios.last().check()
+      await expect(radios.last()).toBeChecked()
+      expected[question.id] = question.options
+        ? normaliseOption(question.options.at(-1)!).value
+        : (question.scale_max ?? 5)
+    } else if (question.type === 'multi_select') {
+      const count = question.min_selections ?? 1
+      for (let index = 0; index < count; index++)
+        await field.getByRole('checkbox').nth(index).check()
+      expected[question.id] = question
+        .options!.slice(0, count)
+        .map((option) => normaliseOption(option).value)
+    } else if (question.type === 'free_text') {
+      expected[question.id] = 'Begründung anhand der Unterrichtssituation.'
+      await field.getByRole('textbox').fill(String(expected[question.id]))
+    } else if (question.type === 'ranking') {
+      await field
+        .getByRole('button', { name: /Nach oben verschieben/ })
+        .nth(1)
+        .click()
+      const values = question.options!.map((option) => normaliseOption(option).value)
+      ;[values[0], values[1]] = [values[1], values[0]]
+      expected[question.id] = values
+    }
+  }
+  return expected
+}
+
+async function assertSourceChoicesFit(page: Page, task: SourceTask) {
+  await expectNoHorizontalOverflow(page)
+  for (const question of task.questions.filter((item) => item.matrix)) {
+    const row = page.locator(`[data-aoi="question.${question.id}"]`)
+    await expect(row.getByRole('radio')).toHaveCount(question.options!.length)
+    expect(
+      await row
+        .getByRole('radio')
+        .evaluateAll((inputs) => inputs.map((input) => input.getAttribute('aria-label'))),
+    ).toEqual(
+      question.options!.map(
+        (option, index) => `${question.text}: ${index + 1} – ${normaliseOption(option).label}`,
+      ),
+    )
+  }
+  const cropped = await page
+    .locator('.matrix__cell, .matrix__option-label, .matrix__scale-label')
+    .evaluateAll((elements) =>
+      elements
+        .filter((element) => {
+          const box = element.getBoundingClientRect()
+          return (
+            box.width > 0 &&
+            box.height > 0 &&
+            (box.left < -1 ||
+              box.right > innerWidth + 1 ||
+              element.scrollWidth > element.clientWidth + 1)
+          )
+        })
+        .map((element) => element.textContent),
+    )
+  expect(cropped).toEqual([])
+}
+
+for (const width of [1470, 1280, 1920, 768, 375]) {
+  test(`real pilot and default MSK source choices fit at ${width}px`, async ({ page }, info) => {
+    test.setTimeout(120_000)
+    const viewport = { width, height: 1080 }
+    for (const [section, tasks] of [
+      ['pck', source.pck_pages],
+      ['mesp', source.mesp_pages],
+      ['msk', defaultMsk],
+    ] as const) {
+      for (const task of tasks) {
+        const state =
+          section === 'msk'
+            ? await openStep(
+                page,
+                {
+                  ...task,
+                  kind: 'questionnaire',
+                  index: 0,
+                  completed: false,
+                  questionnaire_id: 300 + task.source_task,
+                  placement: 'pre_test',
+                  section: 'MSK',
+                  section_key: 'msk',
+                  video_id: null,
+                  page: task.source_task,
+                  page_count: defaultMsk.length,
+                },
+                viewport,
+                'standard',
+              )
+            : await openTask(page, task, section, viewport)
+        await assertSourceChoicesFit(page, task)
+        const expected = await answerSourceTask(page, task)
+        await assertSourceChoicesFit(page, task)
+        if (section === 'mesp' && task.source_task === source.mesp_pages.at(-1)!.source_task) {
+          await page.screenshot({
+            path: info.outputPath(`real-${section}-${task.source_task}-${width}.png`),
+            fullPage: true,
+          })
+        }
+        await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+        await expect.poll(() => state.answers.length).toBe(1)
+        expect(state.answers).toEqual([expected])
+        expect(state.unexpected).toEqual([])
+      }
+    }
+  })
+}
+
+test('real pilot MESP remains usable at 125 percent page zoom', async ({ page }, info) => {
+  const task = source.mesp_pages.at(-1)!
+  const state = await openTask(page, task, 'mesp', { width: 1470, height: 900 })
+  await page.locator('html').evaluate((element) => {
+    element.style.zoom = '1.25'
+  })
+  await assertSourceChoicesFit(page, task)
+  const expected = await answerSourceTask(page, task)
+  await assertSourceChoicesFit(page, task)
+  await page.screenshot({ path: info.outputPath('real-mesp-125-percent-zoom.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Weiter', exact: true }).click()
+  await expect.poll(() => state.answers.length).toBe(1)
+  expect(state.answers).toEqual([expected])
+})

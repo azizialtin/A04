@@ -59,11 +59,11 @@ export default function WelcomeScreen({
           <strong className="id-badge__value">{participantId}</strong>
         </div>
         <p className="muted">{texts?.welcome_note || t('welcome.remember')}</p>
+        {displayCheck}
         <button type="button" className="btn btn-primary btn-lg" onClick={onContinue}>
           {t(pilot ? 'common.continue' : 'welcome.continue')}
         </button>
       </div>
-      {displayCheck}
     </div>
   )
 }

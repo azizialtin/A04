@@ -730,6 +730,18 @@ h3 {
   gap: 10px;
 }
 
+.case-video__audio-status {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #9c793d;
+  border-radius: var(--radius-sm);
+  background: #332a1d;
+  color: #ffebc2;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .case-video__el {
   width: 100%;
   /* The viewport, less the screen's padding and the control bar under it:

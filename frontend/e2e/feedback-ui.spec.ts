@@ -627,18 +627,12 @@ for (const width of [320, 768, 1280, 1470, 1920]) {
     await page.goto('/session')
     await expect(page.getByRole('heading', { name: responsiveQuestionnaire.title })).toBeVisible()
     await expectNoHorizontalOverflow(page)
-    // Connection guidance must reserve space, including when expanded. It must
-    // never cover the title or answer choices as the old fixed warning did.
-    const help = page.locator('.gaze-health details')
-    await expect(help).toBeVisible()
-    for (const expanded of [false, true]) {
-      if (expanded) await help.locator('summary').click()
-      const warning = await page.locator('.gaze-health-stack').boundingBox()
-      const form = await page.locator('.panel--form').boundingBox()
-      expect(warning!.y + warning!.height).toBeLessThanOrEqual(form!.y)
-      await expectNoHorizontalOverflow(page)
-    }
-    await help.locator('summary').click()
+    // The welcome page owns connection/settings guidance; tasks stay clear.
+    await expect(
+      page.locator(
+        '[data-aoi="gaze_health"], [data-aoi="display_check_notice"], .display-check__section',
+      ),
+    ).toHaveCount(0)
     for (const [name, count] of [
       ['situation_0', 6],
       ['situation_1', 6],

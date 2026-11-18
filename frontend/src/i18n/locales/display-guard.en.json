@@ -70,8 +70,9 @@
     },
     "summary": {
       "ok": "The display matches the intended settings.",
-      "warn": "Gaze can be assigned. Some settings differ from the intended setup, so pages may wrap or scroll differently.",
-      "fail": "Gaze is currently saved but not assigned to areas (AOIs). The rows marked “differs” show why. The study can still continue."
+      "warn": "Some settings differ from the intended setup. Pages may wrap or scroll differently.",
+      "fail": "The settings below differ or could not yet be checked. The study can still continue.",
+      "pending": "The settings below could not yet be confirmed. The study can still continue."
     },
     "column": {
       "setting": "Setting",
@@ -122,7 +123,14 @@
     "note_native": "The current Windows bridge measures the position of the study page itself. Resolution, scaling and full screen then only affect the page layout, not the assignment.",
     "note_legacy": "Without the current Windows bridge, gaze can only be assigned at 1920 × 1080 pixels, 100% scaling and zoom, and in full screen (F11). On 15.6-inch devices Windows scaling is often set to 125%: Windows Settings → System → Display → Scale → 100%. Reset browser zoom: Ctrl + 0.",
     "note_unverified": "This display does not stop the study. Deviations are logged.",
-    "notice_focus": "Gaze is currently not being assigned to areas. Please click once on the study page."
+    "notice_focus": "Gaze is currently not being assigned to areas. Please click once on the study page.",
+    "disclosure": {
+      "ok": "Display settings are ready.",
+      "warn": "Some settings differ — show details.",
+      "fail": "Not all settings match — show details.",
+      "pending": "Some settings still need checking — show details."
+    },
+    "differences": "Different or unverified settings"
   },
   "calibration_unverified": "The display is not verified yet. Please check the display settings and start the calibration again."
 }

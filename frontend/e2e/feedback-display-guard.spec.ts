@@ -302,7 +302,7 @@ async function setup(
       state.screenStarts += 1
       return json({ recording_id: state.screenStarts, upload_token: 'synthetic-capture-only' })
     }
-    if (/^\/screen\/recordings\/\d+\/heartbeat$/.test(path)) return json({ status: 'ok' })
+    if (/^\/screen\/recordings\/\d+\/(heartbeat|failed)$/.test(path)) return json({ status: 'ok' })
     state.unexpected.push(`${request.method()} ${path}`)
     return route.fulfill({ status: 400, json: { detail: 'Unexpected test request' } })
   })
@@ -813,7 +813,7 @@ for (const section of ['pck', 'mesp'] as const) {
       await resume(page)
       await expect(page.getByRole('heading', { name: task.title, exact: true })).toBeVisible()
       await page.evaluate(() => document.fonts.ready)
-      await expect(page.getByText('Blickdaten werden empfangen.', { exact: true })).toBeVisible()
+      await expect.poll(() => state.samples.length).toBeGreaterThan(0)
       await expect(page.locator('input:checked')).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Weiter', exact: true })).toBeDisabled()
       expect(normalize(await page.locator('[data-aoi="instructions"]').innerText())).toBe(
@@ -917,13 +917,7 @@ test('guard-enabled MESP introduction preserves the complete instructions and vi
 async function advanceUnmeasured(page: Page, state: { current: number }, expectedIndex: number) {
   await expect(page.getByRole('dialog', { name: DIALOG })).toBeHidden()
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
-  // The case-intro gaze preflight remains available; it does not persist a recording.
-  const preflight = page.getByRole('dialog', { name: 'Blickaufzeichnung prüfen' })
-  await expect
-    .poll(async () => state.current !== expectedIndex || (await preflight.isVisible()))
-    .toBe(true)
-  if (await preflight.isVisible())
-    await preflight.getByRole('button', { name: /^(Weiter|Ohne Blickdaten fortfahren)$/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Blickaufzeichnung prüfen' })).toHaveCount(0)
   await expect.poll(() => state.current).toBe(expectedIndex + 1)
 }
 
@@ -1881,7 +1875,46 @@ test('a scrollbar change reported by the visual viewport does not reopen the dia
 // and recorded; nothing ever stops the participant. Run through
 // playwright.display-check.config.ts, which builds without the blocking flag.
 // ---------------------------------------------------------------------------
-const NOTICE = 'Blickdaten werden gerade keinen Bereichen zugeordnet.'
+async function expectNoPersistentDisplayStatus(page: Page) {
+  await expect(
+    page.locator(
+      '[data-aoi="gaze_health"], [data-aoi="display_check_notice"], .display-check__section',
+    ),
+  ).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Einstellungen anzeigen' })).toHaveCount(0)
+}
+
+async function expectOnlyVerticalDifferences(page: Page) {
+  const rows = page.locator('.display-check__section [data-check]')
+  const values = await rows.evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect()
+      return {
+        status: element.getAttribute('data-status'),
+        x: box.x,
+        top: box.top,
+        bottom: box.bottom,
+      }
+    }),
+  )
+  expect(values.length).toBeGreaterThan(0)
+  for (const [index, value] of values.entries()) {
+    expect(['warn', 'fail', 'info']).toContain(value.status)
+    if (index > 0) {
+      expect(value.top).toBeGreaterThanOrEqual(values[index - 1].bottom)
+      expect(value.x).toBeCloseTo(values[index - 1].x, 0)
+    }
+  }
+  await expect(page.locator('.display-check__section table')).toHaveCount(0)
+  for (const row of await rows.all()) {
+    const current = await row.locator('.display-check__current').boundingBox()
+    const expected = await row.locator('.display-check__expected').boundingBox()
+    expect(current).not.toBeNull()
+    expect(expected).not.toBeNull()
+    expect(expected!.y).toBeGreaterThanOrEqual(current!.y + current!.height)
+    expect(expected!.x).toBeCloseTo(current!.x, 0)
+  }
+}
 type ObservedState = Awaited<ReturnType<typeof setup>>
 const guardEvents = (state: ObservedState) =>
   state.events
@@ -1929,8 +1962,7 @@ test('@observe a correct display asks nothing: the page starts at once and gaze 
   await expect.poll(() => state.visits.length).toBe(1)
   await page.locator('textarea').fill('Sofort nutzbar')
   await expect.poll(() => mappedSince(state, opened).length).toBeGreaterThan(5)
-  await expect(page.getByText('AOI-Zuordnung aktiv.')).toBeVisible()
-  await expect(page.getByText(NOTICE)).toHaveCount(0)
+  await expectNoPersistentDisplayStatus(page)
   expect(snapshots(state).some((layout) => layout.display_guard?.verified === true)).toBe(true)
   expect(snapshots(state).every((layout) => layout.display_guard?.profile === 'lab_1080p')).toBe(
     true,
@@ -1954,6 +1986,7 @@ test('@observe a correct display asks nothing: the page starts at once and gaze 
   expect(mappedSince(state, opened).every((sample) => sample.ts >= verifiedAt)).toBe(true)
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Prüfseite 2', exact: true })).toBeVisible()
+  await expectNoPersistentDisplayStatus(page)
   const second = Date.now()
   await expect.poll(() => mappedSince(state, second).length).toBeGreaterThan(5)
   // The next measured page keeps the verification: no new gap, no new events.
@@ -1976,15 +2009,12 @@ for (const disturbance of ['resize', 'zoom', 'display scale'] as const) {
     const cdp = await context.newCDPSession(page)
     const metrics = { width: 1920, height: 1080, screenWidth: 1920, screenHeight: 1080 }
     let restore: () => Promise<unknown>
-    let failing: string
     if (disturbance === 'resize') {
       await page.setViewportSize({ width: 1600, height: 900 })
       restore = () => page.setViewportSize({ width: 1920, height: 1080 })
-      failing = 'browser_area'
     } else if (disturbance === 'zoom') {
       await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1.25 })
       restore = () => cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 })
-      failing = 'zoom_gesture'
     } else {
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         ...metrics,
@@ -1997,9 +2027,11 @@ for (const disturbance of ['resize', 'zoom', 'display scale'] as const) {
           mobile: false,
           deviceScaleFactor: 1,
         })
-      failing = 'scale'
     }
-    await expect(page.getByText(NOTICE)).toBeVisible()
+    await expect
+      .poll(() => guardEvents(state).filter((event) => event === 'interrupted').length)
+      .toBe(2)
+    await expectNoPersistentDisplayStatus(page)
     const invalidFrom = Date.now()
     // Nothing is held: no dialog, no inert page, and typing goes on.
     await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -2009,26 +2041,13 @@ for (const disturbance of ['resize', 'zoom', 'display scale'] as const) {
     await page.locator('textarea').fill('Entwurf, während der Störung weitergeschrieben')
     await expect.poll(() => unmappedSince(state, invalidFrom).length).toBeGreaterThan(5)
     expect(mappedSince(state, invalidFrom)).toEqual([])
-    // The explanation is there on request and can simply be closed again.
-    await page.getByRole('button', { name: 'Einstellungen anzeigen' }).click()
-    const dialog = page.getByRole('dialog', { name: DIALOG })
-    await expect(dialog.locator(`[data-check="${failing}"]`)).toHaveAttribute('data-status', 'fail')
-    await expect(dialog.locator('[data-check="mapping"]')).toContainText('nicht aktiv')
-    await expect(dialog.getByRole('button', { name: /Fortsetzen|fortfahren/ })).toHaveCount(0)
-    // The dialog covers the page for real: a click beside it closes it and does
-    // not reach the "Weiter" button or the answer field underneath.
-    await page.mouse.click(8, 1000 > page.viewportSize()!.height ? 880 : 1060)
-    await expect(dialog).toBeHidden()
+    // Settings stay on the welcome page. The questionnaire has no status box,
+    // settings launcher or modal even while geometry becomes invalid.
+    await expectNoPersistentDisplayStatus(page)
     expect(state.responses).toHaveLength(0)
-    await page.getByRole('button', { name: 'Einstellungen anzeigen' }).click()
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole('table').click()
-    await expect(dialog).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(dialog).toBeHidden()
     const invalidUntil = Date.now()
     await restore()
-    await expect(page.getByText(NOTICE)).toBeHidden()
+    await expectNoPersistentDisplayStatus(page)
     const restored = Date.now()
     await expect.poll(() => mappedSince(state, restored).length).toBeGreaterThan(5)
     // The stability window is honoured: nothing is mapped the instant it looks right again.
@@ -2079,20 +2098,27 @@ test('@observe 125% Windows scaling without a measuring bridge: the session runs
   )
   await page.goto('/session')
   const check = page.locator('details.display-check__section')
+  await expect(check.locator('summary')).toContainText('Nicht alle Einstellungen stimmen')
+  expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false)
+  await expect(check.locator('[data-check="scale"]')).not.toBeVisible()
+  await page.screenshot({ path: info.outputPath('opening-check-collapsed.png'), fullPage: true })
+  await check.locator('summary').focus()
+  await page.keyboard.press('Enter')
   await expect(check).toHaveAttribute('open', '')
-  await expect(check.locator('summary')).toContainText('Einstellungen weichen ab')
   await expect(check.locator('[data-check="resolution"]')).toContainText('1536 × 864')
   await expect(check.locator('[data-check="resolution"]')).toContainText('1920 × 1080')
   await expect(check.locator('[data-check="scale"]')).toContainText('125 %')
   await expect(check.locator('[data-check="scale"]')).toHaveAttribute('data-status', 'fail')
-  await expect(check.locator('[data-check="fullscreen"]')).toHaveAttribute('data-status', 'ok')
+  await expect(check.locator('[data-check="fullscreen"]')).toHaveCount(0)
   await expect(check.locator('[data-check="bridge"]')).toContainText('ältere Version')
   await expect(check.locator('[data-check="mapping"]')).toContainText('nicht aktiv')
-  await expect(check.getByRole('status')).toContainText(
-    'Die Studie kann trotzdem fortgesetzt werden',
-  )
+  await expect(check).toContainText('Die Studie kann trotzdem fortgesetzt werden')
+  await expectOnlyVerticalDifferences(page)
   await expect(check).toContainText('Skalierung → 100 %')
   await page.screenshot({ path: info.outputPath('opening-check-125-percent.png'), fullPage: true })
+  await check.locator('summary').focus()
+  await page.keyboard.press('Space')
+  expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false)
   // The check informs; the way on is never withheld.
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
   await expect(page.locator('textarea')).toBeVisible()
@@ -2102,8 +2128,7 @@ test('@observe 125% Windows scaling without a measuring bridge: the session runs
   await expect.poll(() => unmappedSince(state, entered).length).toBeGreaterThan(40)
   expect(state.samples.every((sample) => sample.geometry_ts === null)).toBe(true)
   expect(snapshots(state).every((layout) => layout.display_guard?.verified === false)).toBe(true)
-  await expect(page.getByText(NOTICE)).toBeVisible()
-  await expect(page.getByText('AOI-Zuordnung aktiv.')).toHaveCount(0)
+  await expectNoPersistentDisplayStatus(page)
   // A setup that stays wrong is one open interval, not a stream of events: the
   // entry boundary, moved back once to the last observation before the page.
   const boundaries = guardEvents(state)
@@ -2121,7 +2146,7 @@ test('@observe 125% Windows scaling without a measuring bridge: the session runs
   await context.close()
 })
 
-test('@observe the opening check is folded away on the intended setup and shows live values on request', async ({
+test('@observe welcome settings open only on request and show changing differences vertically', async ({
   page,
 }, info) => {
   const state = await setup(
@@ -2132,23 +2157,59 @@ test('@observe the opening check is folded away on the intended setup and shows 
   )
   await page.goto('/session')
   const check = page.locator('details.display-check__section')
-  await expect(check.locator('summary')).toContainText('in Ordnung')
+  const summary = check.locator('summary')
+  await expect(summary).toContainText('in Ordnung')
   expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false)
-  await check.locator('summary').click()
-  for (const key of ['bridge', 'resolution', 'scale', 'browser_area', 'fullscreen', 'mapping'])
-    await expect(check.locator(`[data-check="${key}"]`)).toHaveAttribute('data-status', 'ok')
-  await expect(check.locator('[data-check="mapping"]')).toContainText('bereit')
-  // It follows the display while open, and stays open once the study lead opened it.
+  await summary.focus()
+  await page.keyboard.press('Enter')
+  await expect(check).toHaveAttribute('open', '')
+  await expect(check.locator('[data-check]')).toHaveCount(0)
+  // Live changes update the expanded list without including successful checks.
   await page.setViewportSize({ width: 1600, height: 900 })
   await expect(check.locator('[data-check="browser_area"]')).toContainText('1600 × 900')
   await expect(check.locator('[data-check="browser_area"]')).toHaveAttribute('data-status', 'warn')
-  await expect(check.locator('summary')).toContainText('Hinweise vorhanden')
+  await expect(summary).toContainText('Einige Einstellungen weichen ab')
+  await expectOnlyVerticalDifferences(page)
   await page.setViewportSize({ width: 1920, height: 1080 })
-  await expect(check.locator('summary')).toContainText('in Ordnung')
+  await expect(summary).toContainText('in Ordnung')
+  await expect(check.locator('[data-check]')).toHaveCount(0)
   expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(true)
-  await page.screenshot({ path: info.outputPath('opening-check-ok.png'), fullPage: true })
-  // Looking at settings is not a measured page: no boundaries are written for it.
+  await summary.focus()
+  await page.keyboard.press('Space')
+  expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false)
+  // A new mismatch must not reopen a section the user closed.
+  await page.setViewportSize({ width: 375, height: 812 })
+  await expect(summary).toContainText('Einige Einstellungen weichen ab')
+  expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false)
+  await summary.click()
+  await expectOnlyVerticalDifferences(page)
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+  ).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: info.outputPath('opening-differences-mobile.png'), fullPage: true })
   expect(guardEvents(state)).toEqual([])
+  expect(state.unexpected).toEqual([])
+})
+
+test('@observe unknown welcome settings stay closed and are not reported as all correct', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(screen, 'isExtended', { configurable: true, get: () => undefined })
+  })
+  const state = await setup(
+    page,
+    [{ kind: 'welcome', index: 0, completed: false }],
+    420_000,
+    nativeFixture(0, 0),
+  )
+  await page.goto('/session')
+  const check = page.locator('details.display-check__section')
+  await expect(check.locator('summary')).toContainText('noch nicht')
+  expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false)
+  await check.locator('summary').click()
+  await expect(check.locator('[data-check="displays"]')).toHaveAttribute('data-status', 'info')
+  await expectOnlyVerticalDifferences(page)
   expect(state.unexpected).toEqual([])
 })
 
@@ -2163,10 +2224,14 @@ test('@observe an unreachable bridge is named on the opening check and does not 
   )
   await page.goto('/session')
   const check = page.locator('details.display-check__section')
+  await expect(check.locator('summary')).toContainText('Nicht alle Einstellungen stimmen')
+  expect(await check.evaluate((el) => (el as HTMLDetailsElement).open)).toBe(false)
+  await check.locator('summary').click()
   await expect(check.locator('[data-check="bridge"]')).toContainText('nicht erreichbar')
   await expect(check.locator('[data-check="bridge"]')).toHaveAttribute('data-status', 'fail')
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
   await page.locator('textarea').fill('Ohne Bridge')
+  await expectNoPersistentDisplayStatus(page)
   await page.getByRole('button', { name: 'Weiter', exact: true }).click()
   await expect.poll(() => state.responses.length).toBe(1)
   expect(state.samples).toEqual([])
@@ -2187,7 +2252,10 @@ test('@observe a case video keeps playing through a display change and maps agai
   await expect.poll(() => video.evaluate((el) => !(el as HTMLVideoElement).paused)).toBe(true)
   await expect.poll(() => mappedSince(state, opened).length).toBeGreaterThan(5)
   await page.setViewportSize({ width: 1600, height: 900 })
-  await expect(page.getByText(NOTICE)).toBeVisible()
+  await expect
+    .poll(() => guardEvents(state).filter((event) => event === 'interrupted').length)
+    .toBe(2)
+  await expectNoPersistentDisplayStatus(page)
   const invalidFrom = Date.now()
   await expect.poll(() => unmappedSince(state, invalidFrom).length).toBeGreaterThan(20)
   expect(await video.evaluate((el) => (el as HTMLVideoElement).paused)).toBe(false)
@@ -2199,6 +2267,7 @@ test('@observe a case video keeps playing through a display change and maps agai
   await page.setViewportSize({ width: 1920, height: 1080 })
   const restored = Date.now()
   await expect.poll(() => mappedSince(state, restored).length).toBeGreaterThan(5)
+  await expectNoPersistentDisplayStatus(page)
   // One recording and one screen capture throughout: a display change restarts neither.
   expect(state.recordings).toHaveLength(1)
   expect(state.screenStarts).toBe(1)
@@ -2213,7 +2282,7 @@ test('@observe a wrong display does not defer the CK visit or its deadline', asy
   expect(state.timing).not.toBeNull()
   await expect(page.getByRole('timer')).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByText(NOTICE)).toBeVisible()
+  await expectNoPersistentDisplayStatus(page)
   expect(state.unexpected).toEqual([])
 })
 
@@ -2235,7 +2304,10 @@ for (const mode of ['windowed', 'fullscreen', 'zoomed'] as const) {
     await page.goto('/session')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await page.locator('textarea').fill('Gemessen ohne Bestätigung')
-    await expect(page.getByText('AOI-Zuordnung aktiv.')).toBeVisible()
+    await expect
+      .poll(() => snapshots(state).some((layout) => layout.display_guard?.verified))
+      .toBe(true)
+    await expectNoPersistentDisplayStatus(page)
     const target = await page.locator('textarea').evaluate((el) => {
       const r = el.getBoundingClientRect()
       return {
@@ -2314,6 +2386,28 @@ test('@observe a scrollbar appearing or disappearing is not a display change', a
   expect(
     state.samples.filter((sample) => sample.ts > first && sample.geometry_ts === null),
   ).toEqual([])
-  await expect(page.getByText(NOTICE)).toHaveCount(0)
+  await expectNoPersistentDisplayStatus(page)
+  expect(state.unexpected).toEqual([])
+})
+
+test('@observe a case with an unreachable bridge has no persistent status boxes', async ({
+  page,
+}, info) => {
+  const state = await setup(page, [caseVideo], 420_000, {
+    ...nativeFixture(),
+    transport: 'offline',
+  })
+  await page.goto('/session')
+  await expect(page.locator('video')).toBeVisible()
+  await expectNoPersistentDisplayStatus(page)
+  await expect(page.locator('.gaze-health-stack')).toHaveCount(0)
+  await expect(page.locator('[data-aoi="video_controls"]')).toBeInViewport({ ratio: 1 })
+  await expect(page.locator('[data-aoi="continue"]')).toBeInViewport({ ratio: 1 })
+  await page.locator('[data-aoi="notes"] textarea').fill('Notizen ohne technische Statusboxen')
+  await page.screenshot({
+    path: info.outputPath('case-unreachable-bridge-clean.png'),
+    fullPage: true,
+  })
+  expect(state.samples).toEqual([])
   expect(state.unexpected).toEqual([])
 })

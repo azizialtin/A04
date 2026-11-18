@@ -4,9 +4,10 @@ For the eye-tracking sessions on the lab laptops (15.6", 1920 × 1080, Edge).
 Go through it before **each** participant. It takes about two minutes.
 
 The app no longer stops a session because of a display setting. It shows you
-the settings, records them, and carries on. The price of a wrong setting is
-that the gaze of that session is saved but **cannot be assigned to areas of the
-page (AOIs)**. So the check below is what protects the data.
+the settings on the welcome page, records them, and carries on. When display
+verification fails, received gaze samples retain their raw coordinates but
+**cannot be assigned to areas of the page (AOIs)**. A missing tracker can also
+mean no gaze samples are received. Check the setup before starting.
 
 ## Before the participant sits down
 
@@ -27,11 +28,12 @@ page (AOIs)**. So the check below is what protects the data.
 
 ## On the first page, after logging the participant in
 
-6. Open **“Bildschirmeinstellung prüfen”** below the welcome text. It is
-   already open if something needs attention.
-7. Every row should read **“in Ordnung”**. If one does not:
+6. Read the settings summary below the welcome text. It starts collapsed,
+   including when a setting needs attention. Click the line to expand it.
+7. The expanded list contains only different or unverified settings. Each
+   setting shows **Aktuell** and **Vorgesehen** on separate lines. If any appear:
 
-| Row | If it does not say “in Ordnung” |
+| Setting | What to check |
 |---|---|
 | Windows-Bridge | Start `A04Bridge.exe`, then click **Bridge erneut verbinden**. “Ältere Version” means the bridge works but should be updated; settings 2 and 5 are then mandatory. |
 | Bildschirmauflösung | Step 2: resolution 1920 × 1080. A value such as 1536 × 864 means the scale is 125 %. |
@@ -43,30 +45,30 @@ page (AOIs)**. So the check below is what protects the data.
 | Studienfenster im Vordergrund | Click once on the study page. |
 | AOI-Zuordnung | Fix the rows above; this one follows within a second. “Bereit” on this page is correct — it becomes “aktiv” on the study pages. |
 
-8. When all rows are in order, let the participant start. You do not need to
-   confirm anything.
+8. When the summary reads **“Die Bildschirmeinstellungen sind in Ordnung.”**,
+   let the participant start. Unknown settings remain listed until they can be
+   checked; do not interpret them as confirmed. No confirmation button is needed.
 
 ## During the session
 
-- A small green note **“AOI-Zuordnung aktiv.”** at the top left means gaze is
-  being assigned to areas.
-- A yellow note **“Blickdaten werden gerade keinen Bereichen zugeordnet.”**
-  means a setting has changed. The participant can keep working. Click
-  **Einstellungen anzeigen** to see which one, and correct it at the next
-  quiet moment (usually F11, Ctrl + 0, or a click on the study page). It
-  recovers by itself; there is nothing to confirm.
+- Setup details stay on the welcome page. Questionnaires, introductions and
+  videos do not show persistent tracking or display-warning boxes.
+- Capture, automatic recovery and verification continue in the background.
+  Validate recording and mapping in a short synthetic run before collecting
+  participant data; the absence of a warning is not proof of successful tracking.
 - Please ask participants not to press **Esc** or **F11**, not to zoom
   (Ctrl + mouse wheel, Ctrl + plus/minus), and not to switch to other windows.
 
 ## Afterwards
 
-- If the yellow note was visible for more than a moment, write down roughly
-  when and for how long. Gaze from that stretch is saved but has no areas.
+- Review recorded interruption/resume events and exported mapping status for
+  periods when the display was unverified. Received gaze from those periods
+  retains raw coordinates but has no assigned areas.
 
 ## What the app does not check
 
 - Whether the eye tracker is calibrated for *this* screen and *this* person.
 - Whether the participant sits within the tracker's range.
 
-If something does not behave as described here, note the app version shown
-under **Technischer Status** and tell the development team.
+If something does not behave as described here, record the time, browser and
+release being used and tell the development team.

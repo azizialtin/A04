@@ -9,8 +9,22 @@
   display: none;
 }
 
+.matrix__table {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.matrix__table :is(th, td) {
+  overflow-wrap: anywhere;
+}
+
 .matrix--stacked .matrix__table,
 .matrix--stacked .matrix__table tbody {
+  display: block;
+  width: 100%;
+}
+
+.matrix--stacked .matrix__table caption {
   display: block;
 }
 
@@ -25,7 +39,11 @@
 
 .matrix--stacked .matrix__table tr {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  /* At most three readable choices per line; six-point scales form even rows. */
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, max(200px, calc((100% - 16px) / 3))), 1fr)
+  );
   gap: 8px;
   padding-block: 16px;
   border-top: 1px solid var(--border);

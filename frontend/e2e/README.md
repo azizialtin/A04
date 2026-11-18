@@ -58,7 +58,11 @@ Responsive checks exercise questionnaire choices at 320–1920px, every particip
 screen and both login pages at phone/tablet/desktop widths, and admin tables,
 actions and questionnaire previews at 375/768/1366px. They verify that answers
 can be selected without horizontal scrolling, submissions keep their original
-values, and expanding tracker help does not cover the form.
+values, and questionnaire/video pages contain no persistent tracking notices.
+Pilot matrix checks use all authored PCK and MESP tasks plus the default MSK
+tasks at 375/768/1280/1470/1920px and at 125% CSS zoom. The display-check suite
+checks the initially collapsed welcome summary, keyboard expansion, differences
+only, and vertical current/intended values while capture continues in the background.
 The fixture `fixtures/stimulus.webm` is a two-second 320×180 test pattern, so the
 video element also has real decoded dimensions.
 

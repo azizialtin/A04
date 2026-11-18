@@ -112,6 +112,7 @@ describe('display checklist', () => {
     const rows = displayChecklist({ ...lab, extended: undefined }, verified, native)
     const displays = rows.find((row) => row.key === 'displays')
     expect(displays).toMatchObject({ status: 'info', current: { id: 'unknown' } })
+    expect(displayCheckSummary(rows)).toBe('pending')
   })
 
   test('an unreachable bridge fails; one still connecting is only pending', () => {
@@ -145,6 +146,11 @@ describe('display checklist', () => {
     expect(mapping({ phase: 'blocked', reasons: [], required: true })).toBe('mapping_checking')
     expect(mapping({ phase: 'suspended', reasons: [], required: false })).toBe('mapping_paused')
     expect(mapping(waiting)).toBe('mapping_waiting')
+  })
+
+  test('mapping that is unnecessary on this page does not mark a correct setup pending', () => {
+    const rows = displayChecklist(lab, { phase: 'suspended', reasons: [], required: false }, native)
+    expect(displayCheckSummary(rows)).toBe('ok')
   })
 
   test('values the browser reports as nonsense do not crash or pass', () => {
