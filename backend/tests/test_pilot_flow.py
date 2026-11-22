@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.models.enums import ParticipantStatus, PhaseType, QuestionnairePlacement
@@ -73,9 +73,9 @@ async def test_exact_pilot_pages_five_training_pre_post_last_three(
         "section_intro: Debugging-Aufgaben",
         *[f"questionnaire: CK: Aufgabe {i}" for i in range(1, 14)],
         "section_intro: Fachdidaktisches Wissen",
-        "questionnaire: Fachdidaktisches Wissen",
-        "questionnaire: Fachdidaktisches Wissen",
-        "questionnaire: Fachdidaktisches Wissen",
+        *["questionnaire: Fachdidaktisches Wissen - Aufgabe 1"] * 3,
+        *["questionnaire: Fachdidaktisches Wissen - Aufgabe 2"] * 3,
+        *["questionnaire: Fachdidaktisches Wissen - Aufgabe 3"] * 4,
         "section_intro: MESP",
         *[f"questionnaire: MESP: Aufgabe {i}" for i in range(1, 7)],
         "sosci: pretest",
@@ -101,8 +101,22 @@ async def test_exact_pilot_pages_five_training_pre_post_last_three(
         step["questions"][0]["id"]
         for step in steps
         if step["kind"] == "questionnaire" and step.get("section_key") == "pck"
-    ] == ["pck_pre_1a", "pck_pre_3a_1", "pck_pre_5a"]
-    assert len(steps) == 69
+    ] == [
+        "pck_pre_1a",
+        "pck_pre_1b_1",
+        "pck_pre_1c_1",
+        "pck_pre_3a_1",
+        "pck_pre_3b",
+        "pck_pre_3c_1",
+        "pck_pre_5a",
+        "pck_pre_5b_1",
+        "pck_pre_5c",
+        "pck_pre_5d_1",
+    ]
+    pages = [step for step in steps if step["kind"] == "questionnaire"]
+    assert [step["page"] for step in pages] == list(range(1, 33))
+    assert {step["page_count"] for step in pages} == {32}
+    assert len(steps) == 76
     assert "SECRET stimulus" not in json.dumps(steps)
     assert all(step["case_total"] == 7 for step in steps if "case_number" in step)
 
@@ -456,3 +470,143 @@ async def test_expired_deadline_does_not_block_legacy_or_finished_attempt_review
     )
     assert response.status_code == 201, response.text
     assert session.current_step_index == 2
+
+
+def _pck_answer(question, rating=6):
+    kind = question["type"]
+    if kind == "multiple_choice":
+        return rating
+    if kind == "multi_select":
+        return [2, 4]
+    if kind == "ranking":
+        return ["step_3", "step_1", "step_4", "step_2"]
+    return "Begründung anhand der Situation."
+
+
+async def test_each_pck_page_saves_its_own_item_group_with_six_point_ratings(
+    client, db, pilot_study, seed_participant, participant_headers, admin_headers
+):
+    await seed_batteries(db, pilot_study.id)
+    seed_participant.status = ParticipantStatus.active
+    await db.flush()
+    steps = await build_steps(db, seed_participant)
+    pages = [
+        (index, step)
+        for index, step in enumerate(steps)
+        if step["kind"] == "questionnaire" and step["section_key"] == "pck"
+    ]
+    assert len(pages) == 10
+    assert [index for index, _ in pages] == list(range(pages[0][0], pages[0][0] + 10))
+    session = Session(participant_id=seed_participant.id, current_step_index=pages[0][0])
+    db.add(session)
+    await db.flush()
+
+    expected = []
+    for number, (index, step) in enumerate(pages):
+        endpoint = f"/participant/questionnaires/{step['questionnaire_id']}/respond"
+        visit = str(uuid4())
+        entered = await client.post(
+            "/participant/session/questionnaire-visit",
+            headers=participant_headers,
+            json={
+                "questionnaire_id": step["questionnaire_id"],
+                "step_index": index,
+                "visit_id": visit,
+                "client_ts": 2_000_000 + number * 60_000,
+            },
+        )
+        assert entered.status_code == 200, entered.text
+        answers = {
+            question["id"]: _pck_answer(question, rating=6 - (position % 6))
+            for position, question in enumerate(step["questions"])
+        }
+        body = {"visit_id": visit, "client_ts": 2_030_000 + number * 60_000, "advance": True}
+
+        # Anything short of the page's whole item group is refused and saves nothing.
+        first = step["questions"][0]
+        wrong = {
+            "multiple_choice": [7, 0, "6", None],
+            "free_text": ["", "   ", None],
+            "multi_select": [[1], [1, 2, 3], [1, 1], [1, 9], None],
+            "ranking": [
+                ["step_1", "step_2", "step_3"],
+                ["step_1", "step_1", "step_2", "step_3"],
+                ["step_1", "step_2", "step_3", "step_5"],
+            ],
+        }[first["type"]]
+        for value in wrong:
+            refused = await client.post(
+                endpoint,
+                headers=participant_headers,
+                json={**body, "answers": {**answers, first["id"]: value}},
+            )
+            assert refused.status_code == 422, (first["id"], value, refused.text)
+            assert refused.json()["detail"]["missing"] == [first["id"]]
+        if len(step["questions"]) > 1:
+            last = step["questions"][-1]["id"]
+            partial = {key: value for key, value in answers.items() if key != last}
+            refused = await client.post(
+                endpoint, headers=participant_headers, json={**body, "answers": partial}
+            )
+            assert refused.status_code == 422
+            assert refused.json()["detail"]["missing"] == [last]
+        assert session.current_step_index == index
+        assert await db.scalar(select(func.count()).select_from(QuestionnaireResponse)) == number
+
+        saved = await client.post(
+            endpoint, headers=participant_headers, json={**body, "answers": answers}
+        )
+        assert saved.status_code == 201, saved.text
+        assert session.current_step_index == index + 1
+        expected.append((step["questionnaire_id"], answers))
+
+    after = steps[pages[-1][0] + 1]
+    assert (after["kind"], after["section_key"]) == ("section_intro", "mesp")
+    stored = (
+        await db.execute(
+            select(QuestionnaireResponse.questionnaire_id, QuestionnaireResponse.answers).order_by(
+                QuestionnaireResponse.id
+            )
+        )
+    ).all()
+    assert [tuple(row) for row in stored] == expected
+    everything = {key: value for _, answers in expected for key, value in answers.items()}
+    assert len(everything) == 29
+    assert {value for key, value in everything.items() if key[-2] == "_" and key[-1].isdigit()} == {
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+    }
+    assert everything["pck_pre_5d_5"] == 2
+    assert everything["pck_pre_5c"] == ["step_3", "step_1", "step_4", "step_2"]
+
+    responses = await client.get(
+        f"/admin/studies/{pilot_study.id}/export/responses", headers=admin_headers
+    )
+    rows = list(csv.DictReader(io.StringIO(responses.content.decode("utf-8-sig"))))
+    assert [row["questionnaire_title"] for row in rows] == [step["title"] for _, step in pages]
+    assert [json.loads(row["answers"]) for row in rows] == [answers for _, answers in expected]
+    assert {row["section_key"] for row in rows} == {"pck"}
+    assert {row["response_status"] for row in rows} == {"submitted"}
+    # Each row says which instrument its ids, scale and ranking steps belong to.
+    assert {row["instrument"] for row in rows} == {"a04-pretest-2026-11-20"}
+    assert list(rows[0])[-1] == "instrument"
+    sections = await client.get(
+        f"/admin/studies/{pilot_study.id}/export/sections", headers=admin_headers
+    )
+    (section,) = csv.DictReader(io.StringIO(sections.content.decode("utf-8-sig")))
+    assert section["section_key"] == "pck"
+    assert (section["pages_answered"], section["visited_pages"]) == ("10", "10")
+    assert section["time_spent_seconds"] == "300"
+    assert len(json.loads(section["page_visits"])) == 10
+
+    # The admin's own views read the new shapes too.
+    for path in (
+        f"/admin/studies/{pilot_study.id}/stats",
+        f"/admin/participants/{seed_participant.id}/stats",
+        f"/admin/studies/{pilot_study.id}/questionnaires",
+    ):
+        assert (await client.get(path, headers=admin_headers)).status_code == 200, path

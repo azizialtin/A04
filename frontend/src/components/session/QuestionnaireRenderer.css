@@ -96,6 +96,11 @@
   container: debugging / inline-size;
 }
 
+/* The common question and the task's own sentence are separate lines. */
+.qfield--debugging .qfield__text {
+  white-space: pre-line;
+}
+
 .qfield--debugging .qfield__body {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr);

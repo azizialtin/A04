@@ -22,12 +22,12 @@ vi.mock('../../api/admin', async () => {
 const listQuestionnaires = vi.mocked(adminApi.listQuestionnaires)
 const updateQuestionnaire = vi.mocked(adminApi.updateQuestionnaire)
 
-function view() {
+function view({ pilot = false } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <ToastProvider>
-        <QuestionnairesSection studyId={9} />
+        <QuestionnairesSection studyId={9} pilot={pilot} />
       </ToastProvider>
     </QueryClientProvider>,
   )
@@ -257,4 +257,72 @@ test('missing introductions remain empty and structural rejection preserves the 
   fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
   expect(await screen.findByText(/Diese Änderung ist nicht möglich/)).toBeInTheDocument()
   expect(screen.getByLabelText('Text der Abschnittseinleitung')).toHaveValue('Researcher draft')
+})
+
+const pckRatings: AdminQuestionnaire = {
+  id: 77,
+  study_id: 9,
+  placement: 'pre_test',
+  title: 'Fachdidaktisches Wissen - Aufgabe 1',
+  description: 'Ein Schüler summiert ein Array.\n\n```java\nint summe = 0;\n```',
+  section: 'PCK-Pretest',
+  section_key: 'pck',
+  order_index: 17,
+  questions: ['a', 'b'].map((suffix) => ({
+    id: `pck_pre_1b_${suffix}`,
+    type: 'multiple_choice',
+    text: `Aussage ${suffix}`,
+    matrix: 'pck_pre_1b',
+    matrix_prompt: 'Wie plausibel sind die Aussagen?',
+    options: [
+      'Sehr plausibel',
+      'Plausibel',
+      'Eher plausibel',
+      'Eher nicht plausibel',
+      'Nicht plausibel',
+      'Gar nicht plausibel',
+    ].map((label, index) => ({ value: index + 1, label })),
+  })),
+} as AdminQuestionnaire
+
+test('in a pilot study the preview lays a PCK page out as the participant page does', async () => {
+  listQuestionnaires.mockResolvedValue([pckRatings])
+  view({ pilot: true })
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }))
+  const preview = screen.getByLabelText('Vorschau')
+  await waitFor(() =>
+    expect(
+      within(preview).getByRole('heading', { name: 'Fachdidaktisches Wissen - Aufgabe 1' }),
+    ).toBeInTheDocument(),
+  )
+
+  const page = preview.querySelector('.pretest-page')!
+  expect(page).toHaveClass('pretest-page--pilot', 'pretest-page--pck-item')
+  // The situation and its code as one stimulus, the scale labels above their columns.
+  expect(page.querySelector('.study-stimulus')).toHaveClass('study-stimulus--with-code')
+  expect(
+    Array.from(page.querySelectorAll('.matrix__scale-label'), (label) => label.textContent),
+  ).toEqual([
+    'Sehr plausibel',
+    'Plausibel',
+    'Eher plausibel',
+    'Eher nicht plausibel',
+    'Nicht plausibel',
+    'Gar nicht plausibel',
+  ])
+  expect(page.querySelector('.question-column')).toBeNull()
+
+  // Moved to a case battery, the same questions are previewed as plain questions.
+  fireEvent.change(screen.getByLabelText('Platzierung'), { target: { value: 'case_outro' } })
+  expect(screen.getByLabelText('Vorschau').querySelector('.pretest-page')).toBeNull()
+})
+
+test('outside the pilot flow the same page is previewed without the pilot layout', async () => {
+  listQuestionnaires.mockResolvedValue([pckRatings])
+  view()
+  fireEvent.click(await screen.findByRole('button', { name: 'Bearbeiten' }))
+  const preview = screen.getByLabelText('Vorschau')
+  await waitFor(() => expect(preview.querySelector('.pretest-page--pck')).not.toBeNull())
+  expect(preview.querySelector('.pretest-page--pilot, .pretest-page--pck-item')).toBeNull()
+  expect(preview.querySelectorAll('.matrix__scale-label')).toHaveLength(0)
 })

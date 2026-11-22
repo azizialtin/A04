@@ -72,7 +72,8 @@ actions and questionnaire previews at 375/768/1366px. They verify that answers
 can be selected without horizontal scrolling, submissions keep their original
 values, and questionnaire/video pages contain no persistent tracking notices.
 Pilot matrix checks use all authored PCK and MESP tasks plus the default MSK
-tasks at 375/768/1280/1470/1920px and at 125% CSS zoom. The display-check suite
+tasks at 375/768/1280/1470/1920px and at 125% CSS zoom; the ten revised PCK
+pages are also checked at 375/768/1024/1280/1366/1536px. The display-check suite
 checks the initially collapsed welcome summary, keyboard expansion, differences
 only, and vertical current/intended values while capture continues in the background.
 The fixture `fixtures/stimulus.webm` is a two-second 320×180 test pattern, so the
@@ -116,28 +117,38 @@ assertion runs after the full walk so a tall page does not hide later findings.
 ## November 16 pilot
 
 `pilot-flow.spec.ts` creates a fresh study using the new defaults and walks the
-full 69-page script: five training cases plus pre/post cases, with the last
+full 76-page script: five training cases plus pre/post cases, with the last
 three cases replayed in the discussion phase. It verifies explicit CK skip
-values in CSV, all PCK pages including the exact-two selection, all six MESP
-pages with 30 independently rated statements, neutral participant labels, and
-student-task code formatting. It captures PCK/MESP pages, transition pages and
-the video rail, checks horizontal overflow, and asserts vertical fit on each
-PCK page before answering and before advancing. The post-questionnaire intro
-must show its supplied paragraph without an added default heading.
+values in CSV, the line break in every CK question, all ten PCK pages including
+the exact-two selection and one saved response per page, all six MESP pages with
+30 independently rated statements, neutral participant labels, and student-task
+code formatting. It captures PCK/MESP pages, transition pages and the video
+rail, checks horizontal overflow, and asserts vertical fit on each PCK page
+before answering and before advancing. The pages that start the video and
+discussion phases must show their revised text, each think-aloud recording must
+start at 30% volume, and the post-questionnaire intro must show its supplied
+paragraph without an added default heading.
 
-`feedback-pilot-layout.spec.ts` checks all three complete pilot PCK pages at
-1920×1080 CSS pixels, with unanswered, incomplete and completed responses. It
-checks page and internal overflow, fully visible controls, readable font sizes,
-authored DOM order, exact code lines and gaze-prompt positions. These assertions
-run before navigation, because Playwright's normal click/fill helpers can
-silently scroll offscreen fields into view. Source task 3 includes all 17 lines
-of the refreshed code rather than a shortened formatting variant.
+`feedback-pilot-layout.spec.ts` checks the ten revised PCK pages at 1920×1080:
+one item group under its task heading, starting at the left edge and spanning
+the page, with six labelled rating columns, exact code lines and saved values.
+It also answers the ten pages in sequence, restores a draft after a reload,
+answers a rating page by keyboard, and checks the CK line break and the two
+revised text pages. For studies seeded from the first pilot it still checks all
+three complete PCK pages at 1920×1080 CSS pixels, with unanswered, incomplete
+and completed responses. It checks page and internal overflow, fully visible
+controls, readable font sizes, authored DOM order, exact code lines and
+gaze-prompt positions. These assertions run before navigation, because
+Playwright's normal click/fill helpers can silently scroll offscreen fields into
+view. Source task 3 includes all 17 lines of its code rather than a shortened
+formatting variant.
 
 The same layout suite covers the full MESP introduction and all six MESP pages,
 including the integrated scale headers and unchanged strategy order.
 `feedback-replay-layout.spec.ts` checks the first bundled think-aloud page at
 1920×1080 with healthy capture, clip fallback, missing gaze, missing audio and
-both warnings together. It verifies page/internal overflow, replay proportions,
+both warnings together. It verifies the 30% starting volume, which a later
+change by hand keeps, page/internal overflow, replay proportions,
 the gaze toggle and full visibility of “Weiter” before navigating. Narrow and
 short viewport cases also check natural scrolling, preserved video proportions
 and reachable controls.
@@ -169,9 +180,25 @@ other feedback checks; the physical eye tracker remains a lab acceptance check.
 unreachable API. It checks case-intro continuation, visible request errors and
 retry, supervisor navigation, session refetch and reload. The real-API pilot
 walk also sends an offline signal before case 2 and requires the saved pointer
-to move from 37 to 38 while the API remains reachable. This regression failed
+to move from 44 to 45 while the API remains reachable. This regression failed
 before the query network-mode fix. The original intermittent trace did not
 record connectivity state, so its initiating event is still unknown.
+
+`feedback-outdated-page.spec.ts` leaves the participant login page open across
+a release. The page reloads itself and keeps the typed ID; pressing **Anmelden**
+on old files reloads instead of opening a session; a reload that does not help
+happens once and is then reported, without a success message beside it and
+without blocking the sign-in; a server that does not answer delays the sign-in
+by three seconds at most; and a running session is never reloaded, including by
+an answer that arrives only after the sign-in has opened it.
+`outdated-page.spec.ts` repeats the sign-in case on the built page against the
+real API, where the shell names hashed files.
+
+`feedback-admin-preview.spec.ts` opens the questionnaire editor on a revised PCK
+rating page at 1920×1080 and checks that the preview is laid out like the
+participant's page: the code beside the situation, a label above each of the six
+columns and the question across the panel. A first-pilot page keeps its three
+columns, and a study on the earlier flow gets no pilot layout.
 
 `feedback-aoi-inventory.spec.ts` declares its own 1920×1080 viewport and checks
 all thirteen CK tasks, all three PCK pages, all six MESP pages, questionnaire

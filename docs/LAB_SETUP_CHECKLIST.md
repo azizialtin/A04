@@ -20,7 +20,14 @@ mean no gaze samples are received. Check the setup before starting.
    as usual.
 4. **Bridge.** Start the current `A04Bridge.exe` and leave its window open.
 5. **Edge.**
-   - Open the study page.
+   - Open the study page. A login page left open from an earlier day brings
+     itself up to date: it asks the server when you return to the window and
+     when **Anmelden** is pressed, and reloads if a newer release is live. The
+     typed ID is kept; if the page reloads when **Anmelden** is pressed, press
+     it once more. Should it show “Diese Seite ist nicht auf dem neuesten
+     Stand”, press **Ctrl + F5**. A page that was already open when this
+     arrived (app version `2026-11-22.1`) cannot do it yet: reload that page
+     once with **Ctrl + F5**.
    - Press **Ctrl + 0** to reset the zoom to 100 %.
    - Press **F11** for full screen.
    - If Edge asks whether the site may access apps on this device (or the

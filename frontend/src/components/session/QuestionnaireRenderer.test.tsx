@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 
 import pilotSource from '../../../../backend/app/data/pretest_pilot20261116.json'
+import revisedSource from '../../../../backend/app/data/pretest_pilot20261120.json'
 import type { Question } from '../../lib/questionnaire'
 import QuestionnaireRenderer from './QuestionnaireRenderer'
 
@@ -531,6 +532,93 @@ test.each(pilotPages.pck_pages)(
     }
   },
 )
+
+const revisedRatings = (
+  revisedSource.pck_pages as unknown as { title: string; questions: Question[] }[]
+).filter((page) => page.questions.every((question) => question.matrix))
+
+test.each(revisedRatings.map((page) => ({ ...page, variable: page.questions[0].matrix })))(
+  'revised $variable keeps six labelled choices per statement at any width',
+  (page) => {
+    const resize = observeMatrixWidths()
+    const onSubmit = vi.fn()
+    try {
+      const { container } = render(
+        <QuestionnaireRenderer
+          title={page.title}
+          questions={page.questions}
+          layout="stimulus"
+          matrixLabels="headers"
+          onSubmit={onSubmit}
+        />,
+      )
+      const matrix = container.querySelector('.matrix')!
+      const labels = (page.questions[0].options as { label: string }[]).map(
+        (option) => option.label,
+      )
+      const expected: Record<string, unknown> = {}
+      for (const [index, question] of page.questions.entries()) {
+        const row = container.querySelector<HTMLElement>(`[data-aoi="question.${question.id}"]`)!
+        const radios = within(row).getAllByRole('radio')
+        expect(radios.map((radio) => radio.getAttribute('aria-label'))).toEqual(
+          labels.map((label, position) => `${question.text}: ${position + 1} – ${label}`),
+        )
+        fireEvent.click(radios[5 - (index % 6)])
+        expected[question.id] = 6 - (index % 6)
+      }
+      // Wide: a table with the labels in its head. Narrow: each statement's
+      // choices spelled out beside their own radio.
+      for (const width of [1790, 1100, 1000, 320, 1790]) {
+        resize(width)
+        const stacked = width < 1088
+        expect(matrix.classList.contains('matrix--stacked')).toBe(stacked)
+        expect(matrix).toHaveClass('matrix--labels-in-headers')
+        expect(
+          Array.from(matrix.querySelectorAll('.matrix__scale-label')).map(
+            (label) => label.textContent,
+          ),
+        ).toEqual(labels)
+        expect(
+          Array.from(matrix.querySelectorAll('tbody tr:first-child .matrix__option-label')).map(
+            (label) => label.textContent,
+          ),
+        ).toEqual(labels.map((label, position) => `${position + 1} – ${label}`))
+        expect(matrix.querySelectorAll('input:checked')).toHaveLength(page.questions.length)
+      }
+      expect(container.querySelector('.matrix__legend')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+      expect(onSubmit).toHaveBeenCalledWith(expected, expect.any(Number))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  },
+)
+
+test('the stimulus layout keeps questions in plain flow under the shared situation', () => {
+  const grouped: Question[] = [
+    { id: 'a', type: 'free_text', text: 'Erste Antwort', layout_column: 1 },
+    { id: 'b', type: 'free_text', text: 'Zweite Antwort', layout_column: 2 },
+  ]
+  const { container } = render(
+    <QuestionnaireRenderer
+      title="Aufgabe"
+      instruction={'Ein Schüler testet.\n\n```java\nint i = 0;\n```\n\nEr sagt: „Es läuft.“'}
+      questions={grouped}
+      layout="stimulus"
+      onSubmit={vi.fn()}
+    />,
+  )
+  const stimulus = container.querySelector('.study-stimulus')!
+  expect(stimulus).toHaveClass('study-stimulus--with-code')
+  expect(stimulus.querySelector('.study-stimulus__quotation')).toHaveTextContent('Es läuft.')
+  // Authored columns belong to the column layout only.
+  expect(container.querySelector('.qlist--columns, .question-column')).toBeNull()
+  expect(container.querySelectorAll('.qlist > .qfield')).toHaveLength(2)
+  expect(screen.getByRole('button', { name: 'Weiter' }).closest('footer')).toHaveClass(
+    'questionnaire-footer',
+  )
+  expect(screen.getByText('Noch 2 von 2 Fragen offen').closest('footer')).not.toBeNull()
+})
 
 test('a question can show code above its answer field, numbered line by line', () => {
   const debugging: Question[] = [

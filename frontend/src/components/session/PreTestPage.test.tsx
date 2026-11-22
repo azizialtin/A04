@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import firstPilot from '../../../../backend/app/data/pretest_pilot20261116.json'
+import revisedPilot from '../../../../backend/app/data/pretest_pilot20261120.json'
 import type { SectionTiming, SessionStep } from '../../api/participant'
 import i18n from '../../i18n'
 import type { Answers, Question } from '../../lib/questionnaire'
@@ -610,3 +612,213 @@ test('demographics page labels and local navigation follow the selected interfac
     await i18n.changeLanguage('de')
   }
 })
+
+type SourcePage = { source_task: number; title: string; description: string; questions: Question[] }
+const revisedPck = revisedPilot.pck_pages as unknown as SourcePage[]
+const firstPck = firstPilot.pck_pages as unknown as SourcePage[]
+
+const pckStep = (page: SourcePage, number: number, pageCount: number) => ({
+  ...step,
+  title: page.title,
+  description: page.description,
+  questions: page.questions,
+  section: 'PCK-Pretest',
+  section_key: 'pck',
+  questionnaire_id: 100 + number,
+  page: 16 + number,
+  page_count: pageCount,
+})
+
+const codeOf = (description: string) =>
+  description.match(/```java\n([\s\S]*?)\n```/)?.[1].split('\n') ?? []
+
+test.each(revisedPck.map((page, index) => ({ ...page, number: index + 1 })))(
+  'revised PCK page $number puts one item group under its task heading, across the page',
+  async ({ number, ...page }) => {
+    const { container } = await view(true, pckStep(page, number, 32))
+    const task = { 1: 1, 3: 2, 5: 3 }[page.source_task]
+    expect(
+      screen.getByRole('heading', { level: 2, name: `Fachdidaktisches Wissen - Aufgabe ${task}` }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(`Fragebogenseite ${16 + number} von 32 insgesamt`)).toBeInTheDocument()
+    const root = container.querySelector('.pretest-page')!
+    expect(root).toHaveClass('pretest-page--pilot', 'pretest-page--pck-item')
+    // Its own class: the three-column rules of the first pilot must not reach it.
+    expect(root).not.toHaveClass('pretest-page--pck')
+
+    // The situation and its code stay above; the item group is in plain flow below.
+    const stimulus = container.querySelector('[data-aoi="instructions"] .study-stimulus')!
+    const code = codeOf(page.description)
+    expect(stimulus.classList.contains('study-stimulus--with-code')).toBe(code.length > 0)
+    expect(
+      Array.from(stimulus.querySelectorAll('.code__line')).map((line) =>
+        line.textContent!.replace(/\n$/, ''),
+      ),
+    ).toEqual(code)
+    expect(stimulus.querySelectorAll('.study-stimulus__quotation')).toHaveLength(1)
+    expect(container.querySelector('.qlist--columns, .question-column')).toBeNull()
+    expect(
+      Array.from(container.querySelectorAll('.qlist [data-aoi]'))
+        .map((element) => element.getAttribute('data-aoi')!)
+        .filter((id) => /^question\.[^.]+$/.test(id)),
+    ).toEqual(page.questions.map((question) => `question.${question.id}`))
+    expect(stimulus.compareDocumentPosition(container.querySelector('.qlist')!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+
+    const next = screen.getByRole('button', { name: 'Weiter' })
+    expect(next.closest('footer')).toHaveClass('questionnaire-footer')
+    expect(next).toBeDisabled()
+
+    const expected: Answers = {}
+    const rated = page.questions.filter((question) => question.matrix)
+    if (rated.length) {
+      // Six labelled columns, named once in the table head rather than in a legend.
+      const labels = (rated[0].options as { label: string }[]).map((option) => option.label)
+      expect(labels).toHaveLength(6)
+      expect(
+        Array.from(container.querySelectorAll('thead th:not(:first-child)')).map(
+          (heading) => heading.textContent,
+        ),
+      ).toEqual(labels.map((label, index) => `${index + 1}${label}`))
+      expect(container.querySelector('.matrix__legend')).toBeNull()
+      expect(container.querySelector('caption')).toHaveTextContent('Antwortmöglichkeiten')
+      expect(container.querySelectorAll('.matrix')).toHaveLength(1)
+      expect(
+        screen.getByText(`Noch ${rated.length} von ${rated.length} Fragen offen`),
+      ).toBeVisible()
+    }
+    for (const [index, question] of page.questions.entries()) {
+      const field = container.querySelector<HTMLElement>(`[data-aoi="question.${question.id}"]`)!
+      if (question.matrix) {
+        const radios = within(field).getAllByRole('radio')
+        expect(radios).toHaveLength(6)
+        fireEvent.click(radios[(index + 5) % 6])
+        expected[question.id] = ((index + 5) % 6) + 1
+      } else if (question.type === 'free_text') {
+        fireEvent.change(within(field).getByRole('textbox'), { target: { value: 'Begründung' } })
+        expected[question.id] = 'Begründung'
+      } else if (question.type === 'multi_select') {
+        const boxes = within(field).getAllByRole('checkbox')
+        fireEvent.click(boxes[1])
+        fireEvent.click(boxes[3])
+        expect(boxes[0]).toBeDisabled()
+        expected[question.id] = [2, 4]
+      } else if (question.type === 'ranking') {
+        expect(
+          within(field)
+            .getAllByRole('listitem')
+            .map((item) => item.textContent),
+        ).toEqual(
+          (question.options as { label: string }[]).map(
+            (option, position) => `${position + 1}${option.label}↑↓`,
+          ),
+        )
+        fireEvent.click(within(field).getAllByRole('button', { name: /Nach unten/ })[0])
+        expected[question.id] = ['step_2', 'step_1', 'step_3', 'step_4']
+      }
+    }
+    expect(next).toBeEnabled()
+    await act(async () => {
+      fireEvent.click(next)
+    })
+    expect(onSubmit).toHaveBeenCalledWith(expected, expect.any(Number), expect.any(String), 100000)
+  },
+)
+
+test('revised PCK ratings name every point in the column heads, as the mockup labels them', async () => {
+  const plausible = [
+    'Sehr plausibel',
+    'Plausibel',
+    'Eher plausibel',
+    'Eher nicht plausibel',
+    'Nicht plausibel',
+    'Gar nicht plausibel',
+  ]
+  const { container } = await view(true, pckStep(revisedPck[1], 2, 32))
+  expect(
+    Array.from(container.querySelectorAll('.matrix__scale-label')).map(
+      (label) => label.textContent,
+    ),
+  ).toEqual(plausible)
+  // The worksheet's own wording stays in the prompt, with its two anchors.
+  expect(container.querySelector('.matrix__prompt:last-of-type')).toHaveTextContent(
+    'Bewerten Sie jede Aussage auf einer sechsstufigen Skala (1 = sehr plausibel, 6 = überhaupt nicht plausibel).',
+  )
+  expect(
+    screen.getByRole('radio', {
+      name: 'Der Schüler nimmt möglicherweise an, dass die Schleife immer beim ersten Element des Arrays beginnt.: 6 – Gar nicht plausibel',
+    }),
+  ).toBeInTheDocument()
+})
+
+test.each(firstPck)(
+  'first-pilot PCK task $source_task keeps its three authored columns and compact scales',
+  async (page) => {
+    const { container } = await view(true, pckStep(page, 1, 25))
+    expect(screen.getByRole('heading', { level: 2, name: 'Fachdidaktisches Wissen' })).toBeVisible()
+    const root = container.querySelector('.pretest-page')!
+    expect(root).toHaveClass('pretest-page--pilot', 'pretest-page--pck')
+    expect(root).not.toHaveClass('pretest-page--pck-item')
+    expect(container.querySelectorAll('.qlist--columns > .question-column')).toHaveLength(3)
+    expect(container.querySelector('.matrix__scale-label')).toBeNull()
+    expect(container.querySelector('caption')).toBeNull()
+    expect(container.querySelectorAll('.matrix').length).toBeGreaterThan(1)
+    for (const row of container.querySelectorAll<HTMLElement>('.matrix__table tbody tr')) {
+      expect(within(row).getAllByRole('radio')).toHaveLength(5)
+    }
+  },
+)
+
+test('a legacy study shows a PCK page without either pilot layout', async () => {
+  const { container } = await view(false, pckStep(revisedPck[1], 2, 32))
+  const root = container.querySelector('.pretest-page')!
+  expect(root).toHaveClass('pretest-page--pck')
+  expect(root).not.toHaveClass('pretest-page--pilot')
+  expect(root).not.toHaveClass('pretest-page--pck-item')
+  expect(container.querySelector('.study-stimulus, .question-column, footer')).toBeNull()
+  expect(container.querySelector('.matrix__scale-label')).toBeNull()
+})
+
+test('a revised page given authored columns in the admin goes back to the column layout', async () => {
+  const page = revisedPck[4]
+  const { container } = await view(
+    true,
+    pckStep(
+      {
+        ...page,
+        questions: page.questions.map((question, index) => ({
+          ...question,
+          layout_column: (index + 1) as 1 | 2,
+        })),
+      },
+      5,
+      32,
+    ),
+  )
+  expect(container.querySelector('.pretest-page')).not.toHaveClass('pretest-page--pck-item')
+  expect(container.querySelectorAll('.question-column')).toHaveLength(2)
+})
+
+test.each(revisedPilot.ck_tasks.map((task) => task.question as unknown as Question))(
+  '$id keeps the common question and its own task on separate lines',
+  async (question) => {
+    const lead =
+      'Debugging-Aufgabe – In welcher Zeile befindet sich der Fehler? Was ist der Fehler?'
+    const { container } = await view(true, { ...step, questions: [question] })
+    const field = container.querySelector('.qfield')!
+    expect(field).toHaveClass('qfield--debugging')
+    const legend = field.querySelector('.qfield__text')!
+    const [first, second, ...rest] = legend.textContent!.split('\n')
+    expect(first).toBe(lead)
+    expect(second.endsWith(' *')).toBe(true)
+    expect(second.length).toBeGreaterThan(10)
+    expect(rest).toEqual([])
+    // Still one name for assistive technology; the break is only how it is shown.
+    expect(
+      screen.getByRole('group', {
+        name: (name) => name.replace(/\s+/g, ' ') === `${question.text.replace('\n', ' ')} *`,
+      }),
+    ).toBe(field)
+  },
+)

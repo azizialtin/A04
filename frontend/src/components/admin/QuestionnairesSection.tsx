@@ -2,6 +2,7 @@ import AdminTable from './AdminTable'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { AxiosError } from 'axios'
+import { useTranslation } from 'react-i18next'
 
 import type { AdminQuestionnaire } from '../../api/admin'
 import {
@@ -13,12 +14,15 @@ import {
 } from '../../hooks/admin'
 import { definitionErrors, type Question } from '../../lib/questionnaire'
 import { codeLines } from '../../lib/code'
+import { preTestLayout } from '../../lib/preTestLayout'
 import {
   hasIntroduction,
   instrumentName,
   questionnaireSections,
 } from '../../lib/questionnaireSections'
 import QuestionnaireRenderer from '../session/QuestionnaireRenderer'
+// The preview borrows the participant page's layout, so it needs its styles.
+import '../session/PreTestPage.css'
 import './QuestionnairesSection.css'
 
 const PLACEMENTS = [
@@ -195,7 +199,15 @@ function parseQuestions(json: string): { questions: Question[] } | { error: stri
 // connection must not send the researcher off deleting a battery.
 const isConflict = (error: unknown) => (error as AxiosError)?.response?.status === 409
 
-export default function QuestionnairesSection({ studyId }: { studyId: number }) {
+export default function QuestionnairesSection({
+  studyId,
+  pilot = false,
+}: {
+  studyId: number
+  /** Whether the study runs the pilot flow, whose pre-test pages have layouts of their own. */
+  pilot?: boolean
+}) {
+  const { t } = useTranslation()
   const qs = useQuestionnaires(studyId)
   const create = useCreateQuestionnaire(studyId)
   const update = useUpdateQuestionnaire(studyId)
@@ -218,6 +230,15 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
   const [err, setErr] = useState('')
 
   const parsed = useMemo(() => parseQuestions(json), [json])
+  // A pre-test page is laid out by its section; the other batteries sit inside
+  // screens of their own and are previewed as plain questions.
+  const pageLayout = useMemo(
+    () =>
+      'error' in parsed || placement !== 'pre_test'
+        ? null
+        : preTestLayout({ pilot, sectionKey, questions: parsed.questions, description }),
+    [parsed, placement, pilot, sectionKey, description],
+  )
   const sections = useMemo(() => questionnaireSections(qs.data ?? []), [qs.data])
 
   useEffect(() => {
@@ -649,13 +670,21 @@ export default function QuestionnairesSection({ studyId }: { studyId: number }) 
           <p className="error-text">{parsed.error}</p>
         ) : (
           <div className="preview" aria-label="Vorschau">
-            <QuestionnaireRenderer
-              key={`${title}\u0000${description}\u0000${json}`}
-              title={title.trim() || 'Titel der Seite'}
-              instruction={description}
-              questions={parsed.questions}
-              onSubmit={() => undefined}
-            />
+            <div className={pageLayout?.className}>
+              <QuestionnaireRenderer
+                key={`${title}\u0000${description}\u0000${json}\u0000${sectionKey}\u0000${placement}`}
+                title={title.trim() || 'Titel der Seite'}
+                instruction={description}
+                questions={pageLayout?.demographicsForm?.questions ?? parsed.questions}
+                pages={pageLayout?.demographicsForm?.pages.map(({ titleKey, questionIds }) => ({
+                  title: t(titleKey),
+                  questionIds,
+                }))}
+                layout={pageLayout?.layout}
+                matrixLabels={pageLayout?.matrixLabels}
+                onSubmit={() => undefined}
+              />
+            </div>
           </div>
         )}
       </div>

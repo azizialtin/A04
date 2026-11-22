@@ -111,8 +111,8 @@ async def test_a_new_study_arrives_with_the_standard_batteries(client, db, admin
     assert sorted(placements) == [
         (QuestionnairePlacement.case_outro, 0),
         (QuestionnairePlacement.diagnosis, 0),
-        # Demographics, two CK self-assessments, thirteen tasks, three PCK, six MESP.
-        *((QuestionnairePlacement.pre_test, i) for i in range(25)),
+        # Demographics, two CK self-assessments, thirteen tasks, ten PCK, six MESP.
+        *((QuestionnairePlacement.pre_test, i) for i in range(32)),
     ]
 
 

@@ -444,7 +444,9 @@ def _diagnoses_query(study_id: int, participant_ids: list[str] | None = None):
 
 def _responses_query(study_id: int, participant_ids: list[str] | None = None):
     # Placement travels with the row: without it a pre-test page and a case
-    # battery are told apart only by an empty video_id, which is a guess.
+    # battery are told apart only by an empty video_id, which is a guess. So
+    # does the instrument the page was seeded from: two pilots reuse the same
+    # question ids for different statements, scales and ranking steps.
     stmt = (
         select(
             QuestionnaireResponse.participant_id,
@@ -458,6 +460,7 @@ def _responses_query(study_id: int, participant_ids: list[str] | None = None):
             QuestionnaireResponse.created_at,
             Questionnaire.section_key,
             QuestionnaireResponse.response_status,
+            Questionnaire.questions[0]["source_ref"]["instrument"].astext,
         )
         .join(Participant, Participant.id == QuestionnaireResponse.participant_id)
         .join(Questionnaire, Questionnaire.id == QuestionnaireResponse.questionnaire_id)
@@ -789,6 +792,9 @@ _EXPORTS = {
             "created_at",
             "section_key",
             "response_status",
+            # Which versioned instrument the page came from; empty for a page
+            # written by hand. Last, so earlier columns keep their places.
+            "instrument",
         ],
         _responses_query,
         lambda r: [
@@ -804,6 +810,7 @@ _EXPORTS = {
             _iso(r[8]),
             r[9],
             r[10],
+            r[11] or "",
         ],
     ),
     "sections": (

@@ -287,8 +287,21 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
   const getSession = () => api<SessionScript>(request, '/participant/session', participantToken)
   const initial = await getSession()
   expect(initial.flow_version).toBe('pilot_20261116')
-  expect(initial.steps).toHaveLength(69)
+  expect(initial.steps).toHaveLength(76)
   expect(JSON.stringify(initial)).not.toContain('PRIVATE_CONDITION')
+  const pck = initial.steps.filter(
+    (step): step is Extract<SessionStep, { kind: 'questionnaire' }> =>
+      step.kind === 'questionnaire' && step.section_key === 'pck',
+  )
+  // One item group per page, each under its task's heading.
+  expect(pck.map((step) => step.title)).toEqual([
+    ...Array<string>(3).fill('Fachdidaktisches Wissen - Aufgabe 1'),
+    ...Array<string>(3).fill('Fachdidaktisches Wissen - Aufgabe 2'),
+    ...Array<string>(4).fill('Fachdidaktisches Wissen - Aufgabe 3'),
+  ])
+  expect(pck.map((step) => [step.page, step.page_count])).toEqual(
+    pck.map((_, index) => [17 + index, 32]),
+  )
   expect(
     initial.steps.filter((step) => step.kind === 'think_aloud').map((step) => step.case_number),
   ).toEqual([5, 6, 7])
@@ -312,7 +325,27 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
           `Fragebogenseite ${step.page} von ${step.page_count} insgesamt`,
         )
         await expect(page.locator(`[data-aoi="question.${step.questions[0].id}"]`)).toBeVisible()
-        if (step.section_key === 'pck') await expectPageFits(page)
+        if (step.section_key === 'ck_tasks') {
+          // The common sentence, then the task's own on a new line.
+          expect(step.questions[0].text.split('\n')).toHaveLength(2)
+          await expect(page.locator('.qfield--debugging .qfield__text')).toHaveCSS(
+            'white-space',
+            'pre-line',
+          )
+        }
+        if (step.section_key === 'pck') {
+          await expectPageFits(page)
+          await expect(page.locator('.question-column')).toHaveCount(0)
+          await expect(page.locator('.qfield, .matrix__table tbody tr')).toHaveCount(
+            step.questions.length,
+          )
+          if (step.questions[0].matrix) {
+            await expect(page.locator('.matrix__scale-label')).toHaveCount(6)
+            await expect(
+              page.locator(`[data-aoi="question.${step.questions[0].id}"]`).getByRole('radio'),
+            ).toHaveCount(6)
+          }
+        }
         if (step.questions[0]?.id === 'ck_pre_02') {
           await page.getByRole('spinbutton').fill('6')
           await page
@@ -362,6 +395,19 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
         break
       case 'text_page':
         await expect(next).toBeVisible()
+        if (step.key === 'video_start') {
+          await expect(page.locator('.panel p.lead')).toHaveText([
+            'Bitte prüfen Sie, ob das Fenster auf Vollbildmodus steht, oder fragen Sie die Versuchsleitung danach.',
+            'Wenn Sie bereit sind, mit der Video-Phase zu starten, drücken Sie bitte auf „Weiter“.',
+          ])
+        }
+        if (step.key === 'discussion_start') {
+          await expect(page.locator('.panel p.lead')).toHaveCount(8)
+          await expect(page.locator('.panel p.lead').first()).toHaveText(
+            'Sie werden nun gebeten, laut zu denken, während Sie sich Ihre Screenrecordings ansehen.',
+          )
+          await expect(page.locator('.panel strong')).toHaveText(['Wichtig ist dabei:', '„Weiter“'])
+        }
         if (step.key === 'post_intro') {
           await expect(page.locator('.panel').getByRole('heading')).toHaveCount(0)
           await expect(
@@ -435,13 +481,20 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
         await fillQuestions(page, step.questions)
         await next.click()
         break
-      case 'think_aloud':
+      case 'think_aloud': {
         await expect(page.getByText(/Vortest|Nachtest|Trainingsfall/)).toHaveCount(0)
         await expect(
           page.getByText(`Erörterungs-Phase · Fall ${step.case_number} von 7`, { exact: true }),
         ).toBeVisible()
+        // Each recording starts quietly, since the participant talks over it.
+        const sound = await page
+          .locator('.replay__video')
+          .evaluate((video: HTMLVideoElement) => ({ volume: video.volume, muted: video.muted }))
+        expect(sound.volume).toBeCloseTo(0.3, 5)
+        expect(sound.muted).toBe(false)
         await next.click()
         break
+      }
       case 'thanks':
         await expect(page.getByRole('heading', { name: 'Vielen Dank!', exact: true })).toBeVisible()
         break
@@ -471,8 +524,9 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
     headers: headers(token),
     params: { participant_ids: participantId },
   })
-  expect(sections.ok(), await sections.text()).toBeTruthy()
-  const demographicsSection = csvRecords(await sections.text()).find(
+  const sectionsCsv = sections.text()
+  expect(sections.ok(), await sectionsCsv).toBeTruthy()
+  const demographicsSection = csvRecords(await sectionsCsv).find(
     (row) => row.section_key === 'demographics',
   )!
   expect(demographicsSection).toMatchObject({ pages_answered: '1', visited_pages: '1' })
@@ -488,6 +542,19 @@ test('pilot completes all pages with seven cases, three replays, skips and MESP 
   expect(mesp).toHaveLength(6)
   expect(mesp.flatMap((row) => Object.values(JSON.parse(row.answers)))).toEqual(Array(30).fill(1))
   expect(csv).toContain('pck_pre_3b_justification')
+  // Ten PCK responses, one per page, each holding only that page's variables.
+  const pckRows = rows.filter((row) => row.section_key === 'pck')
+  expect(pckRows.map((row) => row.questionnaire_title)).toEqual(pck.map((step) => step.title))
+  expect(pckRows.map((row) => Object.keys(JSON.parse(row.answers)))).toEqual(
+    pck.map((step) => step.questions.map((question) => question.id)),
+  )
+  const pckAnswers = Object.assign({}, ...pckRows.map((row) => JSON.parse(row.answers)))
+  expect(Object.keys(pckAnswers)).toHaveLength(29)
+  expect(pckAnswers.pck_pre_5d_5).toBe(1)
+  expect(pckAnswers.pck_pre_3b).toEqual([1, 2])
+  expect(pckAnswers.pck_pre_5c).toEqual(['step_1', 'step_2', 'step_3', 'step_4'])
+  const pckSection = csvRecords(await sectionsCsv).find((row) => row.section_key === 'pck')!
+  expect(pckSection).toMatchObject({ pages_answered: '10', visited_pages: '10' })
   expect(errors).toEqual([])
   await info.attach('visited-pages', {
     body: JSON.stringify(visited, null, 2),

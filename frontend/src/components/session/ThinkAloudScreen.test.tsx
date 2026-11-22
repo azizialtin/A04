@@ -219,3 +219,73 @@ test.each([
     }
   },
 )
+
+test('the player is at 30 % from the moment it is on the page', async () => {
+  replay.audio_status = 'captured'
+  // What an observer of the page sees as the player is added, before any effect has run.
+  const seen: number[] = []
+  const observer = new MutationObserver((records) => {
+    for (const record of records)
+      for (const node of record.addedNodes) {
+        if (!(node instanceof HTMLElement)) continue
+        const video = node.matches('video') ? node : node.querySelector('video')
+        if (video) seen.push((video as HTMLVideoElement).volume)
+      }
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+  try {
+    render(<ThinkAloudScreen videoId={1} position={position()} onComplete={vi.fn()} />)
+    await screen.findByRole('heading')
+    await waitFor(() => expect(seen).not.toHaveLength(0))
+    for (const volume of seen) expect(volume).toBeCloseTo(0.3)
+  } finally {
+    observer.disconnect()
+  }
+})
+
+test('the recording starts at 30 % volume and then follows the player control', async () => {
+  replay.audio_status = 'captured'
+  const { container, rerender } = render(
+    <ThinkAloudScreen videoId={1} position={position()} onComplete={vi.fn()} />,
+  )
+  await screen.findByRole('heading')
+  const video = container.querySelector('video')!
+  expect(video.volume).toBeCloseTo(0.3)
+  expect(video.muted).toBe(false)
+
+  // Turned up by hand: a re-render of the same recording must not undo it.
+  video.volume = 0.8
+  rerender(<ThinkAloudScreen videoId={1} position={position()} onComplete={vi.fn()} />)
+  expect(container.querySelector('video')).toBe(video)
+  expect(video.volume).toBeCloseTo(0.8)
+})
+
+test.each(['screen', 'clip'] as const)(
+  'every recording of a block starts at 30 %% volume again, also as a %s replay',
+  async (source) => {
+    replay.source = source
+    const first = render(
+      <ThinkAloudScreen
+        videoId={1}
+        position={position({ batchPosition: 1, batchSize: 3 })}
+        onComplete={vi.fn()}
+      />,
+    )
+    await screen.findByRole('heading', { name: 'Lautes Denken 1 von 3' })
+    const earlier = first.container.querySelector('video')!
+    expect(earlier.volume).toBeCloseTo(0.3)
+    earlier.volume = 1
+    first.unmount()
+
+    // The session mounts each step afresh, as here.
+    const second = render(
+      <ThinkAloudScreen
+        videoId={2}
+        position={position({ caseNumber: 6, batchPosition: 2, batchSize: 3 })}
+        onComplete={vi.fn()}
+      />,
+    )
+    await screen.findByRole('heading', { name: 'Lautes Denken 2 von 3' })
+    expect(second.container.querySelector('video')!.volume).toBeCloseTo(0.3)
+  },
+)

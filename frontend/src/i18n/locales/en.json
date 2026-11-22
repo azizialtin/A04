@@ -13,7 +13,10 @@
     "error_unknown": "Unknown participant ID. Please contact the study team.",
     "error_completed": "You have already completed this study. Thank you for participating!",
     "error_rate_limit": "Too many login attempts. Please wait a minute and try again.",
-    "error_connection": "Unable to sign in right now. Please check your connection and try again."
+    "error_connection": "Unable to sign in right now. Please check your connection and try again.",
+    "outdated": "This page is not up to date. Please reload it before you begin (Ctrl + F5), or ask the study team.",
+    "reload": "Reload page",
+    "reloaded": "The page was brought up to date. Please sign in now."
   },
   "welcome": {
     "title": "Welcome",
@@ -275,7 +278,7 @@
       },
       "video_start": {
         "title": "Start of video phase",
-        "body": "When you are ready to start the video phase, select “Continue”."
+        "body": "Please check that the window is in full-screen mode, or ask the supervisor.\n\nWhen you are ready to start the video phase, select “Continue”."
       },
       "video_intro": {
         "title": "Video phase",
@@ -287,7 +290,7 @@
       },
       "discussion_start": {
         "title": "Start of discussion phase",
-        "body": "When you are ready, start the discussion phase."
+        "body": "You will now be asked to think aloud while you watch your screen recordings.\n\nPlease ask the supervisor whether full-screen mode can be switched off and the screen recording started.\n\nAs you do so, please put into words, as completely as you can, every thought that comes to mind while you recall how you worked on the case at the time.\n\n**Please keep in mind:**\n\nWe are not interested in what the students in the video do or which steps they take. We are interested in what you yourself remember about your own working process when you watch the recordings: What were you thinking at the time? Why did you make certain decisions? What went through your mind while you were working?\n\nTry to say your thoughts as unfiltered as possible. Say everything that comes to mind — even if your thoughts seem disorganised, you are unsure, or swear words come to mind, for example. You do not need to sort your thoughts or phrase them particularly well.\n\nBehave as far as possible as if you were alone and nobody were listening. Simply say whatever is going through your mind. There are no right or wrong answers.\n\nWhen you are ready to start, please select **“Continue”**."
       },
       "post_intro": {
         "title": "",

@@ -11,12 +11,16 @@ from app.services.questionnaires import validate_question_definitions
 
 SOURCE_KEY = "a04-pretest-2026-11-02"
 LEGACY_SOURCE_KEY = "a04-pretest-2026-10-27"
-PILOT_SOURCE_KEY = "a04-pretest-2026-11-16"
+# What a new pilot study is seeded with. The first pilot's instrument stays
+# loadable: studies seeded from it are still checked against their own manifest.
+PILOT_SOURCE_KEY = "a04-pretest-2026-11-20"
+FIRST_PILOT_SOURCE_KEY = "a04-pretest-2026-11-16"
 _DATA_DIR = Path(__file__).parents[1] / "data"
 MANIFEST_PATHS = {
     SOURCE_KEY: _DATA_DIR / "pretest_nov2026.json",
     LEGACY_SOURCE_KEY: _DATA_DIR / "pretest_oct2026.json",
-    PILOT_SOURCE_KEY: _DATA_DIR / "pretest_pilot20261116.json",
+    FIRST_PILOT_SOURCE_KEY: _DATA_DIR / "pretest_pilot20261116.json",
+    PILOT_SOURCE_KEY: _DATA_DIR / "pretest_pilot20261120.json",
 }
 
 

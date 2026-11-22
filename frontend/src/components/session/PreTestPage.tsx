@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import type { QuestionnaireVisit, SectionTiming, SessionStep } from '../../api/participant'
 import { useEnterQuestionnaire, useFinishCK } from '../../hooks/participant'
 import { useLocalDraft } from '../../hooks/useLocalDraft'
-import { demographicsLayout } from '../../lib/demographicsLayout'
 import { enqueue } from '../../lib/outbox'
+import { preTestLayout } from '../../lib/preTestLayout'
 import type { Answers } from '../../lib/questionnaire'
 import Modal from '../Modal'
 import QuestionnaireRenderer from './QuestionnaireRenderer'
@@ -133,30 +133,22 @@ export default function PreTestPage({
   const [visit, setVisit] = useState<QuestionnaireVisit | null>(null)
   const askingFinish = finishRequested && !expired
   const [error, setError] = useState('')
-  const timed = step.section_key === 'ck_tasks'
-  const matrixPage =
-    step.questions.length > 0 && step.questions.every((question) => question.matrix)
-  const demographics =
-    step.section_key === 'demographics' ||
-    ['participant_group', 'sex', 'age'].every((id) =>
-      step.questions.some((question) => question.id === id),
-    )
-  const demographicsForm = useMemo(
-    () => (demographics ? demographicsLayout(step.questions) : null),
-    [demographics, step.questions],
+  const {
+    timed,
+    demographicsForm,
+    layout,
+    matrixLabels,
+    className: pageClasses,
+  } = useMemo(
+    () =>
+      preTestLayout({
+        pilot,
+        sectionKey: step.section_key ?? '',
+        questions: step.questions,
+        description: step.description,
+      }),
+    [pilot, step.section_key, step.questions, step.description],
   )
-  const pageClasses = [
-    'pretest-page',
-    pilot && 'pretest-page--pilot',
-    timed && 'pretest-page--ck',
-    step.section_key === 'pck' && 'pretest-page--pck',
-    pilot && step.section_key === 'mesp' && 'pretest-page--mesp',
-    matrixPage && 'pretest-page--matrix',
-    matrixPage && step.description.length > 800 && 'pretest-page--instructions',
-    demographics && 'pretest-page--demographics',
-  ]
-    .filter(Boolean)
-    .join(' ')
   const needsVisit = Boolean(step.section_key)
   const enterPage = enter.mutateAsync
   useEffect(() => {
@@ -166,9 +158,12 @@ export default function PreTestPage({
     }
   }, [])
   useEffect(() => {
-    onBusyChange(askingFinish || finish.isPending || expired)
+    // Work in progress only. An open dialog is the session's own state: were it
+    // reported here it would reach the session a render late, and a shortcut
+    // pressed straight after closing the dialog would be swallowed.
+    onBusyChange(finish.isPending || expired)
     return () => onBusyChange(false)
-  }, [askingFinish, finish.isPending, expired, onBusyChange])
+  }, [finish.isPending, expired, onBusyChange])
 
   const beginVisit = useCallback(() => {
     setError('')
@@ -352,8 +347,8 @@ export default function PreTestPage({
           title: t(titleKey),
           questionIds,
         }))}
-        layout={demographicsForm || (pilot && step.section_key === 'pck') ? 'columns' : undefined}
-        matrixLabels={pilot && step.section_key === 'mesp' ? 'headers' : undefined}
+        layout={layout}
+        matrixLabels={matrixLabels}
         initialAnswers={initial}
         onAnswersChange={changed}
         disabled={

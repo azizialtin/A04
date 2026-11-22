@@ -13,6 +13,7 @@ from app.models.questionnaire import Questionnaire, QuestionnaireResponse
 from app.models.session import Session
 from app.models.study import Study
 from app.services.pretest_content import (
+    FIRST_PILOT_SOURCE_KEY,
     MANIFEST_PATHS,
     PILOT_SOURCE_KEY,
     SOURCE_KEY,
@@ -56,11 +57,8 @@ async def import_ck_pretest(
     study = await db.scalar(select(Study).where(Study.id == study_id).with_for_update())
     if study is None:
         raise ContentImportError(f"No study with id {study_id}.")
-    default_source = (
-        PILOT_SOURCE_KEY
-        if getattr(study, "flow_version", "legacy") == "pilot_20261116"
-        else SOURCE_KEY
-    )
+    pilot = getattr(study, "flow_version", "legacy") == "pilot_20261116"
+    default_source = PILOT_SOURCE_KEY if pilot else SOURCE_KEY
     started = await db.scalar(
         select(Session.id)
         .join(Participant, Participant.id == Session.participant_id)
@@ -119,6 +117,29 @@ async def import_ck_pretest(
         raise ContentImportError(
             "CK pages from multiple source versions are present; no changes were made."
         )
+    if pilot:
+        # One instrument per study: the PCK pages in a draft decide which
+        # pilot's CK belongs with them, and must agree with a CK block that is
+        # already there.
+        pck_sources = {
+            reference["instrument"]
+            for page in pages
+            if page.section_key == "pck" or page is target
+            for question in page.questions
+            if isinstance(reference := question.get("source_ref"), dict)
+            and reference.get("instrument") in (FIRST_PILOT_SOURCE_KEY, PILOT_SOURCE_KEY)
+        }
+        if len(pck_sources) > 1:
+            raise ContentImportError(
+                "PCK pages from two pilot instruments are present; no changes were made."
+            )
+        if existing_sources and pck_sources and pck_sources != existing_sources:
+            raise ContentImportError(
+                "The CK pages and the PCK pages come from different pilot instruments; "
+                "no changes were made."
+            )
+        if not existing_sources:
+            default_source = next(iter(pck_sources), default_source)
     source_key = next(iter(existing_sources), default_source)
     # Verify prior imports against their own immutable instrument, never today's IDs.
     manifest = load_pretest_manifest(source_key)
@@ -159,7 +180,7 @@ async def import_ck_pretest(
         if source_key != default_source:
             return [
                 f"All thirteen CK task pages match their original {source_key} import. "
-                "No changes. Create a new study to use the corrected CSV IDs."
+                "No changes. Create a new study to use the current instrument."
             ]
         return ["All thirteen CK task pages already match this import. No changes."]
 

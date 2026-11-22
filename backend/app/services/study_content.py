@@ -637,6 +637,12 @@ _PILOT_OUTRO_TEXTS = {
 for _question in PILOT_CASE_OUTRO:
     _question["text"] = _PILOT_OUTRO_TEXTS[_question["id"]]
 
+# A PCK task is several pages, one per item group, each under the task's own
+# situation and code; the manifest lists them in instrument order.
+_PILOT_PCK_PAGES = PILOT_PRETEST_CONTENT["pck_pages"]
+_PILOT_PCK_START = 3 + len(PILOT_CK_TASKS)
+_PILOT_MESP_START = _PILOT_PCK_START + len(_PILOT_PCK_PAGES)
+
 PILOT_BATTERIES: list[Battery] = [
     *DEFAULT_BATTERIES[:3],
     *(
@@ -656,7 +662,7 @@ PILOT_BATTERIES: list[Battery] = [
     *(
         Battery(
             QuestionnairePlacement.pre_test,
-            16 + index,
+            _PILOT_PCK_START + index,
             page["title"],
             page["description"],
             page["questions"],
@@ -665,12 +671,12 @@ PILOT_BATTERIES: list[Battery] = [
             intro_title=PILOT_PRETEST_CONTENT["pck_intro"]["title"] if index == 0 else "",
             intro_body=PILOT_PRETEST_CONTENT["pck_intro"]["body"] if index == 0 else "",
         )
-        for index, page in enumerate(PILOT_PRETEST_CONTENT["pck_pages"])
+        for index, page in enumerate(_PILOT_PCK_PAGES)
     ),
     *(
         Battery(
             QuestionnairePlacement.pre_test,
-            19 + index,
+            _PILOT_MESP_START + index,
             page["title"],
             page["description"],
             page["questions"],

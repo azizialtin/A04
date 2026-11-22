@@ -216,8 +216,9 @@ geometry; the native measurement must recover.
 
 Open the current study at `https://a04.rdm.lab.lrz.de/session` in Edge and refresh
 with Ctrl+F5. The recovery dialog identifies app version `2026-11-17.2` and later
-under **Technischer Status**. An already open browser tab does not automatically
-replace its JavaScript when a new release is deployed.
+under **Technischer Status**. A tab inside a running session keeps the JavaScript
+it loaded and is never reloaded for a release. A tab waiting on the participant
+login page reloads itself instead (see the [study-lead checklist](LAB_SETUP_CHECKLIST.md)).
 
 The dialog now distinguishes an unreachable bridge, an older bridge and a native
 measurement failure. **Aktuelle Windows-Bridge herunterladen** downloads the

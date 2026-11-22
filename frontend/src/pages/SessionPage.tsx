@@ -150,10 +150,13 @@ export default function SessionPage() {
   const [pretestBusy, setPretestBusy] = useState(false)
   const navigationBusy =
     respond.isPending || updateProgress.isPending || stepBack.isPending || pretestBusy
+  // Read when the key is pressed, so the shortcut is ready as soon as the page is.
+  const shortcut = useRef({ busy: navigationBusy, step: stepNow })
+  shortcut.current = { busy: navigationBusy, step: stepNow }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const back = isStepBackChord(e)
-      const current = session.data?.steps[session.data.current_step_index]
+      const current = shortcut.current.step
       const finish =
         current?.kind === 'questionnaire' &&
         current.section_key === 'ck_tasks' &&
@@ -165,13 +168,13 @@ export default function SessionPage() {
       if (!back && !finish) return
       e.preventDefault()
       if (!checkDisplayGuard()) return
-      if (navigationBusy) return
+      if (shortcut.current.busy) return
       // One state transition also protects two chords pressed before React renders.
       setSupervisorDialog((open) => open ?? (back ? 'back' : 'finish'))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [navigationBusy, session.data])
+  }, [])
 
   const currentVisit = useRef<string | undefined>()
   useEffect(() => {

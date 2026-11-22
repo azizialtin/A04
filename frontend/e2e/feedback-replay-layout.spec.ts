@@ -114,6 +114,12 @@ async function openReplay(
     .poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => video.readyState))
     .toBeGreaterThan(0)
   await page.evaluate(() => document.fonts.ready)
+  // The participant talks over the recording, so every replay starts at 30 %.
+  const sound = await page
+    .locator('video')
+    .evaluate((video: HTMLVideoElement) => ({ volume: video.volume, muted: video.muted }))
+  expect(sound.volume).toBeCloseTo(0.3, 5)
+  expect(sound.muted).toBe(false)
   return unexpected
 }
 
@@ -221,3 +227,25 @@ for (const viewport of [
     expect(unexpected).toEqual([])
   })
 }
+
+test('the replay volume starts at 30 % and then stays where the participant sets it', async ({
+  page,
+}) => {
+  await openReplay(page, scenarios[0])
+  const video = page.locator('video')
+  await video.evaluate((element: HTMLVideoElement) => {
+    element.volume = 0.85
+  })
+  // Hiding and showing the gaze dot re-renders the player around the same element.
+  await page.getByRole('checkbox', { name: 'Blickpunkt anzeigen' }).uncheck()
+  await page.getByRole('checkbox', { name: 'Blickpunkt anzeigen' }).check()
+  expect(await video.evaluate((element: HTMLVideoElement) => element.volume)).toBeCloseTo(0.85, 5)
+  // Playing does not reset it either.
+  await video.evaluate(async (element: HTMLVideoElement) => {
+    element.muted = true
+    await element.play()
+    element.pause()
+    element.muted = false
+  })
+  expect(await video.evaluate((element: HTMLVideoElement) => element.volume)).toBeCloseTo(0.85, 5)
+})

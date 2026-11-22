@@ -61,7 +61,9 @@ export default function AdminStudyDetailPage() {
       {tab === 'videos' && <VideosSection studyId={id} />}
       {tab === 'sets' && <VideoSetsSection studyId={id} />}
       {tab === 'participants' && <ParticipantsSection studyId={id} />}
-      {tab === 'questionnaires' && <QuestionnairesSection studyId={id} />}
+      {tab === 'questionnaires' && (
+        <QuestionnairesSection studyId={id} pilot={study.data?.flow_version === 'pilot_20261116'} />
+      )}
       {tab === 'export' && <ExportsSection studyId={id} preselected={preselected} />}
       {tab === 'details' && (
         <>
@@ -428,7 +430,9 @@ function TextsSection({ study }: { study: Study }) {
                 id={`text-${key}-body`}
                 className="textarea"
                 maxLength={8000}
-                style={{ minHeight: key === 'video_intro' ? 240 : 120 }}
+                style={{
+                  minHeight: key === 'video_intro' || key === 'discussion_start' ? 240 : 120,
+                }}
                 value={(texts[bodyKey] as string | undefined) ?? ''}
                 placeholder={text.body}
                 onChange={set(bodyKey)}

@@ -11,7 +11,9 @@ const DESCRIPTIONS: Record<ExportKind, string> = {
   videos: 'Titel und Phase je Video — der Schlüssel zu jeder video_id in den anderen Dateien.',
   notes: 'Jeder Notiz-Stand mit Playhead-Position (Sekunden und als Zeitangabe).',
   diagnoses: 'Die geschriebene Diagnose je Fall mit der dafür benötigten Zeit.',
-  responses: 'Alle Fragebogen-Antworten: Vortest-Seiten, Sicherheitsrating, Fragen nach dem Fall.',
+  responses:
+    'Alle Fragebogen-Antworten: Vortest-Seiten, Sicherheitsrating, Fragen nach dem Fall. ' +
+    'Die Spalte instrument nennt die Fassung des Vortests, unter der geantwortet wurde.',
   sections:
     'Zeit je Abschnitt und Person — die Tabelle „Fragebögen“ im Teilnehmer-Panel: alle Seiten ' +
     'eines Abschnitts addiert, dazu der Vortest gesamt.',

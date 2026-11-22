@@ -13,7 +13,10 @@
     "error_unknown": "Unbekannte Teilnehmer-ID. Bitte wenden Sie sich an das Studienteam.",
     "error_completed": "Sie haben diese Studie bereits abgeschlossen. Vielen Dank für Ihre Teilnahme!",
     "error_rate_limit": "Zu viele Anmeldeversuche. Bitte warten Sie eine Minute und versuchen Sie es erneut.",
-    "error_connection": "Anmeldung momentan nicht möglich. Bitte prüfen Sie die Verbindung und versuchen Sie es erneut."
+    "error_connection": "Anmeldung momentan nicht möglich. Bitte prüfen Sie die Verbindung und versuchen Sie es erneut.",
+    "outdated": "Diese Seite ist nicht auf dem neuesten Stand. Bitte laden Sie sie neu, bevor Sie beginnen (Strg + F5), oder wenden Sie sich an das Studienteam.",
+    "reload": "Seite neu laden",
+    "reloaded": "Die Seite wurde auf den neuesten Stand gebracht. Bitte melden Sie sich jetzt an."
   },
   "welcome": {
     "title": "Willkommen",
@@ -275,7 +278,7 @@
       },
       "video_start": {
         "title": "Start Video-Phase",
-        "body": "Wenn Sie bereit sind, mit der Video-Phase zu starten, drücken Sie bitte auf „Weiter“."
+        "body": "Bitte prüfen Sie, ob das Fenster auf Vollbildmodus steht, oder fragen Sie die Versuchsleitung danach.\n\nWenn Sie bereit sind, mit der Video-Phase zu starten, drücken Sie bitte auf „Weiter“."
       },
       "video_intro": {
         "title": "Video-Phase",
@@ -287,7 +290,7 @@
       },
       "discussion_start": {
         "title": "Start Erörterungs-Phase",
-        "body": "Wenn Sie bereit sind, starten Sie mit der Erörterungs-Phase."
+        "body": "Sie werden nun gebeten, laut zu denken, während Sie sich Ihre Screenrecordings ansehen.\n\nFragen Sie die Versuchsleitung, ob der Vollbildmodus deaktiviert und die Bildschirmaufnahme gestartet werden kann.\n\nVerbalisieren Sie dabei bitte möglichst vollständig alle Gedanken, die Ihnen in den Sinn kommen, während Sie sich an Ihren eigenen damaligen Bearbeitungsprozess erinnern.\n\n**Wichtig ist dabei:**\n\nUns interessiert nicht, was die Schülerinnen im Video machen oder welche Schritte sie ausführen. Uns interessiert vielmehr, woran Sie sich selbst bezogen auf Ihren eigenen Bearbeitungsprozess erinnern, wenn Sie sich die Aufnahmen ansehen: Was haben Sie damals gedacht? Warum haben Sie bestimmte Entscheidungen getroffen? Was ist Ihnen während der Bearbeitung durch den Kopf gegangen?\n\nVersuchen Sie, Ihre Gedanken möglichst ungefiltert auszusprechen. Sagen Sie alles, was Ihnen in den Sinn kommt – auch wenn Ihre Gedanken ungeordnet erscheinen, Sie sich unsicher sind oder Ihnen beispielsweise Schimpfwörter einfallen. Sie müssen Ihre Gedanken nicht sortieren oder besonders gut formulieren.\n\nVerhalten Sie sich möglichst so, als wären Sie allein und würde Ihnen niemand zuhören. Sprechen Sie einfach alles aus, was Ihnen gerade durch den Kopf geht. Es gibt dabei keine richtigen oder falschen Antworten.\n\nWenn Sie bereit sind zu starten, klicken Sie bitte auf **„Weiter“**."
       },
       "post_intro": {
         "title": "",

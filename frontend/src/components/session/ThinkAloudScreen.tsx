@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import apiClient from '../../api/client'
@@ -33,6 +33,10 @@ interface Props {
 // stored. Long enough for a case-sized upload on a slow connection, short
 // enough that nobody is left staring at a line of text.
 const UPLOAD_WAIT_MS = 60_000
+
+// The participant talks over the recording, so its sound starts low. Only the
+// starting point: the player's own control stays theirs to move.
+const REPLAY_VOLUME = 0.3
 
 /**
  * Cued retrospective think-aloud: replays the case with the participant's gaze
@@ -205,7 +209,14 @@ export default function ThinkAloudScreen({
 function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapshot[] }) {
   const { t } = useTranslation()
   const stageRef = useRef<HTMLDivElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  // Set as the player is attached, so it never sounds at the browser's full
+  // volume first. A stable callback: React calls it for a new element only,
+  // which leaves a volume the participant chose alone on every later render.
+  const attachVideo = useCallback((video: HTMLVideoElement | null) => {
+    videoRef.current = video
+    if (video) video.volume = REPLAY_VOLUME
+  }, [])
   const dotRef = useRef<HTMLDivElement>(null)
   const captionRef = useRef<HTMLDivElement>(null)
   const [showGaze, setShowGaze] = useState(true)
@@ -305,7 +316,7 @@ function ReplayPlayer({ replay, notes }: { replay: ReplayData; notes: NoteSnapsh
     <div className="replay">
       <div ref={stageRef} className="replay__stage">
         <video
-          ref={videoRef}
+          ref={attachVideo}
           src={url}
           controls
           controlsList="nofullscreen noremoteplayback"

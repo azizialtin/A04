@@ -205,6 +205,20 @@ h3 {
   color: var(--brand);
 }
 
+/* The login page, when the server has a newer release than this tab. */
+.login-outdated {
+  margin: 4px 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-tint);
+  color: var(--warn);
+  font-size: 0.92rem;
+}
+
+.login-outdated p {
+  margin: 0 0 10px;
+}
+
 /* --- controls ----------------------------------------------------------- */
 
 .btn {

@@ -459,6 +459,25 @@ participant who has just left and only go up while they are signed in, so
 hand over once the banner is gone. If it will not clear, fix the connection
 before starting the next sitting.
 
+The id prompt is also where a tab catches up with a release. A tab keeps the
+JavaScript it loaded, and on 19 November 2026 a pilot session ran on the release
+before the one that was live, because the lab's tab had been open since the day
+before. The prompt now compares the files it runs with the ones the server's
+page names — when it opens, when the window is returned to and when
+**Anmelden** is pressed — and reloads when they differ, keeping the typed id.
+There is no timer: releases are a day apart at most. It reloads once per
+release: if that does not bring the new files it says so and leaves the reload
+to the study lead, and it never stops a sign-in. Pages inside a session are not
+reloaded.
+
+A tab that was opened before app version `2026-11-22.1` runs a page without
+this check, so it needs one manual reload (Ctrl + F5) after that release; from
+then on it keeps itself current. In a build with the display guard, which is
+what the lab uses, each session's `display_connection_status` events record the
+app version and the name of the script it ran on. The app version is set by
+hand and can stay the same across two releases; the script name changes with
+every build. A build without the display guard logs neither.
+
 ## Stepping a run back
 
 The participant has no back button. The person supervising the run can press
@@ -498,10 +517,12 @@ is allowed. Use a new study for structural changes to a started study; do not
 alter stored participant progress. The diagnosis and post-case questionnaires
 each have one shared definition, administered after **every case**.
 
-New studies use the November 16 pilot instrument: the revised thirteen CK
-tasks, a PCK introduction and three PCK pages containing ten conceptual items,
-then the full MESP introduction and six pages. The MESP strategy order is fixed.
-The October and 2 November instruments remain available for historical studies;
+New studies use the pilot instrument as revised on 20 November: the thirteen CK
+tasks, a PCK introduction and ten PCK pages, one per item group, containing ten
+conceptual items, then the full MESP introduction and six pages. The MESP
+strategy order is fixed. Studies created before that revision keep the
+16 November instrument with its three PCK pages and five-point ratings. The
+October and 2 November instruments remain available for historical studies;
 their single PCK example and MSK content are not upgraded in place. See the
 [pilot protocol](pilot-20261116.md) for the source documents, approved wording,
 scales and exact page order.
@@ -570,7 +591,13 @@ The versioned source snapshots, ID crosswalk and safe import command are documen
 in [`backend/app/data/README.md`](../backend/app/data/README.md). The 2 November
 snapshot corrected CK IDs without changing exercise order; the November 16 pilot
 reorders and revises exercises. Never combine exports by question ID alone across
-these versions; use the documented exercise crosswalk. Pilot MESP uses
+these versions; use the documented exercise crosswalk. The 20 November revision
+keeps the CK IDs but reuses the `pck_pre_*` IDs for six-point ratings, replaced
+statements and a reordered ranking, so PCK answers from before and after it
+cannot be pooled either. The last column of `responses.csv`, `instrument`, names
+the snapshot a page was seeded from (`a04-pretest-2026-11-16`,
+`a04-pretest-2026-11-20`; empty for a page written by hand), so a row can be
+read correctly without knowing which study it came from. Pilot MESP uses
 `mesp_pre_*` IDs and section `MESP`; historical `msk_pre_*` answers retain their
 original meaning. CSV filenames remain `responses.csv` and `sections.csv`.
 

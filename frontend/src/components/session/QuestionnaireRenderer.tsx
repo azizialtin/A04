@@ -34,8 +34,11 @@ interface Props {
   onAnswersChange?: (answers: Answers) => void
   onSubmit: (answers: Answers, timeSpentSeconds: number) => void
   onSkip?: (timeSpentSeconds: number) => void
-  /** Opt-in wide layout for batteries with authored column grouping. */
-  layout?: 'columns'
+  /**
+   * Opt-in wide layouts: `columns` for batteries with authored column
+   * grouping, `stimulus` for a shared situation above questions in plain flow.
+   */
+  layout?: 'columns' | 'stimulus'
   /** Put the full scale labels directly above their response columns. */
   matrixLabels?: 'headers'
   /** Local pages of one response; conditions can depend on any of its questions. */
@@ -151,7 +154,7 @@ export default function QuestionnaireRenderer({
               text={instruction}
               className="lead"
               startLine={instructionStart}
-              layout={layout === 'columns' ? 'stimulus' : undefined}
+              layout={layout ? 'stimulus' : undefined}
             />
           </div>
         ) : null}
@@ -176,12 +179,12 @@ export default function QuestionnaireRenderer({
             onAnswersChange?.(next)
           }}
           startLine={questionsStart}
-          layout={layout}
+          layout={layout === 'columns' ? 'columns' : undefined}
           matrixLabels={matrixLabels}
         />
       </fieldset>
 
-      {layout === 'columns' ? <footer className="questionnaire-footer">{footer}</footer> : footer}
+      {layout ? <footer className="questionnaire-footer">{footer}</footer> : footer}
     </div>
   )
 }

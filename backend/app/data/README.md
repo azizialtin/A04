@@ -1,11 +1,19 @@
 # Versioned pre-test sources
 
-`pretest_pilot20261116.json` supplies new pilot studies. Its source key is
-`a04-pretest-2026-11-16`; it records source hashes, row references, the CK
-reordering, three PCK tasks and six MESP tasks. Approved editorial decisions
-are recorded in the manifest. CK solutions are metadata and are not seeded into
-participant questions. See the [pilot protocol and rollout notes](../../../docs/pilot-20261116.md)
-for the flow version, source materials and historical-data guarantees.
+`pretest_pilot20261120.json` supplies new pilot studies. Its source key is
+`a04-pretest-2026-11-20`; it records source hashes, row references, the CK
+reordering, three PCK tasks on ten pages and six MESP tasks. Editorial decisions
+and the changes since the first pilot are recorded in the manifest. CK solutions
+are metadata and are not seeded into participant questions. See the
+[pilot protocol and rollout notes](../../../docs/pilot-20261116.md) for the flow
+version, source materials and historical-data guarantees.
+
+`pretest_pilot20261116.json`, source key `a04-pretest-2026-11-16`, is the first
+pilot's instrument: the same CK tasks without the line break in their text,
+three PCK pages with five-point ratings, and the same MESP. It remains unchanged
+for the studies seeded from it. The revision reuses the `pck_pre_*` IDs for six
+points, three replaced statements and a reordered 5c, so never read one
+instrument's PCK answers with the other's manifest.
 
 ## Legacy November and October instruments
 
@@ -75,8 +83,9 @@ before the selected PCK page. Existing pages retain their relative order and
 content. The import marks the CK and selected PCK sections for supervised timing
 and navigation; it does not replace the selected PCK content or rename existing
 self-assessment variables. For a new import it selects the manifest from the
-study's flow version; existing imports are checked against their original
-manifest. An optional
+study's flow version, and in a pilot draft from the instrument of the PCK pages
+already there, so a study never mixes two instruments; existing imports are
+checked against their original manifest. An optional
 `--mapping /path/to/row-ids.json` overrides it with a complete, unique mapping
 whose keys are the CSV row numbers `14` through `26` as strings.
 

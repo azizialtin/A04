@@ -603,3 +603,236 @@
     font-size: 15px;
   }
 }
+
+/* Revised PCK: one item group per page. The task's situation and code stay on
+   top; the question starts at the left edge and takes the whole width. Kept
+   apart from the first pilot's three-column pages above, which do not change. */
+.pretest-page--pck-item .panel--form {
+  max-width: 1200px;
+}
+.pretest-page--pck-item .qhead {
+  position: relative;
+  isolation: isolate;
+  padding-bottom: 10px;
+}
+.pretest-page--pck-item .qhead::before {
+  content: '';
+  position: absolute;
+  inset: -8px -12px 0;
+  z-index: -1;
+  pointer-events: none;
+  border-bottom: 2px solid #a8c7c4;
+  border-radius: 10px 10px 0 0;
+  background: #edf5f4;
+}
+.pretest-page--pck-item .study-stimulus__quotation {
+  border-left: 3px solid #cbdedd;
+  padding-left: 12px;
+  color: #425554;
+}
+.pretest-page--pck-item .qlist {
+  margin-top: 12px;
+  padding: 6px 20px 12px;
+  border: 1px solid #e3eae9;
+  border-radius: 10px;
+  background: #fafcfb;
+}
+.pretest-page--pck-item .qfield,
+.pretest-page--pck-item .matrix {
+  min-width: 0;
+  padding: 10px 0;
+}
+.pretest-page--pck-item .qlist > :first-child {
+  border-top: 0;
+}
+.pretest-page--pck-item .qfield__text {
+  margin: 0 0 8px;
+  font-weight: 400;
+  white-space: pre-line;
+}
+.pretest-page--pck-item .matrix__prompt {
+  margin: 0 0 8px;
+}
+.pretest-page--pck-item .matrix__legend-title {
+  margin: 0 0 4px;
+}
+.pretest-page--pck-item caption.matrix__legend-title {
+  text-align: left;
+  padding-bottom: 8px;
+}
+.pretest-page--pck-item .matrix__table thead th {
+  vertical-align: top;
+  padding-bottom: 10px;
+}
+.pretest-page--pck-item .matrix__num {
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 600;
+}
+.pretest-page--pck-item .matrix__scale-label {
+  display: block;
+  margin-top: 4px;
+  font-weight: 400;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.pretest-page--pck-item .matrix__table .matrix__item {
+  font-weight: 400;
+  background: transparent;
+  text-wrap: pretty;
+}
+.pretest-page--pck-item .matrix__table td.is-chosen {
+  background: transparent;
+}
+.pretest-page--pck-item .matrix__table tbody tr:hover,
+.pretest-page--pck-item .matrix__table tbody tr:hover .matrix__item {
+  background: #f0f5f4;
+}
+.pretest-page--pck-item .choice__option {
+  min-height: 36px;
+  border-radius: 5px;
+}
+.pretest-page--pck-item .choice__option:has(input:checked) {
+  background: #edf4f2;
+}
+.pretest-page--pck-item .choice > .small {
+  margin: 4px 0;
+}
+/* The arrows sit far from a short step on a wide row; the highlight ties them together. */
+.pretest-page--pck-item .ranking__item {
+  border-bottom: 1px solid #e3eae9;
+  padding: 8px 0;
+}
+.pretest-page--pck-item .ranking__item:hover {
+  background: #f0f5f4;
+}
+.pretest-page--pck-item .ranking__actions {
+  gap: 4px;
+}
+.pretest-page--pck-item .ranking__actions .btn {
+  background: transparent;
+  border: 1px solid #d7e3e0;
+  color: var(--brand-dark);
+  box-shadow: none;
+}
+.pretest-page--pck-item .textarea {
+  min-height: 120px;
+  height: 120px;
+  padding: 10px 12px;
+}
+.pretest-page--pck-item .questionnaire-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+}
+.pretest-page--pck-item .questionnaire-footer > .small {
+  margin: 0;
+}
+.pretest-page--pck-item .panel__actions {
+  margin: 0 0 0 auto;
+}
+
+@media (min-width: 1000px) {
+  .shell__main:has(.pretest-page--pck-item) {
+    padding: 20px 24px;
+  }
+  .pretest-page--pck-item .panel--form {
+    padding: 24px 32px;
+  }
+}
+
+/* From a laptop width up, the code stands beside the situation and the page
+   uses the full window, which is what keeps a task on one lab screen. */
+@media (min-width: 1200px) {
+  .shell__main:has(.pretest-page--pck-item) {
+    padding: 8px 24px;
+  }
+  .pretest-page--pck-item .panel--form {
+    max-width: 1840px;
+    padding: 12px 24px;
+  }
+  .pretest-page--pck-item .qhead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 8px 24px;
+    margin-bottom: 0;
+  }
+  .pretest-page--pck-item .qhead h2,
+  .pretest-page--pck-item .qhead .muted {
+    margin: 0;
+  }
+  .pretest-page--pck-item [data-aoi='instructions'] {
+    grid-column: 1 / -1;
+  }
+  .pretest-page--pck-item .study-stimulus--with-code {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-rows: min-content 1fr;
+    gap: 8px 28px;
+    align-items: start;
+  }
+  .pretest-page--pck-item .study-stimulus__prose {
+    grid-column: 1;
+    min-width: 0;
+  }
+  .pretest-page--pck-item .study-stimulus--with-code > .code {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.25;
+  }
+  /* A situation without code puts the pupil's words beside it instead. */
+  .pretest-page--pck-item
+    .study-stimulus:not(.study-stimulus--with-code)
+    > .study-stimulus__prose:has(> .study-stimulus__quotation:last-child:nth-child(2)) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    gap: 28px;
+    align-items: start;
+  }
+  .pretest-page--pck-item .qhead .lead,
+  .pretest-page--pck-item .qfield__text,
+  .pretest-page--pck-item .matrix__prompt,
+  .pretest-page--pck-item .matrix__item,
+  .pretest-page--pck-item .matrix__scale-label,
+  .pretest-page--pck-item .matrix__legend-title,
+  .pretest-page--pck-item .choice__option,
+  .pretest-page--pck-item .ranking__label,
+  .pretest-page--pck-item .textarea {
+    font-size: 16px;
+    line-height: 1.35;
+  }
+  .pretest-page--pck-item .matrix__scale-label {
+    line-height: 1.3;
+  }
+  .pretest-page--pck-item .qhead .lead {
+    margin: 0 0 8px;
+  }
+  .pretest-page--pck-item .questionnaire-footer > .small {
+    font-size: 15px;
+  }
+  /* The statements share the row with six labelled columns, so the table keeps
+     fixed proportions rather than sizing its columns by their text. */
+  .pretest-page--pck-item .matrix:not(.matrix--stacked) .matrix__table .matrix__item {
+    width: 46%;
+    padding-right: 24px;
+    overflow-wrap: break-word;
+  }
+  .pretest-page--pck-item .matrix:not(.matrix--stacked) .matrix__table th,
+  .pretest-page--pck-item .matrix:not(.matrix--stacked) .matrix__table td {
+    padding: 6px;
+  }
+  .pretest-page--pck-item .matrix:not(.matrix--stacked) .matrix__table thead th {
+    padding-bottom: 10px;
+  }
+  .pretest-page--pck-item .matrix:not(.matrix--stacked) .matrix__cell {
+    min-height: 40px;
+  }
+}

@@ -115,6 +115,9 @@ async def test_the_columns_researchers_asked_for_are_there(client, data, admin_h
     assert responses[0]["section"] == ""
     columns = list(responses[0])
     assert columns[columns.index("questionnaire_title") + 1] == "section"
+    # A page written by hand names no versioned instrument; the column is last.
+    assert responses[0]["instrument"] == ""
+    assert columns[-1] == "instrument"
 
     events = read(
         await client.get(f"/admin/studies/{study_id}/export/events", headers=admin_headers)
@@ -592,3 +595,67 @@ async def test_an_id_outside_the_study_is_refused(client, db, data, seed_researc
         )
         assert r.status_code == 400, pid
         assert pid in r.json()["detail"]
+
+
+async def test_the_same_ranking_answer_is_told_apart_by_the_instrument_it_was_given_under(
+    client, db, seed_study, admin_headers
+):
+    """Both pilots store `pck_pre_5c` as step_1..step_4, with the steps numbered differently."""
+    from app.services.pretest_content import (
+        FIRST_PILOT_SOURCE_KEY,
+        PILOT_SOURCE_KEY,
+        load_pretest_manifest,
+    )
+
+    def ranking(source_key: str) -> dict:
+        for page in load_pretest_manifest(source_key)["pck_pages"]:
+            for question in page["questions"]:
+                if question["id"] == "pck_pre_5c":
+                    return question
+        raise AssertionError(source_key)
+
+    first, revised = ranking(FIRST_PILOT_SOURCE_KEY), ranking(PILOT_SOURCE_KEY)
+    statement = {
+        key: {option["value"]: option["label"] for option in question["options"]}
+        for key, question in ((FIRST_PILOT_SOURCE_KEY, first), (PILOT_SOURCE_KEY, revised))
+    }
+    # The premise: the same four statements, but three of the tokens moved.
+    assert sorted(statement[FIRST_PILOT_SOURCE_KEY].values()) == sorted(
+        statement[PILOT_SOURCE_KEY].values()
+    )
+    assert [
+        token
+        for token in ("step_1", "step_2", "step_3", "step_4")
+        if statement[FIRST_PILOT_SOURCE_KEY][token] != statement[PILOT_SOURCE_KEY][token]
+    ] == ["step_2", "step_3", "step_4"]
+
+    other = Study(name="Second pilot")
+    db.add(other)
+    await db.flush()
+    answer = {"pck_pre_5c": ["step_1", "step_2", "step_3", "step_4"]}
+    exported = {}
+    for study, question in ((seed_study, first), (other, revised)):
+        page = Questionnaire(
+            study_id=study.id,
+            placement="pre_test",
+            title="PCK",
+            section_key="pck",
+            questions=[question],
+        )
+        participant = Participant(id=f"RANK-{study.id}", study_id=study.id)
+        db.add_all([page, participant])
+        await db.flush()
+        db.add(
+            QuestionnaireResponse(
+                participant_id=participant.id, questionnaire_id=page.id, answers=answer
+            )
+        )
+        await db.commit()
+        (row,) = read(
+            await client.get(f"/admin/studies/{study.id}/export/responses", headers=admin_headers)
+        )
+        exported[study.id] = row
+
+    assert exported[seed_study.id]["answers"] == exported[other.id]["answers"]
+    assert exported[seed_study.id]["instrument"] == FIRST_PILOT_SOURCE_KEY
+    assert exported[other.id]["instrument"] == PILOT_SOURCE_KEY
